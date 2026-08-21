@@ -2,6 +2,7 @@ import {
   appendFile,
   mkdtemp,
   mkdir,
+  readFile,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -11,6 +12,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { GitState, TaskExecutionEvidence } from "../../core/contracts.js";
+import { readCompletionMarkers } from "./completion-marker.js";
 import { StrikerPlanAdapter } from "./striker-plan-adapter.js";
 
 const taskText = `# Build the command
@@ -164,12 +166,35 @@ describe("Striker plan completion evidence", () => {
       throw new Error("Expected completion evidence");
     expect(result.evidence.verification?.exitCode).toBe(0);
 
-    await resumedSource.markCompleted?.(task, result.evidence);
+    await resumedSource.finalizeCompleted?.([task.identity]);
     await expect(resumedSource.nextTask([])).resolves.toBeNull();
   });
 });
 
 describe("Striker plan completion reconciliation", () => {
+  it("keeps reconciliation read-only and finalizes markers idempotently", async () => {
+    const fixture = await createFixture();
+    const source = await new StrikerPlanAdapter({
+      projectRoot: fixture.root,
+      workflowRoot: fixture.workflowRoot,
+    }).open(fixture.planRoot);
+    const task = await source.nextTask([]);
+    if (task === null) throw new Error("Expected a task");
+    const logPath = path.join(fixture.planRoot, "log.md");
+    const before = await readFile(logPath, "utf8");
+
+    await expect(
+      source.reconcileCompleted([task.identity]),
+    ).resolves.toBeNull();
+    await expect(readFile(logPath, "utf8")).resolves.toBe(before);
+
+    await source.finalizeCompleted?.([task.identity]);
+    await source.finalizeCompleted?.([task.identity]);
+    await expect(readCompletionMarkers(logPath)).resolves.toEqual([
+      task.identity,
+    ]);
+  });
+
   it("replays durable completions and reports changed identities", async () => {
     const fixture = await createFixture();
     const adapter = new StrikerPlanAdapter({
@@ -183,7 +208,7 @@ describe("Striker plan completion reconciliation", () => {
     await expect(
       original.reconcileCompleted([task.identity]),
     ).resolves.toBeNull();
-    await expect(original.nextTask([])).resolves.toBeNull();
+    await expect(original.nextTask([task.identity])).resolves.toBeNull();
 
     await writeFile(
       path.join(fixture.planRoot, "tasks/01.md"),

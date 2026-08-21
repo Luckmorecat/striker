@@ -84,22 +84,24 @@ class StrikerPlanSource implements TaskSource {
     return this.withExecution(task, logSizeBefore);
   }
 
-  async reconcileCompleted(
+  reconcileCompleted(
     completed: readonly TaskIdentity[],
   ): Promise<{ completed: TaskIdentity; current: TaskIdentity | null } | null> {
     for (const identity of completed) {
       const current = this.plan.tasks.find(
         (task) => task.identity.id === identity.id,
       );
-      if (current === undefined) return { completed: identity, current: null };
+      if (current === undefined) {
+        return Promise.resolve({ completed: identity, current: null });
+      }
       if (current.identity.revision !== identity.revision) {
-        return { completed: identity, current: current.identity };
+        return Promise.resolve({
+          completed: identity,
+          current: current.identity,
+        });
       }
     }
-    for (const identity of completed) {
-      await appendCompletionMarker(this.#logPath, identity);
-    }
-    return null;
+    return Promise.resolve(null);
   }
 
   async completionEvidence(
@@ -146,8 +148,10 @@ class StrikerPlanSource implements TaskSource {
     };
   }
 
-  async markCompleted(task: ImplementationTask): Promise<void> {
-    await appendCompletionMarker(this.#logPath, task.identity);
+  async finalizeCompleted(completed: readonly TaskIdentity[]): Promise<void> {
+    for (const identity of completed) {
+      await appendCompletionMarker(this.#logPath, identity);
+    }
   }
 
   private withExecution(

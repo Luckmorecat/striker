@@ -134,9 +134,11 @@ pnpm exec striker run path/to/plan --allow-dirty
 
 After each task, Striker requires one descendant commit, an unchanged allowed
 dirty baseline, the exact verification result, the human plan log entry, and
-both implementor review results. It then appends a machine-readable completion
-marker to `log.md`. The marker remains after successful local recovery state is
-deleted and lets a later run reconcile completed work.
+both implementor review results. It records completion in the Git-private run
+journal before selecting the next task. Once the source is exhausted, Striker
+appends every machine-readable completion marker to `log.md`, then deletes the
+run journal. If marker finalization fails, the journal remains available for
+`striker resume` to retry the batch.
 
 One nonterminal run may exist per checkout. Inspect or operate it with:
 

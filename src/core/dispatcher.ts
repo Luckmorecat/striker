@@ -26,6 +26,7 @@ import {
 import { PausedRunRecovery } from "./paused-run-recovery.js";
 import { transitionRun } from "./run-state.js";
 import { RunOperations } from "./run-operations.js";
+import { finalizeExhaustedSource } from "./source-finalization.js";
 
 export interface DispatcherDependencies {
   readonly adapters: AdapterRegistry;
@@ -44,10 +45,7 @@ export class Dispatcher {
     let preflight = true;
     for (;;) {
       const result = await this.dispatchNext(request, completed, preflight);
-      if (result.status === "source_exhausted") {
-        await this.finishRun(request.runId);
-        return latest ?? result;
-      }
+      if (result.status === "source_exhausted") return latest ?? result;
       if (result.status !== "completed") return result;
       completed.push(result.task.identity);
       latest = result;
@@ -58,17 +56,20 @@ export class Dispatcher {
   async dispatchOne(request: DispatchRequest): Promise<DispatchResult> {
     const completed = await this.completedTasks(request);
     const result = await this.dispatchNext(request, completed, true);
-    if (result.status === "source_exhausted") {
-      await this.finishRun(request.runId);
-      return result;
-    }
+    if (result.status === "source_exhausted") return result;
     if (result.status !== "completed") return result;
     completed.push(result.task.identity);
     const next = await this.selectTask(request, completed);
-    if ("conflict" in next) {
+    if ("conflict" in next)
       return this.finishSourceConflict(request.runId, next.conflict);
+    if (next.task === null) {
+      await finalizeExhaustedSource(
+        this.dependencies.journal,
+        request.runId,
+        next.source,
+        completed,
+      );
     }
-    if (next.task === null) await this.finishRun(request.runId);
     return result;
   }
 
@@ -106,16 +107,20 @@ export class Dispatcher {
     preflight: boolean,
   ): Promise<DispatchResult> {
     const selection = await this.selectTask(request, completed);
-    if ("conflict" in selection) {
+    if ("conflict" in selection)
       return this.finishSourceConflict(request.runId, selection.conflict);
-    }
     const { source, task } = selection;
     if (task === null) {
+      await finalizeExhaustedSource(
+        this.dependencies.journal,
+        request.runId,
+        source,
+        completed,
+      );
       return { runId: request.runId, status: "source_exhausted" };
     }
-    if (preflight) {
+    if (preflight)
       await this.dependencies.runner.preflight({ skills: request.skills });
-    }
     const before = await inspectBaseline(
       this.dependencies,
       task,
@@ -263,12 +268,6 @@ export class Dispatcher {
       1,
       null,
     );
-  }
-
-  private async finishRun(runId: string): Promise<void> {
-    if ((await this.dependencies.journal.load(runId)) === null) return;
-    transitionRun("running", "complete");
-    await this.dependencies.journal.delete(runId);
   }
 
   private async finishNeedsAttention(

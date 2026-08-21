@@ -56,6 +56,7 @@ export interface TaskSource {
     task: ImplementationTask,
     evidence: TaskCompletionEvidence,
   ): Promise<void>;
+  finalizeCompleted?(completed: readonly TaskIdentity[]): Promise<void>;
 }
 
 export interface TaskSourceConflict {
