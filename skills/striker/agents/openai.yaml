@@ -1,0 +1,6 @@
+interface:
+  display_name: "Striker"
+  short_description: "Run the project-local Striker CLI"
+  default_prompt: "Use $striker to validate a Striker plan."
+policy:
+  allow_implicit_invocation: false

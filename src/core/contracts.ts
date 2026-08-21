@@ -81,6 +81,30 @@ export interface GitRepository {
   inspect(root: string): Promise<GitState>;
 }
 
+export interface PlanValidationResult {
+  readonly taskCount: number;
+}
+
+export interface PlanValidator {
+  validate(source: string): Promise<PlanValidationResult>;
+}
+
+export interface PublicSkillInstallRequest {
+  readonly harness: string;
+  readonly projectRoot: string;
+}
+
+export interface PublicSkillInstallResult {
+  readonly changed: boolean;
+}
+
+export interface PublicSkillInstaller {
+  readonly supportedHarnesses: readonly string[];
+  install(
+    request: PublicSkillInstallRequest,
+  ): Promise<PublicSkillInstallResult>;
+}
+
 export type RunStatus =
   "created" | "running" | "needs_attention" | "failed" | "completed";
 

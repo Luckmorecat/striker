@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "taskSource": { "type": "string", "const": "striker-plan" },
+    "tasks": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!(?:spine|map|log)\\.md$)(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))(?!.*(?:^|\\/)\\.(?:\\/|$))(?!.*\\/\\/).+\\.md$"
+      },
+      "uniqueItems": true
+    },
+    "version": { "type": "number", "const": 1 }
+  },
+  "required": ["taskSource", "tasks", "version"],
+  "additionalProperties": false,
+  "$id": "https://kisshot.dev/striker/plan.schema.json",
+  "title": "Striker plan manifest"
+}

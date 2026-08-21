@@ -1,0 +1,227 @@
+import { createHash } from "node:crypto";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import path from "node:path";
+
+import { fromMarkdown } from "mdast-util-from-markdown";
+
+import type { ImplementationTask } from "../../core/contracts.js";
+import { parsePlanManifest, type PlanManifest } from "./plan-manifest.js";
+
+const supportFiles = ["spine.md", "map.md", "log.md"] as const;
+const requiredSections = ["Build", "Paths", "Test contract", "Verify"] as const;
+type SectionName = (typeof requiredSections)[number];
+type MarkdownNode = ReturnType<typeof fromMarkdown>["children"][number];
+type TaskSections = Map<SectionName, MarkdownNode[]>;
+
+export interface StrikerPlanTask extends ImplementationTask {
+  readonly path: string;
+  readonly verifyCommand: string;
+}
+
+export interface StrikerPlan {
+  readonly manifest: PlanManifest;
+  readonly tasks: readonly StrikerPlanTask[];
+}
+
+export class PlanValidationError extends Error {
+  override readonly name = "PlanValidationError";
+}
+
+function nodeText(node: unknown): string {
+  if (typeof node !== "object" || node === null) return "";
+  if ("value" in node && typeof node.value === "string") return node.value;
+  if (!("children" in node) || !Array.isArray(node.children)) return "";
+  return node.children.map((child: unknown) => nodeText(child)).join("");
+}
+
+function taskError(taskPath: string, message: string): PlanValidationError {
+  return new PlanValidationError(`${taskPath}: ${message}`);
+}
+
+function parseTitle(
+  taskPath: string,
+  children: readonly MarkdownNode[],
+): string {
+  const titleHeadings = children.filter(
+    (node) => node.type === "heading" && node.depth === 1,
+  );
+  if (titleHeadings.length !== 1 || children[0] !== titleHeadings[0]) {
+    throw taskError(taskPath, "expected one leading level-one title");
+  }
+  const title = nodeText(titleHeadings[0]).trim();
+  if (title.length === 0) throw taskError(taskPath, "title cannot be empty");
+  return title;
+}
+
+function parseSections(
+  taskPath: string,
+  children: readonly MarkdownNode[],
+): TaskSections {
+  const sections: TaskSections = new Map();
+  let current: SectionName | undefined;
+  let sectionIndex = 0;
+  for (const node of children.slice(1)) {
+    if (node.type === "heading" && node.depth === 2) {
+      const sectionName = nodeText(node);
+      const expected = requiredSections[sectionIndex];
+      if (expected === undefined) {
+        throw taskError(taskPath, `unexpected section: ${sectionName}`);
+      }
+      if (sectionName !== expected) {
+        throw taskError(
+          taskPath,
+          `expected section ${expected}, found ${sectionName}`,
+        );
+      }
+      current = expected;
+      sections.set(current, []);
+      sectionIndex += 1;
+    } else if (current === undefined) {
+      throw taskError(taskPath, "content appears before the first section");
+    } else {
+      sections.get(current)?.push(node);
+    }
+  }
+  for (const sectionName of requiredSections) {
+    const nodes = sections.get(sectionName);
+    if (nodes === undefined || nodes.length === 0) {
+      throw taskError(taskPath, `missing or empty section: ${sectionName}`);
+    }
+  }
+  return sections;
+}
+
+function parseVerifyCommand(taskPath: string, sections: TaskSections): string {
+  const verifyNodes = sections.get("Verify") ?? [];
+  const codeBlocks = verifyNodes.filter((node) => node.type === "code");
+  const verifyBlock = codeBlocks[0];
+  if (
+    codeBlocks.length !== 1 ||
+    verifyBlock === undefined ||
+    (verifyBlock.lang !== "sh" &&
+      verifyBlock.lang !== "bash" &&
+      verifyBlock.lang !== "shell") ||
+    verifyBlock.value.trim().length === 0
+  ) {
+    throw taskError(
+      taskPath,
+      "Verify must contain one nonempty shell code block",
+    );
+  }
+  return verifyBlock.value.trim();
+}
+
+function parseTask(taskPath: string, content: string): StrikerPlanTask {
+  const children = fromMarkdown(content).children;
+  const title = parseTitle(taskPath, children);
+  const verifyCommand = parseVerifyCommand(
+    taskPath,
+    parseSections(taskPath, children),
+  );
+
+  return {
+    identity: {
+      id: taskPath,
+      revision: createHash("sha256").update(content).digest("hex"),
+    },
+    instructions: content,
+    path: taskPath,
+    title,
+    verifyCommand,
+  };
+}
+
+async function readJson(filePath: string): Promise<unknown> {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8")) as unknown;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new PlanValidationError(`cannot read plan.json: ${message}`);
+  }
+}
+
+function isWithinRoot(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return (
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+async function requireFile(
+  root: string,
+  realRoot: string,
+  relativePath: string,
+): Promise<string> {
+  const candidate = path.join(root, relativePath);
+  try {
+    if (!(await stat(candidate)).isFile()) throw new Error();
+  } catch {
+    throw new PlanValidationError(`missing file: ${relativePath}`);
+  }
+  const resolved = await realpath(candidate);
+  if (!isWithinRoot(realRoot, resolved)) {
+    throw new PlanValidationError(
+      `task path escapes the plan directory: ${relativePath}`,
+    );
+  }
+  return resolved;
+}
+
+async function markdownFiles(
+  root: string,
+  directory = root,
+): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await markdownFiles(root, entryPath)));
+    } else if (
+      (entry.isFile() || entry.isSymbolicLink()) &&
+      entry.name.endsWith(".md")
+    ) {
+      files.push(path.relative(root, entryPath).split(path.sep).join("/"));
+    }
+  }
+  return files;
+}
+
+async function rejectUndeclaredTasks(
+  root: string,
+  manifest: PlanManifest,
+): Promise<void> {
+  const declared = new Set<string>([...supportFiles, ...manifest.tasks]);
+  const undeclared = (await markdownFiles(root)).filter(
+    (filePath) => !declared.has(filePath),
+  );
+  if (undeclared.length > 0) {
+    throw new PlanValidationError(
+      `undeclared task files: ${undeclared.sort().join(", ")}`,
+    );
+  }
+}
+
+export async function parseStrikerPlan(root: string): Promise<StrikerPlan> {
+  const manifest = parsePlanManifest(
+    await readJson(path.join(root, "plan.json")),
+  );
+  const realRoot = await realpath(root);
+  const resolvedFiles = new Map<string, string>();
+  for (const filePath of [...supportFiles, ...manifest.tasks]) {
+    resolvedFiles.set(filePath, await requireFile(root, realRoot, filePath));
+  }
+  await rejectUndeclaredTasks(root, manifest);
+  const tasks = await Promise.all(
+    manifest.tasks.map(async (taskPath) => {
+      const resolved = resolvedFiles.get(taskPath);
+      if (resolved === undefined) {
+        throw new PlanValidationError(`missing file: ${taskPath}`);
+      }
+      return parseTask(taskPath, await readFile(resolved, "utf8"));
+    }),
+  );
+  return { manifest, tasks };
+}
