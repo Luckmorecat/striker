@@ -11,6 +11,7 @@
   "files": [
     "dist",
     "plan.schema.json",
+    "schema.json",
     "skills",
     "!dist/**/*.test.*",
     "!dist/testing"
@@ -25,6 +26,7 @@
     }
   },
   "dependencies": {
+    "acpx": "0.13.1",
     "commander": "^15.0.0",
     "mdast-util-from-markdown": "^2.0.2",
     "zod": "^4.0.0"
@@ -39,8 +41,8 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
     "@eslint/js": "^10.0.1",
+    "@types/node": "^22.0.0",
     "eslint": "^10.8.1",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-import-x": "^4.17.1",

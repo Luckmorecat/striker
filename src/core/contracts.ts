@@ -7,10 +7,26 @@ export interface ImplementationTask {
   readonly identity: TaskIdentity;
   readonly title: string;
   readonly instructions: string;
+  readonly execution?: TaskExecution;
+}
+
+export interface TaskExecution {
+  readonly affectedPaths: readonly string[];
+  readonly cwd: string;
+  readonly verifyCommand: string;
+  readonly workflowInstructions: string;
 }
 
 export interface TaskCompletionEvidence {
   readonly summary: string;
+  readonly verification?: VerificationResult;
+}
+
+export interface TaskExecutionEvidence {
+  readonly after: GitState;
+  readonly before: GitState;
+  readonly commits: readonly string[];
+  readonly verification: VerificationResult;
 }
 
 export interface TaskSource {
@@ -19,7 +35,12 @@ export interface TaskSource {
   ): Promise<ImplementationTask | null>;
   completionEvidence(
     task: ImplementationTask,
+    execution?: TaskExecutionEvidence,
   ): Promise<TaskCompletionEvidence | null>;
+  markCompleted?(
+    task: ImplementationTask,
+    evidence: TaskCompletionEvidence,
+  ): Promise<void>;
 }
 
 export interface TaskSourceAdapter {
@@ -39,6 +60,7 @@ export interface AgentSession {
 export interface AgentRequest {
   readonly instructions: string;
   readonly skills: readonly string[];
+  readonly workflowInstructions?: string;
 }
 
 export type AgentTurn =
@@ -54,6 +76,7 @@ export type AgentTurn =
     };
 
 export interface AgentRunner {
+  preflight?(): Promise<void>;
   runInNewSession(request: AgentRequest): Promise<AgentTurn>;
 }
 
@@ -75,10 +98,20 @@ export interface Verifier {
 export interface GitState {
   readonly head: string;
   readonly dirtyPaths: readonly string[];
+  readonly root: string;
+  readonly trackedPatch: string;
+  readonly untrackedHashes: Readonly<Record<string, string>>;
 }
 
 export interface GitRepository {
+  commitsBetween(
+    root: string,
+    ancestor: string,
+    descendant: string,
+  ): Promise<readonly string[]>;
   inspect(root: string): Promise<GitState>;
+  resolveRoot(location: string): Promise<string>;
+  resolvePrivatePath(root: string, name: string): Promise<string>;
 }
 
 export interface PlanValidationResult {
@@ -105,6 +138,20 @@ export interface PublicSkillInstaller {
   ): Promise<PublicSkillInstallResult>;
 }
 
+export interface RunCommandRequest {
+  readonly allowDirty: boolean;
+  readonly source: string;
+}
+
+export interface RunCommandResult {
+  readonly message: string;
+  readonly status: "completed" | "needs_attention" | "failed";
+}
+
+export interface RunCommandHandler {
+  run(request: RunCommandRequest): Promise<RunCommandResult>;
+}
+
 export type RunStatus =
   "created" | "running" | "needs_attention" | "failed" | "completed";
 
@@ -125,6 +172,8 @@ export type RunJournalEvent =
       readonly runId: string;
       readonly task: TaskIdentity;
       readonly session: AgentSession;
+      readonly evidence?: TaskCompletionEvidence;
+      readonly execution?: TaskExecutionEvidence;
     }
   | {
       readonly type: "run_needs_attention";
@@ -147,6 +196,7 @@ export interface RunJournal {
 }
 
 export interface DispatchRequest {
+  readonly allowDirty?: boolean;
   readonly runId: string;
   readonly taskSource: TaskSourceReference;
   readonly completedTasks: readonly TaskIdentity[];
@@ -170,7 +220,10 @@ export type DispatchResult =
       readonly runId: string;
       readonly task: ImplementationTask;
       readonly session: AgentSession;
-      readonly reason: "completion_evidence_missing";
+      readonly reason:
+        | "completion_evidence_missing"
+        | "git_evidence_invalid"
+        | "verification_failed";
     }
   | {
       readonly status: "failed";

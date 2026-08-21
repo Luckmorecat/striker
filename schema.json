@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "harness": { "type": "string", "const": "codex" },
+    "skills": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "taskSource": { "type": "string", "const": "striker-plan" }
+  },
+  "required": ["taskSource"],
+  "additionalProperties": false,
+  "$id": "https://kisshot.dev/striker/schema.json",
+  "title": "Striker project configuration"
+}

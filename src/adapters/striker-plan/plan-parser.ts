@@ -14,8 +14,57 @@ type MarkdownNode = ReturnType<typeof fromMarkdown>["children"][number];
 type TaskSections = Map<SectionName, MarkdownNode[]>;
 
 export interface StrikerPlanTask extends ImplementationTask {
+  readonly affectedPaths: readonly string[];
   readonly path: string;
   readonly verifyCommand: string;
+}
+
+function collectListItems(nodes: readonly MarkdownNode[]): string[] {
+  const items: string[] = [];
+  const visit = (node: MarkdownNode): void => {
+    if (node.type === "listItem") items.push(nodeText(node).trim());
+    if ("children" in node && Array.isArray(node.children)) {
+      for (const child of node.children as MarkdownNode[]) visit(child);
+    }
+  };
+  for (const node of nodes) visit(node);
+  return items;
+}
+
+function parseAffectedPaths(
+  taskPath: string,
+  sections: TaskSections,
+): string[] {
+  const entries = collectListItems(sections.get("Paths") ?? []);
+  const paths = entries.map((entry) => {
+    const value = entry
+      .replace(/^(?:Create|Modify|Delete)\s+/i, "")
+      .replace(/^`|`$/g, "")
+      .trim();
+    if (
+      value.includes("\\") ||
+      path.posix.isAbsolute(value) ||
+      /^[A-Za-z]:/.test(value)
+    ) {
+      throw taskError(
+        taskPath,
+        `Path must be repository-relative POSIX: ${value}`,
+      );
+    }
+    const normalized = path.posix.normalize(value);
+    if (
+      normalized === "." ||
+      normalized === ".." ||
+      normalized.startsWith("../")
+    ) {
+      throw taskError(taskPath, `Path escapes the repository: ${value}`);
+    }
+    return normalized;
+  });
+  if (paths.length === 0 || paths.some((entry) => entry.length === 0)) {
+    throw taskError(taskPath, "Paths must contain concrete list items");
+  }
+  return paths;
 }
 
 export interface StrikerPlan {
@@ -114,12 +163,11 @@ function parseVerifyCommand(taskPath: string, sections: TaskSections): string {
 function parseTask(taskPath: string, content: string): StrikerPlanTask {
   const children = fromMarkdown(content).children;
   const title = parseTitle(taskPath, children);
-  const verifyCommand = parseVerifyCommand(
-    taskPath,
-    parseSections(taskPath, children),
-  );
+  const sections = parseSections(taskPath, children);
+  const verifyCommand = parseVerifyCommand(taskPath, sections);
 
   return {
+    affectedPaths: parseAffectedPaths(taskPath, sections),
     identity: {
       id: taskPath,
       revision: createHash("sha256").update(content).digest("hex"),

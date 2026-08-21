@@ -56,6 +56,7 @@ describe("parseStrikerPlan task extraction", () => {
     expect(plan.manifest.tasks).toEqual(["tasks/01-bootstrap.md"]);
     expect(plan.tasks).toHaveLength(1);
     expect(plan.tasks[0]).toMatchObject({
+      affectedPaths: ["src/cli.ts"],
       identity: {
         id: "tasks/01-bootstrap.md",
       },
@@ -158,6 +159,25 @@ describe("parseStrikerPlan task format", () => {
 
     await expect(parseStrikerPlan(root)).rejects.toThrow(
       "expected section Build, found Paths",
+    );
+  });
+
+  it("normalizes affected paths and rejects repository escapes", async () => {
+    const root = await createPlan();
+    await writeFile(
+      path.join(root, "tasks/01-bootstrap.md"),
+      completeTask.replace("- src/cli.ts", "- Modify `./src/cli.ts`"),
+    );
+    expect((await parseStrikerPlan(root)).tasks[0]?.affectedPaths).toEqual([
+      "src/cli.ts",
+    ]);
+
+    await writeFile(
+      path.join(root, "tasks/01-bootstrap.md"),
+      completeTask.replace("- src/cli.ts", "- `/tmp/outside.ts`"),
+    );
+    await expect(parseStrikerPlan(root)).rejects.toThrow(
+      "Path must be repository-relative POSIX",
     );
   });
 });

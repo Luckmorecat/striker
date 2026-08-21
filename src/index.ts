@@ -1,6 +1,11 @@
 export { AdapterRegistry } from "./core/adapter-registry.js";
 export { Dispatcher } from "./core/dispatcher.js";
 export {
+  parseProjectConfig,
+  projectConfigJsonSchema,
+  projectConfigSchema,
+} from "./config/project-config.js";
+export {
   parsePlanManifest,
   planManifestJsonSchema,
   planManifestSchema,
@@ -16,6 +21,9 @@ export type {
   GitRepository,
   GitState,
   ImplementationTask,
+  RunCommandHandler,
+  RunCommandRequest,
+  RunCommandResult,
   PlanValidationResult,
   PlanValidator,
   PublicSkillInstaller,
@@ -27,6 +35,8 @@ export type {
   RunStatus,
   RunTransition,
   TaskCompletionEvidence,
+  TaskExecution,
+  TaskExecutionEvidence,
   TaskIdentity,
   TaskSource,
   TaskSourceAdapter,
@@ -35,4 +45,5 @@ export type {
   VerificationResult,
   Verifier,
 } from "./core/contracts.js";
+export type { ProjectConfig } from "./config/project-config.js";
 export type { DispatcherDependencies } from "./core/dispatcher.js";
