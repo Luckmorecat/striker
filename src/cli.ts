@@ -61,6 +61,7 @@ async function dispatchRun(source: string, allowDirty: boolean) {
     journal: new FileRunJournal(stateRoot),
     runner: createAcpxAgentRunner({
       cwd: root,
+      harness: config.harness,
       permissionRelay: relayPermission,
       stateDir: path.join(stateRoot, "acpx"),
     }),

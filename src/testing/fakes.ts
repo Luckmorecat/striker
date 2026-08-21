@@ -2,6 +2,7 @@ import type {
   AgentRequest,
   AgentRunner,
   AgentTurn,
+  HarnessPreflightRequest,
   ImplementationTask,
   RunJournal,
   RunJournalEvent,
@@ -80,11 +81,17 @@ export class InMemoryTaskSourceAdapter implements TaskSourceAdapter {
 
 export class FakeAgentRunner implements AgentRunner {
   lastRequest: AgentRequest | null = null;
+  readonly preflightRequests: HarnessPreflightRequest[] = [];
   readonly requests: AgentRequest[] = [];
   readonly #turns: AgentTurn[];
 
   constructor(turn: AgentTurn | readonly AgentTurn[]) {
     this.#turns = "status" in turn ? [turn] : [...turn];
+  }
+
+  preflight(request: HarnessPreflightRequest): Promise<void> {
+    this.preflightRequests.push(request);
+    return Promise.resolve();
   }
 
   runInNewSession(request: AgentRequest): Promise<AgentTurn> {

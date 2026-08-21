@@ -90,7 +90,9 @@ export class Dispatcher {
     if (task === null) {
       return { runId: request.runId, status: "source_exhausted" };
     }
-    if (preflight) await this.dependencies.runner.preflight?.();
+    if (preflight) {
+      await this.dependencies.runner.preflight({ skills: request.skills });
+    }
     const before = await this.inspectBaseline(
       task,
       request.allowDirty ?? false,

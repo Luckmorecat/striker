@@ -19,6 +19,21 @@ describe("Striker project configuration", () => {
     });
   });
 
+  it.each(["codex", "claude", "opencode", "pi"] as const)(
+    "accepts the %s harness",
+    (harness) => {
+      expect(
+        parseProjectConfig({ harness, taskSource: "striker-plan" }),
+      ).toMatchObject({ harness });
+    },
+  );
+
+  it("rejects an unsupported harness", () => {
+    expect(() =>
+      parseProjectConfig({ harness: "missing", taskSource: "striker-plan" }),
+    ).toThrow();
+  });
+
   it("loads only the tracked project configuration file", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-config-"));
     await writeFile(

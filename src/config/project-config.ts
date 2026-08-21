@@ -3,10 +3,12 @@ import path from "node:path";
 
 import { z } from "zod";
 
+import { agentHarnesses, type AgentHarness } from "../core/contracts.js";
+
 export const projectConfigSchema = z
   .object({
     $schema: z.string().min(1).optional(),
-    harness: z.literal("codex").optional(),
+    harness: z.enum(agentHarnesses).optional(),
     skills: z.array(z.string().min(1)).optional(),
     taskSource: z.literal("striker-plan"),
   })
@@ -22,7 +24,7 @@ export const projectConfigJsonSchema = z.toJSONSchema(projectConfigSchema, {
 
 export interface ProjectConfig {
   readonly $schema?: string;
-  readonly harness: "codex";
+  readonly harness: AgentHarness;
   readonly skills: readonly string[];
   readonly taskSource: "striker-plan";
 }

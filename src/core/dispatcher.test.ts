@@ -210,6 +210,33 @@ describe("Dispatcher sequential execution", () => {
       journal.events.filter((event) => event.type === "run_started"),
     ).toHaveLength(1);
     expect(journal.deletedRunIds).toEqual(["run-all"]);
+    expect(runner.preflightRequests).toEqual([{ skills: [] }]);
+  });
+
+  it("does not start task work or a journal after failed preflight", async () => {
+    const journal = new InMemoryRunJournal();
+    const runner: AgentRunner = {
+      preflight: () => Promise.reject(new Error('Harness "pi" is unavailable')),
+      runInNewSession: () => {
+        throw new Error("Task session must not start");
+      },
+    };
+    const dispatcher = new Dispatcher({
+      adapters: registryWithEvidence("complete"),
+      journal,
+      runner,
+    });
+
+    await expect(
+      dispatcher.dispatch({
+        completedTasks: [],
+        runId: "run-preflight",
+        skills: ["security"],
+        taskSource: { location: "memory://plan", type: "memory" },
+      }),
+    ).rejects.toThrow('Harness "pi" is unavailable');
+    expect(journal.events).toEqual([]);
+    expect(journal.snapshots).toEqual([]);
   });
 });
 
@@ -438,6 +465,10 @@ class ChangingPlanRunner implements AgentRunner {
     private readonly planRoot: string,
     private readonly manifest: (tasks: readonly string[]) => string,
   ) {}
+
+  preflight(): Promise<void> {
+    return Promise.resolve();
+  }
 
   async runInNewSession(request: AgentRequest) {
     this.#active += 1;

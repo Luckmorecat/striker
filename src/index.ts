@@ -1,5 +1,6 @@
 export { AdapterRegistry } from "./core/adapter-registry.js";
 export { Dispatcher } from "./core/dispatcher.js";
+export { agentHarnesses } from "./core/contracts.js";
 export {
   parseProjectConfig,
   projectConfigJsonSchema,
@@ -13,6 +14,7 @@ export {
 export type { PlanManifest } from "./adapters/striker-plan/plan-manifest.js";
 export type {
   AgentRequest,
+  AgentHarness,
   AgentRunner,
   AgentSession,
   AgentTurn,
@@ -20,6 +22,7 @@ export type {
   DispatchResult,
   GitRepository,
   GitState,
+  HarnessPreflightRequest,
   ImplementationTask,
   RunCommandHandler,
   RunCommandRequest,

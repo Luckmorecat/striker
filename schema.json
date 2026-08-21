@@ -3,7 +3,10 @@
   "type": "object",
   "properties": {
     "$schema": { "type": "string", "minLength": 1 },
-    "harness": { "type": "string", "const": "codex" },
+    "harness": {
+      "type": "string",
+      "enum": ["codex", "claude", "opencode", "pi"]
+    },
     "skills": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }

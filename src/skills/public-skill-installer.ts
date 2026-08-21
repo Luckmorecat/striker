@@ -9,15 +9,14 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 
-import type { PublicSkillInstaller } from "../core/contracts.js";
+import {
+  agentHarnesses,
+  type AgentHarness,
+  type PublicSkillInstaller,
+} from "../core/contracts.js";
 
-export const supportedHarnesses = [
-  "codex",
-  "claude",
-  "opencode",
-  "pi",
-] as const;
-export type SupportedHarness = (typeof supportedHarnesses)[number];
+export const supportedHarnesses = agentHarnesses;
+export type SupportedHarness = AgentHarness;
 
 const publicSkillNames = ["striker", "striker-plan"] as const;
 

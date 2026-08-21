@@ -65,6 +65,13 @@ export interface AgentSession {
   readonly id: string;
 }
 
+export const agentHarnesses = ["codex", "claude", "opencode", "pi"] as const;
+export type AgentHarness = (typeof agentHarnesses)[number];
+
+export interface HarnessPreflightRequest {
+  readonly skills: readonly string[];
+}
+
 export interface AgentRequest {
   readonly instructions: string;
   readonly skills: readonly string[];
@@ -84,7 +91,7 @@ export type AgentTurn =
     };
 
 export interface AgentRunner {
-  preflight?(): Promise<void>;
+  preflight(request: HarnessPreflightRequest): Promise<void>;
   runInNewSession(request: AgentRequest): Promise<AgentTurn>;
 }
 

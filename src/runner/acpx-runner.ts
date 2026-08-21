@@ -14,12 +14,23 @@ import {
 } from "acpx/runtime";
 
 import type {
+  AgentHarness,
   AgentRequest,
   AgentRunner,
   AgentTurn,
+  HarnessPreflightRequest,
 } from "../core/contracts.js";
+import {
+  assertPreflightResult,
+  harnessPreflightPrompt,
+} from "../preflight/harness-preflight.js";
 
 export interface AcpxRuntimeBoundary {
+  close(input: {
+    readonly handle: AcpRuntimeHandle;
+    readonly reason: string;
+    readonly discardPersistentState?: boolean;
+  }): Promise<void>;
   doctor(): Promise<AcpRuntimeDoctorReport>;
   ensureSession(input: AcpRuntimeEnsureInput): Promise<AcpRuntimeHandle>;
   probeAvailability(): Promise<void>;
@@ -37,8 +48,19 @@ export type PermissionRelay = (
 
 interface RunnerOptions {
   readonly cwd: string;
+  readonly harness: AgentHarness;
+  readonly preflightRuntime?: AcpxRuntimeBoundary;
   readonly runtime: AcpxRuntimeBoundary;
 }
+
+const harnessCapabilities: Readonly<
+  Record<AgentHarness, { readonly agent: string }>
+> = {
+  claude: { agent: "claude" },
+  codex: { agent: "codex" },
+  opencode: { agent: "opencode" },
+  pi: { agent: "pi" },
+};
 
 function promptText(request: AgentRequest): string {
   const sections = [
@@ -48,7 +70,7 @@ function promptText(request: AgentRequest): string {
     `# Implementation task\n\n${request.instructions}`,
     request.skills.length === 0
       ? undefined
-      : `# Configured installed skills\n\n${request.skills.join("\n")}`,
+      : `# Configured installed skills\n\nApply these after the packaged workflow:\n${request.skills.map((skill) => `$${skill}`).join("\n")}`,
   ];
   return sections.filter((section) => section !== undefined).join("\n\n");
 }
@@ -65,20 +87,39 @@ function collectText(events: AsyncIterable<AcpRuntimeEvent>): Promise<string> {
   })();
 }
 
+function doctorFailure(report: AcpRuntimeDoctorReport): {
+  readonly kind: "authentication failed" | "is unavailable";
+  readonly message: string;
+} {
+  const message = [report.message, ...(report.details ?? [])].join("; ");
+  return {
+    kind: /auth|credential|log[ -]?in|token|api key/iu.test(message)
+      ? "authentication failed"
+      : "is unavailable",
+    message,
+  };
+}
+
 export class AcpxAgentRunner implements AgentRunner {
   constructor(private readonly options: RunnerOptions) {}
 
-  async preflight(): Promise<void> {
-    await this.options.runtime.probeAvailability();
-    const report = await this.options.runtime.doctor();
-    if (!report.ok)
-      throw new Error(`Codex preflight failed: ${report.message}`);
+  async preflight(request: HarnessPreflightRequest): Promise<void> {
+    const runtime = this.options.preflightRuntime ?? this.options.runtime;
+    await this.probeHarness(runtime);
+    const report = await runtime.doctor();
+    if (!report.ok) {
+      const failure = doctorFailure(report);
+      throw new Error(
+        `Harness "${this.options.harness}" ${failure.kind}: ${failure.message}`,
+      );
+    }
+    await this.probeSkills(runtime, request.skills);
   }
 
   async runInNewSession(request: AgentRequest): Promise<AgentTurn> {
     const sessionKey = `striker-${randomUUID()}`;
     const handle = await this.options.runtime.ensureSession({
-      agent: "codex",
+      agent: harnessCapabilities[this.options.harness].agent,
       cwd: this.options.cwd,
       mode: "persistent",
       sessionKey,
@@ -104,20 +145,98 @@ export class AcpxAgentRunner implements AgentRunner {
         : (result.stopReason ?? "Agent turn was cancelled");
     return { error, session, status: "failed" };
   }
+
+  private async probeHarness(runtime: AcpxRuntimeBoundary): Promise<void> {
+    try {
+      await runtime.probeAvailability();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Harness "${this.options.harness}" is unavailable: ${message}`,
+        { cause: error },
+      );
+    }
+  }
+
+  private async probeSkills(
+    runtime: AcpxRuntimeBoundary,
+    skills: readonly string[],
+  ): Promise<void> {
+    const sessionKey = `striker-preflight-${randomUUID()}`;
+    let handle: AcpRuntimeHandle;
+    try {
+      handle = await runtime.ensureSession({
+        agent: harnessCapabilities[this.options.harness].agent,
+        cwd: this.options.cwd,
+        mode: "persistent",
+        sessionKey,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Harness "${this.options.harness}" authentication failed: ${message}`,
+        { cause: error },
+      );
+    }
+    try {
+      const turn = runtime.startTurn({
+        handle,
+        mode: "prompt",
+        requestId: randomUUID(),
+        text: harnessPreflightPrompt(skills),
+      });
+      const outputPromise = collectText(turn.events);
+      const result = await turn.result;
+      const output = await outputPromise;
+      if (result.status !== "completed") {
+        const message =
+          result.status === "failed"
+            ? result.error.message
+            : (result.stopReason ?? "session cancelled");
+        throw new Error(
+          `Harness "${this.options.harness}" preflight session failed: ${message}`,
+        );
+      }
+      assertPreflightResult(this.options.harness, skills, output);
+    } finally {
+      await runtime.close({
+        discardPersistentState: true,
+        handle,
+        reason: "Striker preflight complete",
+      });
+    }
+  }
 }
 
 export function createAcpxAgentRunner(options: {
   readonly cwd: string;
+  readonly harness: AgentHarness;
   readonly permissionRelay: PermissionRelay;
   readonly stateDir: string;
 }): AcpxAgentRunner {
+  const agent = harnessCapabilities[options.harness].agent;
+  const agentRegistry = createAgentRegistry();
   const runtime = createAcpRuntime({
-    agentRegistry: createAgentRegistry(),
+    agentRegistry,
     cwd: options.cwd,
     nonInteractivePermissions: "fail",
     onPermissionRequest: (request) => options.permissionRelay(request),
     permissionMode: "approve-reads",
     sessionStore: createRuntimeStore({ stateDir: options.stateDir }),
   });
-  return new AcpxAgentRunner({ cwd: options.cwd, runtime });
+  const preflightRuntime = createAcpRuntime({
+    agentRegistry,
+    cwd: options.cwd,
+    nonInteractivePermissions: "deny",
+    onPermissionRequest: () => Promise.resolve({ outcome: "reject_once" }),
+    permissionMode: "approve-reads",
+    probeAgent: agent,
+    sessionStore: createRuntimeStore({ stateDir: options.stateDir }),
+  });
+  return new AcpxAgentRunner({
+    cwd: options.cwd,
+    harness: options.harness,
+    preflightRuntime,
+    runtime,
+  });
 }

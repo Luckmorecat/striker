@@ -6,24 +6,28 @@ import type {
 } from "acpx/runtime";
 import { describe, expect, it } from "vitest";
 
+import { agentHarnesses } from "../core/contracts.js";
 import { AcpxAgentRunner, type AcpxRuntimeBoundary } from "./acpx-runner.js";
 
 class FakeRuntime implements AcpxRuntimeBoundary {
-  ensureInput: AcpRuntimeEnsureInput | null = null;
+  readonly closed: AcpRuntimeHandle[] = [];
+  readonly ensureInputs: AcpRuntimeEnsureInput[] = [];
+  doctorMessage = "ready";
   healthy = true;
+  output = "done";
   turnText = "";
 
   doctor() {
     return Promise.resolve({
-      message: this.healthy ? "ready" : "login required",
+      message: this.healthy ? "ready" : this.doctorMessage,
       ok: this.healthy,
     });
   }
 
   ensureSession(input: AcpRuntimeEnsureInput): Promise<AcpRuntimeHandle> {
-    this.ensureInput = input;
+    this.ensureInputs.push(input);
     return Promise.resolve({
-      agentSessionId: "codex-session",
+      agentSessionId: `${input.agent}-session`,
       backend: "acpx",
       runtimeSessionName: input.sessionKey,
       sessionKey: input.sessionKey,
@@ -34,11 +38,17 @@ class FakeRuntime implements AcpxRuntimeBoundary {
     return Promise.resolve();
   }
 
+  close(input: { readonly handle: AcpRuntimeHandle }): Promise<void> {
+    this.closed.push(input.handle);
+    return Promise.resolve();
+  }
+
   startTurn(input: { readonly text: string }): AcpRuntimeTurn {
     this.turnText = input.text;
+    const output = this.output;
     const events = (async function* (): AsyncGenerator<AcpRuntimeEvent> {
       await Promise.resolve();
-      yield { stream: "output", text: "done", type: "text_delta" };
+      yield { stream: "output", text: output, type: "text_delta" };
     })();
     return {
       cancel: () => Promise.resolve(),
@@ -51,10 +61,14 @@ class FakeRuntime implements AcpxRuntimeBoundary {
   }
 }
 
-describe("acpx Codex runner", () => {
+describe("acpx task sessions", () => {
   it("injects private workflow instructions into a fresh persistent session", async () => {
     const runtime = new FakeRuntime();
-    const runner = new AcpxAgentRunner({ cwd: "/repo", runtime });
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
 
     await expect(
       runner.runInNewSession({
@@ -67,25 +81,83 @@ describe("acpx Codex runner", () => {
       session: { id: "codex-session" },
       status: "returned",
     });
-    expect(runtime.ensureInput).toMatchObject({
+    expect(runtime.ensureInputs.at(-1)).toMatchObject({
       agent: "codex",
       mode: "persistent",
     });
-    expect("skills" in (runtime.ensureInput ?? {})).toBe(false);
+    expect("skills" in (runtime.ensureInputs.at(-1) ?? {})).toBe(false);
     expect(runtime.turnText).toContain(
       "# Packaged Striker workflow\n\nprivate implementor",
     );
     expect(runtime.turnText).toContain(
-      "# Configured installed skills\n\nsecurity",
+      "# Configured installed skills\n\nApply these after the packaged workflow:\n$security",
     );
   });
 
   it("fails preflight when Codex authentication is unavailable", async () => {
     const runtime = new FakeRuntime();
+    runtime.doctorMessage = "login required";
     runtime.healthy = false;
 
     await expect(
-      new AcpxAgentRunner({ cwd: "/repo", runtime }).preflight(),
-    ).rejects.toThrow("Codex preflight failed: login required");
+      new AcpxAgentRunner({
+        cwd: "/repo",
+        harness: "codex",
+        runtime,
+      }).preflight({
+        skills: [],
+      }),
+    ).rejects.toThrow('Harness "codex" authentication failed: login required');
+  });
+});
+
+describe("acpx harness preflight", () => {
+  it.each(agentHarnesses)(
+    "preflights %s in a disposable session",
+    async (harness) => {
+      const runtime = new FakeRuntime();
+      runtime.output = 'STRIKER_PREFLIGHT_RESULT {"available":["security"]}';
+      const runner = new AcpxAgentRunner({ cwd: "/repo", harness, runtime });
+
+      await expect(
+        runner.preflight({ skills: ["security"] }),
+      ).resolves.toBeUndefined();
+
+      expect(runtime.ensureInputs).toHaveLength(1);
+      expect(runtime.ensureInputs[0]).toMatchObject({ agent: harness });
+      expect(runtime.turnText).toContain('"security"');
+      expect(runtime.turnText).not.toContain("striker-implementor");
+      expect(runtime.closed).toHaveLength(1);
+    },
+  );
+
+  it("names an unavailable harness", async () => {
+    const runtime = new FakeRuntime();
+    runtime.doctorMessage = "agent command not found";
+    runtime.healthy = false;
+
+    await expect(
+      new AcpxAgentRunner({ cwd: "/repo", harness: "pi", runtime }).preflight({
+        skills: [],
+      }),
+    ).rejects.toThrow('Harness "pi" is unavailable: agent command not found');
+    expect(runtime.ensureInputs).toEqual([]);
+  });
+
+  it("names a missing configured skill", async () => {
+    const runtime = new FakeRuntime();
+    runtime.output = 'STRIKER_PREFLIGHT_RESULT {"available":[]}';
+
+    await expect(
+      new AcpxAgentRunner({
+        cwd: "/repo",
+        harness: "claude",
+        runtime,
+      }).preflight({
+        skills: ["security"],
+      }),
+    ).rejects.toThrow(
+      'Configured skill "security" is unavailable in harness "claude"',
+    );
   });
 });
