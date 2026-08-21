@@ -2,18 +2,24 @@ import type { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
   AgentSession,
+  RunAttention,
   DispatchRequest,
   DispatchResult,
   ImplementationTask,
   GitState,
   GitRepository,
   RunJournal,
-  TaskExecutionEvidence,
   TaskIdentity,
   TaskSource,
   TaskSourceConflict,
   Verifier,
 } from "./contracts.js";
+import {
+  collectExecutionEvidence,
+  executionAttention,
+  inspectBaseline,
+} from "./dispatch-evidence.js";
+import { PausedRunRecovery } from "./paused-run-recovery.js";
 import { transitionRun } from "./run-state.js";
 
 export interface DispatcherDependencies {
@@ -22,22 +28,6 @@ export interface DispatcherDependencies {
   readonly journal: RunJournal;
   readonly git?: GitRepository;
   readonly verifier?: Verifier;
-}
-
-function pathsOverlap(left: string, right: string): boolean {
-  return (
-    left === right ||
-    left.startsWith(`${right}/`) ||
-    right.startsWith(`${left}/`)
-  );
-}
-
-function sameBaseline(before: GitState, after: GitState): boolean {
-  return (
-    before.trackedPatch === after.trackedPatch &&
-    JSON.stringify(before.untrackedHashes) ===
-      JSON.stringify(after.untrackedHashes)
-  );
 }
 
 export class Dispatcher {
@@ -77,6 +67,22 @@ export class Dispatcher {
     return result;
   }
 
+  async answer(answer: string): Promise<DispatchResult> {
+    return this.recovery().answer(answer);
+  }
+
+  async resume(): Promise<DispatchResult> {
+    return this.recovery().resume();
+  }
+
+  private recovery(): PausedRunRecovery {
+    return new PausedRunRecovery(this.dependencies, {
+      complete: (...arguments_) => this.completeReturnedTurn(...arguments_),
+      continueRun: (request) => this.dispatch(request),
+      fail: (...arguments_) => this.finishFailed(...arguments_),
+    });
+  }
+
   private async dispatchNext(
     request: DispatchRequest,
     completed: readonly TaskIdentity[],
@@ -93,11 +99,12 @@ export class Dispatcher {
     if (preflight) {
       await this.dependencies.runner.preflight({ skills: request.skills });
     }
-    const before = await this.inspectBaseline(
+    const before = await inspectBaseline(
+      this.dependencies,
       task,
       request.allowDirty ?? false,
     );
-    await this.ensureRunning(request.runId, task);
+    await this.ensureRunning(request, task, before);
     const turn = await this.dependencies.runner.runInNewSession({
       instructions: task.instructions,
       skills: request.skills,
@@ -106,7 +113,7 @@ export class Dispatcher {
         : { workflowInstructions: task.execution.workflowInstructions }),
     });
     if (turn.status === "failed") {
-      return this.finishFailed(request.runId, task, turn.session, turn.error);
+      return this.finishFailed(request, task, turn.session, turn.error, before);
     }
     return this.completeReturnedTurn(
       request,
@@ -114,6 +121,7 @@ export class Dispatcher {
       task,
       turn.session,
       before,
+      turn.output,
     );
   }
 
@@ -137,34 +145,38 @@ export class Dispatcher {
     task: ImplementationTask,
     session: AgentSession,
     before: GitState | undefined,
+    agentOutput: string,
   ): Promise<DispatchResult> {
-    const execution = await this.collectExecutionEvidence(task, before);
-    if (execution !== undefined && execution.verification.exitCode !== 0) {
+    const execution = await collectExecutionEvidence(
+      this.dependencies,
+      task,
+      before,
+    );
+    const attention = executionAttention(execution);
+    if (attention !== null) {
       return this.finishNeedsAttention(
-        request.runId,
+        request,
         task,
         session,
-        "verification_failed",
+        attention,
+        before,
       );
     }
-    if (execution !== undefined && !this.validGitEvidence(execution)) {
+    const completion = await source.completionEvidence(
+      task,
+      execution,
+      agentOutput,
+    );
+    if (completion.status === "needs_attention") {
       return this.finishNeedsAttention(
-        request.runId,
+        request,
         task,
         session,
-        "git_evidence_invalid",
+        completion.attention,
+        before,
       );
     }
-    const evidence = await source.completionEvidence(task, execution);
-
-    if (evidence === null) {
-      return this.finishNeedsAttention(
-        request.runId,
-        task,
-        session,
-        "completion_evidence_missing",
-      );
-    }
+    const { evidence } = completion;
 
     transitionRun("running", "complete_task");
     await this.dependencies.journal.append({
@@ -202,15 +214,20 @@ export class Dispatcher {
   }
 
   private async ensureRunning(
-    runId: string,
+    request: DispatchRequest,
     task: ImplementationTask,
+    before: GitState | undefined,
   ): Promise<void> {
+    const { runId } = request;
     const recovery = await this.dependencies.journal.load(runId);
     if (recovery === null) {
       transitionRun("created", "start");
       await this.dependencies.journal.append({ runId, type: "run_started" });
     }
     await this.dependencies.journal.replace({
+      attention: null,
+      before: before ?? null,
+      request,
       runId,
       session: null,
       status: "running",
@@ -225,24 +242,32 @@ export class Dispatcher {
   }
 
   private async finishNeedsAttention(
-    runId: string,
+    request: DispatchRequest,
     task: ImplementationTask,
     session: AgentSession,
-    reason:
-      | "completion_evidence_missing"
-      | "git_evidence_invalid"
-      | "verification_failed",
+    attention: RunAttention,
+    before: GitState | undefined,
   ): Promise<DispatchResult> {
+    const { runId } = request;
     const status = transitionRun("running", "request_attention");
     await this.dependencies.journal.append({
+      attention,
       runId,
       session,
       task: task.identity,
       type: "run_needs_attention",
     });
-    await this.dependencies.journal.replace({ runId, session, status, task });
+    await this.dependencies.journal.replace({
+      attention,
+      before: before ?? null,
+      request,
+      runId,
+      session,
+      status,
+      task,
+    });
     return {
-      reason,
+      reason: attention.reason,
       runId,
       session,
       status: "needs_attention",
@@ -282,66 +307,14 @@ export class Dispatcher {
     };
   }
 
-  private async inspectBaseline(
-    task: ImplementationTask,
-    allowDirty: boolean,
-  ): Promise<GitState | undefined> {
-    const execution = task.execution;
-    if (execution === undefined) return undefined;
-    const git = this.dependencies.git;
-    if (git === undefined)
-      throw new Error("Git repository dependency is required");
-    const state = await git.inspect(execution.cwd);
-    if (state.dirtyPaths.length === 0) return state;
-    if (!allowDirty)
-      throw new Error("Repository is dirty; pass --allow-dirty to preserve it");
-    const overlap = state.dirtyPaths.find((dirtyPath) =>
-      execution.affectedPaths.some((taskPath) =>
-        pathsOverlap(dirtyPath, taskPath),
-      ),
-    );
-    if (overlap !== undefined) {
-      throw new Error(`Task overlaps dirty path: ${overlap}`);
-    }
-    return state;
-  }
-
-  private async collectExecutionEvidence(
-    task: ImplementationTask,
-    before: GitState | undefined,
-  ): Promise<TaskExecutionEvidence | undefined> {
-    if (task.execution === undefined || before === undefined) return undefined;
-    const git = this.dependencies.git;
-    const verifier = this.dependencies.verifier;
-    if (git === undefined || verifier === undefined) {
-      throw new Error("Git and verifier dependencies are required");
-    }
-    const verification = await verifier.verify({
-      command: task.execution.verifyCommand,
-      cwd: task.execution.cwd,
-    });
-    const after = await git.inspect(task.execution.cwd);
-    const commits = await git.commitsBetween(
-      task.execution.cwd,
-      before.head,
-      after.head,
-    );
-    return { after, before, commits, verification };
-  }
-
-  private validGitEvidence(evidence: TaskExecutionEvidence): boolean {
-    return (
-      evidence.commits.length === 1 &&
-      sameBaseline(evidence.before, evidence.after)
-    );
-  }
-
   private async finishFailed(
-    runId: string,
+    request: DispatchRequest,
     task: ImplementationTask,
     session: AgentSession,
     error: string,
+    before: GitState | undefined,
   ): Promise<DispatchResult> {
+    const { runId } = request;
     const status = transitionRun("running", "fail");
     await this.dependencies.journal.append({
       error,
@@ -350,7 +323,15 @@ export class Dispatcher {
       task: task.identity,
       type: "run_failed",
     });
-    await this.dependencies.journal.replace({ runId, session, status, task });
+    await this.dependencies.journal.replace({
+      attention: null,
+      before: before ?? null,
+      request,
+      runId,
+      session,
+      status,
+      task,
+    });
     return { error, runId, session, status: "failed", task };
   }
 }

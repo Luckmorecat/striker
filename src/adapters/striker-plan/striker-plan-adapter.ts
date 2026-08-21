@@ -3,7 +3,7 @@ import path from "node:path";
 
 import type {
   ImplementationTask,
-  TaskCompletionEvidence,
+  TaskCompletionResult,
   TaskExecutionEvidence,
   TaskIdentity,
   TaskSource,
@@ -19,6 +19,10 @@ import {
   type StrikerPlanTask,
 } from "./plan-parser.js";
 import { loadImplementorWorkflow } from "./workflow-loader.js";
+import {
+  hasReviewEvidence,
+  reviewEvidenceInstructions,
+} from "./review-evidence.js";
 
 interface AdapterOptions {
   readonly projectRoot: string;
@@ -55,7 +59,6 @@ function inRepositorySupportPaths(
 class StrikerPlanSource implements TaskSource {
   readonly #logPath: string;
   readonly #planRoot: string;
-  #logSizeBefore = 0;
 
   constructor(
     private readonly plan: StrikerPlan,
@@ -77,8 +80,8 @@ class StrikerPlanSource implements TaskSource {
         !includesIdentity(markers, candidate.identity),
     );
     if (task === undefined) return null;
-    this.#logSizeBefore = (await stat(this.#logPath)).size;
-    return this.withExecution(task);
+    const logSizeBefore = (await stat(this.#logPath)).size;
+    return this.withExecution(task, logSizeBefore);
   }
 
   async reconcileCompleted(
@@ -102,13 +105,44 @@ class StrikerPlanSource implements TaskSource {
   async completionEvidence(
     task: ImplementationTask,
     execution?: TaskExecutionEvidence,
-  ): Promise<TaskCompletionEvidence | null> {
-    if (execution === undefined) return null;
+    agentOutput = "",
+  ): Promise<TaskCompletionResult> {
+    if (execution === undefined) {
+      return {
+        attention: {
+          detail: "The task has no execution evidence.",
+          reason: "completion_evidence_missing",
+        },
+        status: "needs_attention",
+      };
+    }
     const logSizeAfter = (await stat(this.#logPath)).size;
-    if (logSizeAfter <= this.#logSizeBefore) return null;
+    const logSizeBefore = Number(task.completionToken ?? "0");
+    if (logSizeAfter <= logSizeBefore) {
+      return {
+        attention: {
+          detail:
+            "The implementor did not append the required human plan log entry.",
+          reason: "human_log_missing",
+        },
+        status: "needs_attention",
+      };
+    }
+    if (!hasReviewEvidence(agentOutput)) {
+      return {
+        attention: {
+          detail: "The implementor did not report both required review passes.",
+          reason: "review_evidence_missing",
+        },
+        status: "needs_attention",
+      };
+    }
     return {
-      summary: `${task.title} passed Git, log, and verification evidence`,
-      verification: execution.verification,
+      evidence: {
+        summary: `${task.title} passed Git, log, reviews, and verification evidence`,
+        verification: execution.verification,
+      },
+      status: "completed",
     };
   }
 
@@ -116,9 +150,13 @@ class StrikerPlanSource implements TaskSource {
     await appendCompletionMarker(this.#logPath, task.identity);
   }
 
-  private withExecution(task: StrikerPlanTask): ImplementationTask {
+  private withExecution(
+    task: StrikerPlanTask,
+    logSizeBefore: number,
+  ): ImplementationTask {
     return {
       ...task,
+      completionToken: String(logSizeBefore),
       instructions: `${task.instructions}\n\n## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\nLog: ${this.#logPath}\n`,
       execution: {
         affectedPaths: [
@@ -127,7 +165,7 @@ class StrikerPlanSource implements TaskSource {
         ],
         cwd: this.projectRoot,
         verifyCommand: task.verifyCommand,
-        workflowInstructions: this.workflow,
+        workflowInstructions: `${this.workflow}\n\n${reviewEvidenceInstructions}`,
       },
     };
   }

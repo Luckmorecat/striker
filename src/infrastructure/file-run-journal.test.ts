@@ -76,6 +76,59 @@ describe("file run journal", () => {
     await expect(journal.load("missing")).resolves.toBeNull();
     await expect(journal.load("run-1")).resolves.toEqual({
       completedTasks: [task],
+      snapshot: null,
     });
+  });
+});
+
+describe("file run journal recovery", () => {
+  it("recovers the active paused session, reason, and developer answer", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-pause-"));
+    const journal = new FileRunJournal(root);
+    const task = {
+      identity: { id: "tasks/01.md", revision: "revision-1" },
+      instructions: "Build the task.",
+      title: "Build the task",
+    };
+    const session = { id: "runtime-key", resumeId: "agent-session" };
+    await journal.append({ runId: "run-1", type: "run_started" });
+    await journal.append({
+      answer: "Use the existing schema.",
+      runId: "run-1",
+      session,
+      task: task.identity,
+      type: "run_answered",
+    });
+    await journal.replace({
+      attention: {
+        detail: "The verification command exited with code 1.\nfailed output",
+        reason: "verification_failed",
+      },
+      before: null,
+      request: {
+        completedTasks: [],
+        runId: "run-1",
+        skills: [],
+        taskSource: { location: "/repo/plan", type: "striker-plan" },
+      },
+      runId: "run-1",
+      session,
+      status: "needs_attention",
+      task,
+    });
+
+    await expect(journal.loadActive()).resolves.toMatchObject({
+      completedTasks: [],
+      snapshot: {
+        attention: { reason: "verification_failed" },
+        session,
+        status: "needs_attention",
+      },
+    });
+    const eventsPath = path.join(root, "runs/run-1/events.ndjson");
+    expect(await readFile(eventsPath, "utf8")).toContain(
+      "Use the existing schema.",
+    );
+    expect((await stat(eventsPath)).mode & 0o777).toBe(0o600);
   });
 });

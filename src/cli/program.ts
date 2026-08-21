@@ -4,11 +4,14 @@ import type {
   PlanValidator,
   PermissionConfig,
   PublicSkillInstaller,
+  RecoveryCommandHandler,
   RunCommandHandler,
 } from "../core/contracts.js";
+import { addAnswerCommand, type AnswerReader } from "./answer-command.js";
 import { addPlanCommand } from "./plan-command.js";
 import { addPermissionsCommand } from "./permissions-command.js";
 import { addRunCommand } from "./run-command.js";
+import { addResumeCommand } from "./resume-command.js";
 import { addSkillsCommand } from "./skills-command.js";
 
 export interface CliWriter {
@@ -16,10 +19,12 @@ export interface CliWriter {
 }
 
 export interface CliDependencies {
+  readonly answerReader?: AnswerReader;
   readonly cwd: string;
   readonly permissionConfig: PermissionConfig;
   readonly planValidator: PlanValidator;
   readonly runHandler?: RunCommandHandler;
+  readonly recoveryHandler?: RecoveryCommandHandler;
   readonly skillInstaller: PublicSkillInstaller;
   readonly stderr: CliWriter;
   readonly stdout: CliWriter;
@@ -52,6 +57,22 @@ export function createProgram(dependencies: CliDependencies): Command {
     addRunCommand(program, {
       handler: dependencies.runHandler,
       permissionConfig: dependencies.permissionConfig,
+      writeOut: (text) => dependencies.stdout.write(text),
+    });
+  }
+  if (
+    dependencies.recoveryHandler !== undefined &&
+    dependencies.answerReader !== undefined
+  ) {
+    addAnswerCommand(program, {
+      handler: dependencies.recoveryHandler,
+      reader: dependencies.answerReader,
+      writeOut: (text) => dependencies.stdout.write(text),
+    });
+  }
+  if (dependencies.recoveryHandler !== undefined) {
+    addResumeCommand(program, {
+      handler: dependencies.recoveryHandler,
       writeOut: (text) => dependencies.stdout.write(text),
     });
   }

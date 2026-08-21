@@ -17,6 +17,7 @@ import type {
   AgentHarness,
   AgentRequest,
   AgentRunner,
+  AgentSession,
   AgentTurn,
   ApprovalMode,
   HarnessPreflightRequest,
@@ -135,18 +136,51 @@ export class AcpxAgentRunner implements AgentRunner {
         ? {}
         : { sessionOptions: { env: sessionEnvironment } }),
     });
+    const session = {
+      id: sessionKey,
+      ...(handle.backendSessionId === undefined
+        ? {}
+        : { resumeId: handle.backendSessionId }),
+    };
+    return this.runTurn(handle, session, promptText(request));
+  }
+
+  async resumeSession(
+    session: AgentSession,
+    instructions: string,
+  ): Promise<AgentTurn> {
+    const handle = await this.options.runtime.ensureSession({
+      agent: harnessCapabilities[this.options.harness].agent,
+      cwd: this.options.cwd,
+      mode: "persistent",
+      sessionKey: session.id,
+      ...(session.resumeId === undefined
+        ? {}
+        : { resumeSessionId: session.resumeId }),
+    });
+    if (
+      session.resumeId !== undefined &&
+      handle.backendSessionId !== session.resumeId
+    ) {
+      throw new Error("Agent runner replaced the preserved backend session");
+    }
+    return this.runTurn(handle, session, instructions);
+  }
+
+  private async runTurn(
+    handle: AcpRuntimeHandle,
+    session: AgentSession,
+    text: string,
+  ): Promise<AgentTurn> {
     const turn = this.options.runtime.startTurn({
       handle,
       mode: "prompt",
       requestId: randomUUID(),
-      text: promptText(request),
+      text,
     });
     const outputPromise = collectText(turn.events);
     const result = await turn.result;
     const output = await outputPromise;
-    const session = {
-      id: handle.agentSessionId ?? handle.backendSessionId ?? sessionKey,
-    };
     if (result.status === "completed") {
       return { output, session, status: "returned" };
     }

@@ -139,7 +139,47 @@ export class FileRunJournal implements RunJournal {
       .filter((line) => line.length > 0)
       .map((line) => completedTaskFromLine(line, runId))
       .filter((task): task is TaskIdentity => task !== null);
-    return { completedTasks };
+    return { completedTasks, snapshot: await this.readSnapshot(runId) };
+  }
+
+  async loadActive(): Promise<RunRecoveryState | null> {
+    const claimPath = path.join(this.#runsRoot, "active-run");
+    let runId: string;
+    try {
+      runId = (await readFile(claimPath, "utf8")).trim();
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) return null;
+      throw error;
+    }
+    return this.load(runId);
+  }
+
+  private async readSnapshot(runId: string): Promise<RunSnapshot | null> {
+    const snapshotPath = path.join(this.runRoot(runId), "snapshot.json");
+    let content: string;
+    try {
+      content = await readFile(snapshotPath, "utf8");
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) return null;
+      throw error;
+    }
+    const value = requireRecord(
+      JSON.parse(content) as unknown,
+      "Invalid Striker run snapshot",
+    );
+    if (value.schema !== schema) {
+      throw new Error(
+        `Unsupported Striker run journal schema: ${String(value.schema)}`,
+      );
+    }
+    const snapshot = requireRecord(
+      value.snapshot,
+      "Invalid Striker run snapshot",
+    );
+    if (snapshot.runId !== runId) {
+      throw new Error("Striker run snapshot contains a mismatched run id");
+    }
+    return snapshot as unknown as RunSnapshot;
   }
 
   private async claimRun(runId: string): Promise<void> {

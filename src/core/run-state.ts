@@ -10,7 +10,7 @@ const transitions: Readonly<
     fail: "failed",
     request_attention: "needs_attention",
   },
-  needs_attention: { resume: "running" },
+  needs_attention: { answer: "running", resume: "running" },
   failed: { retry: "running" },
   completed: {},
 };

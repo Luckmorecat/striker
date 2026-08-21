@@ -217,6 +217,9 @@ describe("Dispatcher sequential execution", () => {
     const journal = new InMemoryRunJournal();
     const runner: AgentRunner = {
       preflight: () => Promise.reject(new Error('Harness "pi" is unavailable')),
+      resumeSession: () => {
+        throw new Error("Task session must not resume");
+      },
       runInNewSession: () => {
         throw new Error("Task session must not start");
       },
@@ -470,6 +473,10 @@ class ChangingPlanRunner implements AgentRunner {
     return Promise.resolve();
   }
 
+  resumeSession(): never {
+    throw new Error("Changing plan runner does not resume sessions");
+  }
+
   async runInNewSession(request: AgentRequest) {
     this.#active += 1;
     this.maximumActive = Math.max(this.maximumActive, this.#active);
@@ -490,7 +497,7 @@ class ChangingPlanRunner implements AgentRunner {
     }
     this.#active -= 1;
     return {
-      output: "done",
+      output: 'done\nSTRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
       session: { id: `session-${String(this.requests.length)}` },
       status: "returned" as const,
     };

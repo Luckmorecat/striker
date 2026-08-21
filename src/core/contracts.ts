@@ -8,6 +8,7 @@ export interface ImplementationTask {
   readonly title: string;
   readonly instructions: string;
   readonly execution?: TaskExecution;
+  readonly completionToken?: string;
 }
 
 export interface TaskExecution {
@@ -21,6 +22,16 @@ export interface TaskCompletionEvidence {
   readonly summary: string;
   readonly verification?: VerificationResult;
 }
+
+export type TaskCompletionResult =
+  | {
+      readonly status: "completed";
+      readonly evidence: TaskCompletionEvidence;
+    }
+  | {
+      readonly status: "needs_attention";
+      readonly attention: RunAttention;
+    };
 
 export interface TaskExecutionEvidence {
   readonly after: GitState;
@@ -39,7 +50,8 @@ export interface TaskSource {
   completionEvidence(
     task: ImplementationTask,
     execution?: TaskExecutionEvidence,
-  ): Promise<TaskCompletionEvidence | null>;
+    agentOutput?: string,
+  ): Promise<TaskCompletionResult>;
   markCompleted?(
     task: ImplementationTask,
     evidence: TaskCompletionEvidence,
@@ -63,6 +75,7 @@ export interface TaskSourceReference {
 
 export interface AgentSession {
   readonly id: string;
+  readonly resumeId?: string;
 }
 
 export const agentHarnesses = ["codex", "claude", "opencode", "pi"] as const;
@@ -101,6 +114,10 @@ export type AgentTurn =
 export interface AgentRunner {
   preflight(request: HarnessPreflightRequest): Promise<void>;
   runInNewSession(request: AgentRequest): Promise<AgentTurn>;
+  resumeSession(
+    session: AgentSession,
+    instructions: string,
+  ): Promise<AgentTurn>;
 }
 
 export interface VerificationRequest {
@@ -176,8 +193,27 @@ export interface RunCommandHandler {
   run(request: RunCommandRequest): Promise<RunCommandResult>;
 }
 
+export interface RecoveryCommandHandler {
+  answer(answer: string): Promise<RunCommandResult>;
+  resume(): Promise<RunCommandResult>;
+}
+
 export type RunStatus =
   "created" | "running" | "needs_attention" | "failed" | "completed";
+
+export type AttentionReason =
+  | "completion_evidence_missing"
+  | "commit_evidence_missing"
+  | "dirty_final_state"
+  | "human_log_missing"
+  | "review_evidence_missing"
+  | "session_resume_failed"
+  | "verification_failed";
+
+export interface RunAttention {
+  readonly detail: string;
+  readonly reason: AttentionReason;
+}
 
 export type RunTransition =
   | "start"
@@ -185,6 +221,7 @@ export type RunTransition =
   | "complete"
   | "request_attention"
   | "fail"
+  | "answer"
   | "resume"
   | "retry";
 
@@ -193,6 +230,9 @@ export interface RunSnapshot {
   readonly status: RunStatus;
   readonly task: ImplementationTask | null;
   readonly session: AgentSession | null;
+  readonly attention?: RunAttention | null;
+  readonly before?: GitState | null;
+  readonly request?: DispatchRequest;
 }
 
 export type RunJournalEvent =
@@ -210,6 +250,21 @@ export type RunJournalEvent =
       readonly runId: string;
       readonly task: TaskIdentity;
       readonly session: AgentSession;
+      readonly attention: RunAttention;
+    }
+  | {
+      readonly type: "run_answered";
+      readonly runId: string;
+      readonly task: TaskIdentity;
+      readonly session: AgentSession;
+      readonly answer: string;
+    }
+  | {
+      readonly type: "run_resumed";
+      readonly runId: string;
+      readonly task: TaskIdentity;
+      readonly session: AgentSession;
+      readonly attention: RunAttention;
     }
   | {
       readonly type: "run_failed";
@@ -230,10 +285,12 @@ export interface RunJournal {
   replace(snapshot: RunSnapshot): Promise<void>;
   delete(runId: string): Promise<void>;
   load(runId: string): Promise<RunRecoveryState | null>;
+  loadActive(): Promise<RunRecoveryState | null>;
 }
 
 export interface RunRecoveryState {
   readonly completedTasks: readonly TaskIdentity[];
+  readonly snapshot: RunSnapshot | null;
 }
 
 export interface DispatchRequest {
@@ -261,10 +318,7 @@ export type DispatchResult =
       readonly runId: string;
       readonly task: ImplementationTask;
       readonly session: AgentSession;
-      readonly reason:
-        | "completion_evidence_missing"
-        | "git_evidence_invalid"
-        | "verification_failed";
+      readonly reason: AttentionReason;
     }
   | {
       readonly status: "needs_attention";

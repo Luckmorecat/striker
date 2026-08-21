@@ -2,6 +2,7 @@ import type {
   AgentRequest,
   AgentRunner,
   AgentTurn,
+  AgentSession,
   HarnessPreflightRequest,
   ImplementationTask,
   RunJournal,
@@ -9,6 +10,7 @@ import type {
   RunRecoveryState,
   RunSnapshot,
   TaskCompletionEvidence,
+  TaskCompletionResult,
   TaskIdentity,
   TaskSource,
   TaskSourceAdapter,
@@ -58,10 +60,19 @@ class InMemoryTaskSource implements TaskSource {
     return Promise.resolve(null);
   }
 
-  completionEvidence(
-    task: ImplementationTask,
-  ): Promise<TaskCompletionEvidence | null> {
-    return Promise.resolve(this.evidence[task.identity.id] ?? null);
+  completionEvidence(task: ImplementationTask): Promise<TaskCompletionResult> {
+    const evidence = this.evidence[task.identity.id];
+    return Promise.resolve(
+      evidence === undefined
+        ? {
+            attention: {
+              detail: "The task source did not provide completion evidence.",
+              reason: "completion_evidence_missing",
+            },
+            status: "needs_attention",
+          }
+        : { evidence, status: "completed" },
+    );
   }
 }
 
@@ -83,6 +94,10 @@ export class FakeAgentRunner implements AgentRunner {
   lastRequest: AgentRequest | null = null;
   readonly preflightRequests: HarnessPreflightRequest[] = [];
   readonly requests: AgentRequest[] = [];
+  readonly resumeRequests: {
+    readonly instructions: string;
+    readonly session: AgentSession;
+  }[] = [];
   readonly #turns: AgentTurn[];
 
   constructor(turn: AgentTurn | readonly AgentTurn[]) {
@@ -97,6 +112,16 @@ export class FakeAgentRunner implements AgentRunner {
   runInNewSession(request: AgentRequest): Promise<AgentTurn> {
     this.lastRequest = request;
     this.requests.push(request);
+    const turn = this.#turns.shift();
+    if (turn === undefined) throw new Error("Missing fake agent turn");
+    return Promise.resolve(turn);
+  }
+
+  resumeSession(
+    session: AgentSession,
+    instructions: string,
+  ): Promise<AgentTurn> {
+    this.resumeRequests.push({ instructions, session });
     const turn = this.#turns.shift();
     if (turn === undefined) throw new Error("Missing fake agent turn");
     return Promise.resolve(turn);
@@ -124,12 +149,24 @@ export class InMemoryRunJournal implements RunJournal {
   }
 
   load(runId: string): Promise<RunRecoveryState | null> {
+    if (this.deletedRunIds.includes(runId)) return Promise.resolve(null);
     const events = this.events.filter((event) => event.runId === runId);
     if (events.length === 0) return Promise.resolve(null);
     return Promise.resolve({
       completedTasks: events
         .filter((event) => event.type === "task_completed")
         .map((event) => event.task),
+      snapshot:
+        this.snapshots.filter((item) => item.runId === runId).at(-1) ?? null,
     });
+  }
+
+  loadActive(): Promise<RunRecoveryState | null> {
+    const runId = this.events.find(
+      (event) =>
+        event.type === "run_started" &&
+        !this.deletedRunIds.includes(event.runId),
+    )?.runId;
+    return runId === undefined ? Promise.resolve(null) : this.load(runId);
   }
 }

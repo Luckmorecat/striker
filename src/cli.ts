@@ -2,7 +2,7 @@
 /// <reference types="node" />
 
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -14,7 +14,12 @@ import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
 import { runCli } from "./cli/program.js";
 import { loadProjectConfig } from "./config/project-config.js";
 import { AdapterRegistry } from "./core/adapter-registry.js";
-import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
+import type {
+  ApprovalMode,
+  DispatchResult,
+  PermissionConfig,
+  RunCommandResult,
+} from "./core/contracts.js";
 import { Dispatcher } from "./core/dispatcher.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
 import { GitCliRepository } from "./infrastructure/git-cli.js";
@@ -58,11 +63,9 @@ const permissionConfig: PermissionConfig = {
     new LocalPermissionConfig(await permissionFilePath()).write(mode),
 };
 
-async function dispatchRun(
-  source: string,
-  allowDirty: boolean,
+async function createDispatcher(
   approvalMode: ApprovalMode,
-) {
+): Promise<Dispatcher> {
   const root = await git.resolveRoot(cwd);
   const config = await loadProjectConfig(root);
   const stateRoot = await git.resolvePrivatePath(root, "striker");
@@ -74,7 +77,7 @@ async function dispatchRun(
       workflowRoot: path.join(skillsRoot, "striker-implementor"),
     }),
   );
-  const dispatcher = new Dispatcher({
+  return new Dispatcher({
     adapters: registry,
     git,
     journal: new FileRunJournal(stateRoot),
@@ -87,6 +90,16 @@ async function dispatchRun(
     }),
     verifier: new ShellVerifier(),
   });
+}
+
+async function dispatchRun(
+  source: string,
+  allowDirty: boolean,
+  approvalMode: ApprovalMode,
+) {
+  const root = await git.resolveRoot(cwd);
+  const config = await loadProjectConfig(root);
+  const dispatcher = await createDispatcher(approvalMode);
   return dispatcher.dispatch({
     allowDirty,
     completedTasks: [],
@@ -99,7 +112,37 @@ async function dispatchRun(
   });
 }
 
+function commandResult(result: DispatchResult): RunCommandResult {
+  if (result.status === "source_exhausted") {
+    return {
+      message: "Striker plan has no remaining tasks.",
+      status: "completed",
+    };
+  }
+  if (result.status === "completed") {
+    return {
+      message: `Completed ${result.task.identity.id}.`,
+      status: "completed",
+    };
+  }
+  if (result.status === "needs_attention") {
+    return {
+      message: `Run needs attention: ${result.reason}. Run \`striker answer\` or \`striker resume\`.`,
+      status: "needs_attention",
+    };
+  }
+  return { message: `Run failed: ${result.error}.`, status: "failed" };
+}
+
+async function readAnswer(file: string | undefined): Promise<string> {
+  if (file !== undefined) return readFile(path.resolve(cwd, file), "utf8");
+  let answer = "";
+  for await (const chunk of process.stdin) answer += String(chunk);
+  return answer;
+}
+
 process.exitCode = await runCli(process.argv.slice(2), {
+  answerReader: { read: readAnswer },
   cwd,
   permissionConfig,
   planValidator: {
@@ -111,25 +154,17 @@ process.exitCode = await runCli(process.argv.slice(2), {
   runHandler: {
     run: async ({ allowDirty, approvalMode, source }) => {
       const result = await dispatchRun(source, allowDirty, approvalMode);
-      if (result.status === "source_exhausted") {
-        return {
-          message: "Striker plan has no remaining tasks.",
-          status: "completed",
-        };
-      }
-      if (result.status === "completed") {
-        return {
-          message: `Completed ${result.task.identity.id}.`,
-          status: "completed",
-        };
-      }
-      if (result.status === "needs_attention") {
-        return {
-          message: `Run needs attention: ${result.reason}.`,
-          status: "needs_attention",
-        };
-      }
-      return { message: `Run failed: ${result.error}.`, status: "failed" };
+      return commandResult(result);
+    },
+  },
+  recoveryHandler: {
+    answer: async (answer) => {
+      const dispatcher = await createDispatcher(await permissionConfig.read());
+      return commandResult(await dispatcher.answer(answer));
+    },
+    resume: async () => {
+      const dispatcher = await createDispatcher(await permissionConfig.read());
+      return commandResult(await dispatcher.resume());
     },
   },
   skillInstaller: createPublicSkillInstaller(skillsRoot),

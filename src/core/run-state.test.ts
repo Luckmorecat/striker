@@ -12,6 +12,7 @@ describe("transitionRun", () => {
   });
 
   it("resumes paused and failed runs through their distinct transitions", () => {
+    expect(transitionRun("needs_attention", "answer")).toBe("running");
     expect(transitionRun("needs_attention", "resume")).toBe("running");
     expect(transitionRun("failed", "retry")).toBe("running");
   });

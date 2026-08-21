@@ -10,6 +10,7 @@ import { agentHarnesses } from "../core/contracts.js";
 import { AcpxAgentRunner, type AcpxRuntimeBoundary } from "./acpx-runner.js";
 
 class FakeRuntime implements AcpxRuntimeBoundary {
+  backendSessionId = "codex-session";
   readonly closed: AcpRuntimeHandle[] = [];
   readonly ensureInputs: AcpRuntimeEnsureInput[] = [];
   doctorMessage = "ready";
@@ -29,6 +30,7 @@ class FakeRuntime implements AcpxRuntimeBoundary {
     return Promise.resolve({
       agentSessionId: `${input.agent}-session`,
       backend: "acpx",
+      backendSessionId: this.backendSessionId,
       runtimeSessionName: input.sessionKey,
       sessionKey: input.sessionKey,
     });
@@ -70,15 +72,15 @@ describe("acpx task sessions", () => {
       runtime,
     });
 
-    await expect(
-      runner.runInNewSession({
-        instructions: "Build task 03.",
-        skills: ["security"],
-        workflowInstructions: "private implementor",
-      }),
-    ).resolves.toEqual({
+    const result = await runner.runInNewSession({
+      instructions: "Build task 03.",
+      skills: ["security"],
+      workflowInstructions: "private implementor",
+    });
+
+    expect(result).toMatchObject({
       output: "done",
-      session: { id: "codex-session" },
+      session: { resumeId: "codex-session" },
       status: "returned",
     });
     expect(runtime.ensureInputs.at(-1)).toMatchObject({
@@ -94,6 +96,53 @@ describe("acpx task sessions", () => {
     );
   });
 
+  it("continues the exact persistent session", async () => {
+    const runtime = new FakeRuntime();
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
+    const first = await runner.runInNewSession({
+      instructions: "Build task 03.",
+      skills: [],
+    });
+
+    const continued = await runner.resumeSession(
+      first.session,
+      "Use the existing schema.",
+    );
+
+    expect(continued.session).toEqual(first.session);
+    expect(runtime.ensureInputs.at(-1)).toMatchObject({
+      resumeSessionId: "codex-session",
+      sessionKey: first.session.id,
+    });
+    expect(runtime.turnText).toBe("Use the existing schema.");
+  });
+});
+
+describe("acpx recovered task sessions", () => {
+  it("rejects a replacement backend session before starting its turn", async () => {
+    const runtime = new FakeRuntime();
+    runtime.backendSessionId = "replacement-session";
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
+
+    await expect(
+      runner.resumeSession(
+        { id: "runtime-key", resumeId: "preserved-session" },
+        "Continue.",
+      ),
+    ).rejects.toThrow("replaced the preserved backend session");
+    expect(runtime.turnText).toBe("");
+  });
+});
+
+describe("acpx task preflight", () => {
   it("fails preflight when Codex authentication is unavailable", async () => {
     const runtime = new FakeRuntime();
     runtime.doctorMessage = "login required";

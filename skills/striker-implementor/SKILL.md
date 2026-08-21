@@ -30,3 +30,5 @@ Reconcile `spine.md` when code disproves a ledger fact or default. Reconcile
 Create exactly one commit containing the task implementation, its tests, and the
 plan reconciliation. Leave the checkout with only the pre-existing dirty
 baseline, if Striker allowed one. Return the commit and verification result.
+After both review passes and all checks succeed, follow the machine-readable
+review-evidence instruction that Striker adds to the task session.

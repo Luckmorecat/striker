@@ -101,15 +101,21 @@ describe("Striker plan adapter", () => {
       identity: { id: "tasks/01.md" },
     });
     expect(task?.execution?.workflowInstructions).toContain("private workflow");
+    expect(task?.execution?.workflowInstructions).toContain(
+      'STRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
+    );
     expect(task?.instructions).toContain(`Plan root: ${fixture.planRoot}`);
   });
+});
 
+describe("Striker plan completion evidence", () => {
   it("requires a human log addition before writing completion", async () => {
     const fixture = await createFixture();
-    const source = await new StrikerPlanAdapter({
+    const adapter = new StrikerPlanAdapter({
       projectRoot: fixture.root,
       workflowRoot: fixture.workflowRoot,
-    }).open(fixture.planRoot);
+    });
+    const source = await adapter.open(fixture.planRoot);
     const task = await source.nextTask([]);
     if (task === null) throw new Error("Expected a task");
     const before = gitState(fixture.root, "before");
@@ -122,18 +128,44 @@ describe("Striker plan adapter", () => {
     };
 
     await expect(
-      source.completionEvidence(task, execution),
-    ).resolves.toBeNull();
+      source.completionEvidence(task, execution, ""),
+    ).resolves.toMatchObject({
+      attention: { reason: "human_log_missing" },
+      status: "needs_attention",
+    });
     await appendFile(
       path.join(fixture.planRoot, "log.md"),
       "\nHuman result.\n",
     );
-    const evidence = await source.completionEvidence(task, execution);
-    expect(evidence?.verification?.exitCode).toBe(0);
-    if (evidence === null) throw new Error("Expected completion evidence");
+    const resumedSource = await adapter.open(fixture.planRoot);
+    await expect(
+      resumedSource.completionEvidence(task, execution, "done"),
+    ).resolves.toMatchObject({
+      attention: { reason: "review_evidence_missing" },
+      status: "needs_attention",
+    });
+    await expect(
+      resumedSource.completionEvidence(
+        task,
+        execution,
+        'STRIKER_REVIEWS {"standards":"passed","plan":"passed"} but review failed',
+      ),
+    ).resolves.toMatchObject({
+      attention: { reason: "review_evidence_missing" },
+      status: "needs_attention",
+    });
+    const result = await resumedSource.completionEvidence(
+      task,
+      execution,
+      'done\nSTRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
+    );
+    expect(result.status).toBe("completed");
+    if (result.status !== "completed")
+      throw new Error("Expected completion evidence");
+    expect(result.evidence.verification?.exitCode).toBe(0);
 
-    await source.markCompleted?.(task, evidence);
-    await expect(source.nextTask([])).resolves.toBeNull();
+    await resumedSource.markCompleted?.(task, result.evidence);
+    await expect(resumedSource.nextTask([])).resolves.toBeNull();
   });
 });
 
