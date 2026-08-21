@@ -25,7 +25,7 @@ describe("permission policy", () => {
       nonInteractivePermissions: "fail",
       relayRequests: false,
       requiredHarness: "codex",
-      sessionEnvironment: {
+      agentEnvironment: {
         CODEX_CONFIG:
           '{"approval_policy":"on-request","approvals_reviewer":"auto_review","sandbox_mode":"workspace-write"}',
       },

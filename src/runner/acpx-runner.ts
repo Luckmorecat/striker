@@ -4,6 +4,7 @@ import {
   createAcpRuntime,
   createAgentRegistry,
   createRuntimeStore,
+  type AcpAgentRegistry,
   type AcpPermissionDecision,
   type AcpPermissionRequest,
   type AcpRuntimeDoctorReport,
@@ -56,6 +57,31 @@ interface RunnerOptions {
   readonly harness: AgentHarness;
   readonly preflightRuntime?: AcpxRuntimeBoundary;
   readonly runtime: AcpxRuntimeBoundary;
+}
+
+export function createTaskAgentRegistry(
+  registry: AcpAgentRegistry,
+  agent: string,
+  environment?: Readonly<Record<string, string>>,
+): AcpAgentRegistry {
+  return {
+    list: () => registry.list(),
+    resolve: (agentName) => {
+      const command = registry.resolve(agentName);
+      if (agentName !== agent || environment === undefined) {
+        return command;
+      }
+      if (!Array.isArray(command)) {
+        throw new Error(
+          `Agent "${agent}" must resolve to structured argv to configure its environment`,
+        );
+      }
+      const assignments = Object.entries(environment).map(
+        ([name, value]) => `${name}=${value}`,
+      );
+      return ["/usr/bin/env", ...assignments, ...command];
+    },
+  };
 }
 
 const harnessCapabilities: Readonly<
@@ -127,17 +153,11 @@ export class AcpxAgentRunner implements AgentRunner {
     sessionStarted?: (session: AgentSession) => Promise<void>,
   ): Promise<AgentTurn> {
     const sessionKey = `striker-${randomUUID()}`;
-    const sessionEnvironment = permissionPolicyFor(
-      this.options.approvalMode ?? "attended",
-    ).sessionEnvironment;
     const handle = await this.options.runtime.ensureSession({
       agent: harnessCapabilities[this.options.harness].agent,
       cwd: this.options.cwd,
       mode: "persistent",
       sessionKey,
-      ...(sessionEnvironment === undefined
-        ? {}
-        : { sessionOptions: { env: sessionEnvironment } }),
     });
     const session = {
       id: sessionKey,
@@ -274,8 +294,13 @@ export function createAcpxAgentRunner(options: {
   const policy = permissionPolicyFor(options.approvalMode);
   const agent = harnessCapabilities[options.harness].agent;
   const agentRegistry = createAgentRegistry();
-  const runtime = createAcpRuntime({
+  const taskAgentRegistry = createTaskAgentRegistry(
     agentRegistry,
+    agent,
+    policy.agentEnvironment,
+  );
+  const runtime = createAcpRuntime({
+    agentRegistry: taskAgentRegistry,
     cwd: options.cwd,
     nonInteractivePermissions: policy.nonInteractivePermissions,
     onPermissionRequest: (request) =>

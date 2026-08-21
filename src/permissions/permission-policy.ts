@@ -5,7 +5,7 @@ export interface PermissionPolicy {
   readonly nonInteractivePermissions: "fail";
   readonly relayRequests: boolean;
   readonly requiredHarness?: AgentHarness;
-  readonly sessionEnvironment?: Readonly<Record<string, string>>;
+  readonly agentEnvironment?: Readonly<Record<string, string>>;
 }
 
 const policies: Readonly<Record<ApprovalMode, PermissionPolicy>> = {
@@ -19,7 +19,7 @@ const policies: Readonly<Record<ApprovalMode, PermissionPolicy>> = {
     nonInteractivePermissions: "fail",
     relayRequests: false,
     requiredHarness: "codex",
-    sessionEnvironment: {
+    agentEnvironment: {
       CODEX_CONFIG: JSON.stringify({
         approval_policy: "on-request",
         approvals_reviewer: "auto_review",

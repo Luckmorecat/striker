@@ -1,13 +1,19 @@
-import type {
-  AcpRuntimeEnsureInput,
-  AcpRuntimeEvent,
-  AcpRuntimeHandle,
-  AcpRuntimeTurn,
+import {
+  type AcpAgentRegistry,
+  type AcpRuntimeEnsureInput,
+  type AcpRuntimeEvent,
+  type AcpRuntimeHandle,
+  type AcpRuntimeTurn,
+  createAgentRegistry,
 } from "acpx/runtime";
 import { describe, expect, it } from "vitest";
 
 import { agentHarnesses } from "../core/contracts.js";
-import { AcpxAgentRunner, type AcpxRuntimeBoundary } from "./acpx-runner.js";
+import {
+  AcpxAgentRunner,
+  type AcpxRuntimeBoundary,
+  createTaskAgentRegistry,
+} from "./acpx-runner.js";
 
 class FakeRuntime implements AcpxRuntimeBoundary {
   backendSessionId = "codex-session";
@@ -118,6 +124,10 @@ describe("acpx task sessions", () => {
       resumeSessionId: "codex-session",
       sessionKey: first.session.id,
     });
+    expect(runtime.ensureInputs.map((input) => input.sessionOptions)).toEqual([
+      undefined,
+      undefined,
+    ]);
     expect(runtime.turnText).toBe("Use the existing schema.");
   });
 
@@ -247,7 +257,7 @@ describe("acpx harness preflight", () => {
     expect(runtime.ensureInputs).toEqual([]);
   });
 
-  it("applies the proved Codex auto-review config to task sessions", async () => {
+  it("keeps auto-review config out of persistent session options", async () => {
     const runtime = new FakeRuntime();
     runtime.output = 'STRIKER_PREFLIGHT_RESULT {"available":[]}';
     const runner = new AcpxAgentRunner({
@@ -260,11 +270,49 @@ describe("acpx harness preflight", () => {
     await runner.preflight({ skills: [] });
     await runner.runInNewSession({ instructions: "Build.", skills: [] });
 
-    expect(runtime.ensureInputs.at(-1)?.sessionOptions).toEqual({
-      env: {
-        CODEX_CONFIG:
-          '{"approval_policy":"on-request","approvals_reviewer":"auto_review","sandbox_mode":"workspace-write"}',
-      },
+    expect(runtime.ensureInputs.map((input) => input.sessionOptions)).toEqual([
+      undefined,
+      undefined,
+    ]);
+  });
+});
+
+describe("acpx task agent registry", () => {
+  it("prefixes only the selected structured command with its environment", () => {
+    const baseRegistry = createAgentRegistry();
+    const codexCommand = baseRegistry.resolve("codex");
+    expect(Array.isArray(codexCommand)).toBe(true);
+    if (!Array.isArray(codexCommand)) {
+      throw new Error("Expected the installed Codex registry entry to be argv");
+    }
+    const config =
+      '{"approval_policy":"on-request","approvals_reviewer":"auto_review","sandbox_mode":"workspace-write"}';
+    const taskRegistry = createTaskAgentRegistry(baseRegistry, "codex", {
+      CODEX_CONFIG: config,
     });
+
+    expect(taskRegistry.resolve("codex")).toEqual([
+      "/usr/bin/env",
+      `CODEX_CONFIG=${config}`,
+      ...codexCommand,
+    ]);
+    expect(taskRegistry.resolve("claude")).toEqual(
+      baseRegistry.resolve("claude"),
+    );
+    expect(taskRegistry.list()).toEqual(baseRegistry.list());
+  });
+
+  it("rejects a string command when environment injection is required", () => {
+    const baseRegistry: AcpAgentRegistry = {
+      list: () => ["codex"],
+      resolve: () => "codex-acp",
+    };
+    const taskRegistry = createTaskAgentRegistry(baseRegistry, "codex", {
+      CODEX_CONFIG: "{}",
+    });
+
+    expect(() => taskRegistry.resolve("codex")).toThrow(
+      'Agent "codex" must resolve to structured argv to configure its environment',
+    );
   });
 });
