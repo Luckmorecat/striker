@@ -5,6 +5,7 @@ const transitions: Readonly<
 > = {
   created: { start: "running" },
   running: {
+    complete_task: "running",
     complete: "completed",
     fail: "failed",
     request_attention: "needs_attention",

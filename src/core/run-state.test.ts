@@ -7,6 +7,7 @@ describe("transitionRun", () => {
     const running = transitionRun("created", "start");
 
     expect(running).toBe("running");
+    expect(transitionRun(running, "complete_task")).toBe("running");
     expect(transitionRun(running, "complete")).toBe("completed");
   });
 

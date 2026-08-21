@@ -81,6 +81,24 @@ class StrikerPlanSource implements TaskSource {
     return this.withExecution(task);
   }
 
+  async reconcileCompleted(
+    completed: readonly TaskIdentity[],
+  ): Promise<{ completed: TaskIdentity; current: TaskIdentity | null } | null> {
+    for (const identity of completed) {
+      const current = this.plan.tasks.find(
+        (task) => task.identity.id === identity.id,
+      );
+      if (current === undefined) return { completed: identity, current: null };
+      if (current.identity.revision !== identity.revision) {
+        return { completed: identity, current: current.identity };
+      }
+    }
+    for (const identity of completed) {
+      await appendCompletionMarker(this.#logPath, identity);
+    }
+    return null;
+  }
+
   async completionEvidence(
     task: ImplementationTask,
     execution?: TaskExecutionEvidence,

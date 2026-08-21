@@ -13,7 +13,7 @@ export function addRunCommand(
 ): void {
   program
     .command("run")
-    .description("Run the next task from a Striker plan")
+    .description("Run every remaining task from a Striker plan")
     .argument("<source>", "Striker plan directory")
     .option("--allow-dirty", "preserve non-overlapping existing changes")
     .action(async (source: string, options: { allowDirty?: boolean }) => {

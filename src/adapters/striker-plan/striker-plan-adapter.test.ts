@@ -1,4 +1,10 @@
-import { appendFile, mkdtemp, mkdir, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdtemp,
+  mkdir,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -128,5 +134,51 @@ describe("Striker plan adapter", () => {
 
     await source.markCompleted?.(task, evidence);
     await expect(source.nextTask([])).resolves.toBeNull();
+  });
+});
+
+describe("Striker plan completion reconciliation", () => {
+  it("replays durable completions and reports changed identities", async () => {
+    const fixture = await createFixture();
+    const adapter = new StrikerPlanAdapter({
+      projectRoot: fixture.root,
+      workflowRoot: fixture.workflowRoot,
+    });
+    const original = await adapter.open(fixture.planRoot);
+    const task = await original.nextTask([]);
+    if (task === null) throw new Error("Expected a task");
+
+    await expect(
+      original.reconcileCompleted([task.identity]),
+    ).resolves.toBeNull();
+    await expect(original.nextTask([])).resolves.toBeNull();
+
+    await writeFile(
+      path.join(fixture.planRoot, "tasks/01.md"),
+      taskText.replace("Add the command.", "Add the changed command."),
+    );
+    const changed = await adapter.open(fixture.planRoot);
+    const conflict = await changed.reconcileCompleted([task.identity]);
+    expect(conflict?.completed).toEqual(task.identity);
+    expect(conflict?.current?.id).toBe(task.identity.id);
+
+    await unlink(path.join(fixture.planRoot, "tasks/01.md"));
+    await writeFile(
+      path.join(fixture.planRoot, "tasks/02.md"),
+      taskText.replace("Build the command", "Build another command"),
+    );
+    await writeFile(
+      path.join(fixture.planRoot, "plan.json"),
+      JSON.stringify({
+        taskSource: "striker-plan",
+        tasks: ["tasks/02.md"],
+        version: 1,
+      }),
+    );
+    const removed = await adapter.open(fixture.planRoot);
+    await expect(removed.reconcileCompleted([task.identity])).resolves.toEqual({
+      completed: task.identity,
+      current: null,
+    });
   });
 });

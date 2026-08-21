@@ -66,7 +66,7 @@ async function dispatchRun(source: string, allowDirty: boolean) {
     }),
     verifier: new ShellVerifier(),
   });
-  return dispatcher.dispatchOne({
+  return dispatcher.dispatch({
     allowDirty,
     completedTasks: [],
     runId: randomUUID(),

@@ -10,9 +10,11 @@ import {
 import path from "node:path";
 
 import type {
+  RunRecoveryState,
   RunJournal,
   RunJournalEvent,
   RunSnapshot,
+  TaskIdentity,
 } from "../core/contracts.js";
 
 const schema = "striker.run.v1";
@@ -29,6 +31,49 @@ async function syncDirectory(directory: string): Promise<void> {
 async function ensurePrivateDirectory(directory: string): Promise<void> {
   await mkdir(directory, { mode: 0o700, recursive: true });
   await chmod(directory, 0o700);
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return error instanceof Error && "code" in error && error.code === code;
+}
+
+function requireRecord(
+  value: unknown,
+  message: string,
+): Record<string, unknown> {
+  if (typeof value !== "object" || value === null) throw new Error(message);
+  return value as Record<string, unknown>;
+}
+
+function taskIdentity(value: unknown): TaskIdentity {
+  const task = requireRecord(
+    value,
+    "Invalid completed task in Striker run journal",
+  );
+  if (typeof task.id !== "string" || typeof task.revision !== "string") {
+    throw new Error("Invalid completed task in Striker run journal");
+  }
+  return { id: task.id, revision: task.revision };
+}
+
+function completedTaskFromLine(
+  line: string,
+  runId: string,
+): TaskIdentity | null {
+  const value = requireRecord(
+    JSON.parse(line) as unknown,
+    "Invalid Striker run journal event",
+  );
+  if (value.schema !== schema) {
+    throw new Error(
+      `Unsupported Striker run journal schema: ${String(value.schema)}`,
+    );
+  }
+  const event = requireRecord(value.event, "Invalid Striker run journal event");
+  if (event.runId !== runId) {
+    throw new Error("Striker run journal contains a mismatched run id");
+  }
+  return event.type === "task_completed" ? taskIdentity(event.task) : null;
 }
 
 export class FileRunJournal implements RunJournal {
@@ -80,6 +125,23 @@ export class FileRunJournal implements RunJournal {
     await syncDirectory(this.#runsRoot);
   }
 
+  async load(runId: string): Promise<RunRecoveryState | null> {
+    const eventsPath = path.join(this.runRoot(runId), "events.ndjson");
+    let content: string;
+    try {
+      content = await readFile(eventsPath, "utf8");
+    } catch (error) {
+      if (hasCode(error, "ENOENT")) return null;
+      throw error;
+    }
+    const completedTasks = content
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => completedTaskFromLine(line, runId))
+      .filter((task): task is TaskIdentity => task !== null);
+    return { completedTasks };
+  }
+
   private async claimRun(runId: string): Promise<void> {
     const claimPath = path.join(this.#runsRoot, "active-run");
     try {
@@ -92,7 +154,7 @@ export class FileRunJournal implements RunJournal {
       }
       await syncDirectory(this.#runsRoot);
     } catch (error) {
-      if (!this.hasCode(error, "EEXIST")) throw error;
+      if (!hasCode(error, "EEXIST")) throw error;
       const active = (await readFile(claimPath, "utf8")).trim();
       if (active !== runId) {
         throw new Error(`Another Striker run is active: ${active}`, {
@@ -109,12 +171,8 @@ export class FileRunJournal implements RunJournal {
         await unlink(claimPath);
       }
     } catch (error) {
-      if (!this.hasCode(error, "ENOENT")) throw error;
+      if (!hasCode(error, "ENOENT")) throw error;
     }
-  }
-
-  private hasCode(error: unknown, code: string): boolean {
-    return error instanceof Error && "code" in error && error.code === code;
   }
 
   private runRoot(runId: string): string {

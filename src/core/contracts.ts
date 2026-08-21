@@ -30,6 +30,9 @@ export interface TaskExecutionEvidence {
 }
 
 export interface TaskSource {
+  reconcileCompleted(
+    completed: readonly TaskIdentity[],
+  ): Promise<TaskSourceConflict | null>;
   nextTask(
     completed: readonly TaskIdentity[],
   ): Promise<ImplementationTask | null>;
@@ -41,6 +44,11 @@ export interface TaskSource {
     task: ImplementationTask,
     evidence: TaskCompletionEvidence,
   ): Promise<void>;
+}
+
+export interface TaskSourceConflict {
+  readonly completed: TaskIdentity;
+  readonly current: TaskIdentity | null;
 }
 
 export interface TaskSourceAdapter {
@@ -156,7 +164,13 @@ export type RunStatus =
   "created" | "running" | "needs_attention" | "failed" | "completed";
 
 export type RunTransition =
-  "start" | "complete" | "request_attention" | "fail" | "resume" | "retry";
+  | "start"
+  | "complete_task"
+  | "complete"
+  | "request_attention"
+  | "fail"
+  | "resume"
+  | "retry";
 
 export interface RunSnapshot {
   readonly runId: string;
@@ -187,12 +201,23 @@ export type RunJournalEvent =
       readonly task: TaskIdentity;
       readonly session: AgentSession;
       readonly error: string;
+    }
+  | {
+      readonly type: "run_source_changed";
+      readonly runId: string;
+      readonly task: TaskIdentity;
+      readonly current: TaskIdentity | null;
     };
 
 export interface RunJournal {
   append(event: RunJournalEvent): Promise<void>;
   replace(snapshot: RunSnapshot): Promise<void>;
   delete(runId: string): Promise<void>;
+  load(runId: string): Promise<RunRecoveryState | null>;
+}
+
+export interface RunRecoveryState {
+  readonly completedTasks: readonly TaskIdentity[];
 }
 
 export interface DispatchRequest {
@@ -224,6 +249,15 @@ export type DispatchResult =
         | "completion_evidence_missing"
         | "git_evidence_invalid"
         | "verification_failed";
+    }
+  | {
+      readonly status: "needs_attention";
+      readonly runId: string;
+      readonly task: null;
+      readonly session: null;
+      readonly reason: "completed_task_changed";
+      readonly completedTask: TaskIdentity;
+      readonly currentTask: TaskIdentity | null;
     }
   | {
       readonly status: "failed";
