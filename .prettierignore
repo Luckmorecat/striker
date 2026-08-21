@@ -1,0 +1,7 @@
+coverage
+dist
+node_modules
+*.tgz
+.agents
+.claude
+skills-lock.json
