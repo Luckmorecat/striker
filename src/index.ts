@@ -58,3 +58,7 @@ export type {
 } from "./core/contracts.js";
 export type { ProjectConfig } from "./config/project-config.js";
 export type { DispatcherDependencies } from "./core/dispatcher.js";
+export type {
+  ActiveRunStatus,
+  RecoveryOperationHandler,
+} from "./core/recovery-operations.js";

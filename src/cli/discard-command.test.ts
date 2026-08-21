@@ -1,0 +1,105 @@
+import { execFile } from "node:child_process";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { promisify } from "node:util";
+
+import { describe, expect, it } from "vitest";
+
+import { RunOperations } from "../core/run-operations.js";
+import { FileRunJournal } from "../infrastructure/file-run-journal.js";
+import { GitCliRepository } from "../infrastructure/git-cli.js";
+import { runCli } from "./program.js";
+
+const execFileAsync = promisify(execFile);
+
+function fixture() {
+  let discarded = false;
+  let stdout = "";
+  let stderr = "";
+  return {
+    dependencies: {
+      cwd: "/repo",
+      operationHandler: {
+        discard: () => {
+          discarded = true;
+          return Promise.resolve();
+        },
+        retry: () => {
+          throw new Error("Unexpected retry");
+        },
+        status: () => Promise.resolve(null),
+      },
+      permissionConfig: {
+        read: () => Promise.resolve("attended" as const),
+        write: () => Promise.resolve(),
+      },
+      planValidator: { validate: () => Promise.resolve({ taskCount: 0 }) },
+      skillInstaller: {
+        install: () => Promise.resolve({ changed: false }),
+        supportedHarnesses: ["codex"],
+      },
+      stderr: { write: (text: string) => (stderr += text) },
+      stdout: { write: (text: string) => (stdout += text) },
+    },
+    discarded: () => discarded,
+    output: () => ({ stderr, stdout }),
+  };
+}
+
+describe("striker discard", () => {
+  it("requires explicit noninteractive confirmation", async () => {
+    const test = fixture();
+
+    await expect(runCli(["discard"], test.dependencies)).resolves.toBe(1);
+    expect(test.discarded()).toBe(false);
+    expect(test.output().stderr).toContain("--force");
+  });
+
+  it("deletes recovery state after --force", async () => {
+    const test = fixture();
+
+    await expect(
+      runCli(["discard", "--force"], test.dependencies),
+    ).resolves.toBe(0);
+    expect(test.discarded()).toBe(true);
+    expect(test.output()).toEqual({
+      stderr: "",
+      stdout: "Discarded the active Striker run.\n",
+    });
+  });
+
+  it("deletes a paused Git-private journal through the CLI boundary", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-cli-discard-"));
+    await execFileAsync("git", ["-C", root, "init"]);
+    const journal = new FileRunJournal(
+      await new GitCliRepository().resolvePrivatePath(root, "striker"),
+    );
+    await journal.append({ runId: "run-1", type: "run_started" });
+    await journal.append({
+      current: null,
+      runId: "run-1",
+      task: { id: "tasks/01.md", revision: "removed" },
+      type: "run_source_changed",
+    });
+    await journal.replace({
+      runId: "run-1",
+      session: null,
+      status: "needs_attention",
+      task: null,
+    });
+    const operations = new RunOperations(journal);
+    const test = fixture();
+    const dependencies = {
+      ...test.dependencies,
+      operationHandler: {
+        discard: () => operations.discard(),
+        retry: test.dependencies.operationHandler.retry,
+        status: () => operations.status(),
+      },
+    };
+
+    await expect(runCli(["discard", "--force"], dependencies)).resolves.toBe(0);
+    await expect(journal.loadActive()).resolves.toBeNull();
+  });
+});

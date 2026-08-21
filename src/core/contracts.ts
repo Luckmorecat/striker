@@ -113,7 +113,10 @@ export type AgentTurn =
 
 export interface AgentRunner {
   preflight(request: HarnessPreflightRequest): Promise<void>;
-  runInNewSession(request: AgentRequest): Promise<AgentTurn>;
+  runInNewSession(
+    request: AgentRequest,
+    sessionStarted?: (session: AgentSession) => Promise<void>,
+  ): Promise<AgentTurn>;
   resumeSession(
     session: AgentSession,
     instructions: string,
@@ -207,6 +210,7 @@ export type AttentionReason =
   | "dirty_final_state"
   | "human_log_missing"
   | "review_evidence_missing"
+  | "run_initialization_interrupted"
   | "session_resume_failed"
   | "verification_failed";
 
@@ -226,6 +230,7 @@ export type RunTransition =
   | "retry";
 
 export interface RunSnapshot {
+  readonly attempt?: number;
   readonly runId: string;
   readonly status: RunStatus;
   readonly task: ImplementationTask | null;
@@ -238,6 +243,19 @@ export interface RunSnapshot {
 export type RunJournalEvent =
   | { readonly type: "run_started"; readonly runId: string }
   | {
+      readonly type: "task_session_started";
+      readonly runId: string;
+      readonly task: TaskIdentity;
+      readonly attempt: number;
+      readonly session: AgentSession;
+    }
+  | {
+      readonly type: "run_retried";
+      readonly runId: string;
+      readonly task: TaskIdentity;
+      readonly attempt: number;
+    }
+  | {
       readonly type: "task_completed";
       readonly runId: string;
       readonly task: TaskIdentity;
@@ -249,7 +267,7 @@ export type RunJournalEvent =
       readonly type: "run_needs_attention";
       readonly runId: string;
       readonly task: TaskIdentity;
-      readonly session: AgentSession;
+      readonly session: AgentSession | null;
       readonly attention: RunAttention;
     }
   | {
@@ -264,7 +282,7 @@ export type RunJournalEvent =
       readonly runId: string;
       readonly task: TaskIdentity;
       readonly session: AgentSession;
-      readonly attention: RunAttention;
+      readonly attention?: RunAttention;
     }
   | {
       readonly type: "run_failed";
@@ -290,6 +308,7 @@ export interface RunJournal {
 
 export interface RunRecoveryState {
   readonly completedTasks: readonly TaskIdentity[];
+  readonly lastEvent: RunJournalEvent;
   readonly snapshot: RunSnapshot | null;
 }
 
@@ -317,7 +336,7 @@ export type DispatchResult =
       readonly status: "needs_attention";
       readonly runId: string;
       readonly task: ImplementationTask;
-      readonly session: AgentSession;
+      readonly session: AgentSession | null;
       readonly reason: AttentionReason;
     }
   | {

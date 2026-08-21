@@ -19,8 +19,13 @@ import {
   executionAttention,
   inspectBaseline,
 } from "./dispatch-evidence.js";
+import {
+  recordAttemptSession,
+  replaceRunningAttempt,
+} from "./attempt-journal.js";
 import { PausedRunRecovery } from "./paused-run-recovery.js";
 import { transitionRun } from "./run-state.js";
+import { RunOperations } from "./run-operations.js";
 
 export interface DispatcherDependencies {
   readonly adapters: AdapterRegistry;
@@ -75,6 +80,18 @@ export class Dispatcher {
     return this.recovery().resume();
   }
 
+  async retry(): Promise<DispatchResult> {
+    return this.recovery().retry();
+  }
+
+  status() {
+    return new RunOperations(this.dependencies.journal).status();
+  }
+
+  discard(): Promise<void> {
+    return new RunOperations(this.dependencies.journal).discard();
+  }
+
   private recovery(): PausedRunRecovery {
     return new PausedRunRecovery(this.dependencies, {
       complete: (...arguments_) => this.completeReturnedTurn(...arguments_),
@@ -105,13 +122,24 @@ export class Dispatcher {
       request.allowDirty ?? false,
     );
     await this.ensureRunning(request, task, before);
-    const turn = await this.dependencies.runner.runInNewSession({
-      instructions: task.instructions,
-      skills: request.skills,
-      ...(task.execution === undefined
-        ? {}
-        : { workflowInstructions: task.execution.workflowInstructions }),
-    });
+    const turn = await this.dependencies.runner.runInNewSession(
+      {
+        instructions: task.instructions,
+        skills: request.skills,
+        ...(task.execution === undefined
+          ? {}
+          : { workflowInstructions: task.execution.workflowInstructions }),
+      },
+      (session) =>
+        recordAttemptSession(
+          this.dependencies.journal,
+          request,
+          task,
+          before,
+          1,
+          session,
+        ),
+    );
     if (turn.status === "failed") {
       return this.finishFailed(request, task, turn.session, turn.error, before);
     }
@@ -146,6 +174,7 @@ export class Dispatcher {
     session: AgentSession,
     before: GitState | undefined,
     agentOutput: string,
+    attempt = 1,
   ): Promise<DispatchResult> {
     const execution = await collectExecutionEvidence(
       this.dependencies,
@@ -160,6 +189,7 @@ export class Dispatcher {
         session,
         attention,
         before,
+        attempt,
       );
     }
     const completion = await source.completionEvidence(
@@ -174,6 +204,7 @@ export class Dispatcher {
         session,
         completion.attention,
         before,
+        attempt,
       );
     }
     const { evidence } = completion;
@@ -224,15 +255,14 @@ export class Dispatcher {
       transitionRun("created", "start");
       await this.dependencies.journal.append({ runId, type: "run_started" });
     }
-    await this.dependencies.journal.replace({
-      attention: null,
-      before: before ?? null,
+    await replaceRunningAttempt(
+      this.dependencies.journal,
       request,
-      runId,
-      session: null,
-      status: "running",
       task,
-    });
+      before,
+      1,
+      null,
+    );
   }
 
   private async finishRun(runId: string): Promise<void> {
@@ -247,6 +277,7 @@ export class Dispatcher {
     session: AgentSession,
     attention: RunAttention,
     before: GitState | undefined,
+    attempt = 1,
   ): Promise<DispatchResult> {
     const { runId } = request;
     const status = transitionRun("running", "request_attention");
@@ -258,6 +289,7 @@ export class Dispatcher {
       type: "run_needs_attention",
     });
     await this.dependencies.journal.replace({
+      attempt,
       attention,
       before: before ?? null,
       request,
@@ -313,6 +345,7 @@ export class Dispatcher {
     session: AgentSession,
     error: string,
     before: GitState | undefined,
+    attempt = 1,
   ): Promise<DispatchResult> {
     const { runId } = request;
     const status = transitionRun("running", "fail");
@@ -324,6 +357,7 @@ export class Dispatcher {
       type: "run_failed",
     });
     await this.dependencies.journal.replace({
+      attempt,
       attention: null,
       before: before ?? null,
       request,

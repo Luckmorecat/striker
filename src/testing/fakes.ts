@@ -109,12 +109,16 @@ export class FakeAgentRunner implements AgentRunner {
     return Promise.resolve();
   }
 
-  runInNewSession(request: AgentRequest): Promise<AgentTurn> {
+  async runInNewSession(
+    request: AgentRequest,
+    sessionStarted?: (session: AgentSession) => Promise<void>,
+  ): Promise<AgentTurn> {
     this.lastRequest = request;
     this.requests.push(request);
     const turn = this.#turns.shift();
     if (turn === undefined) throw new Error("Missing fake agent turn");
-    return Promise.resolve(turn);
+    await sessionStarted?.(turn.session);
+    return turn;
   }
 
   resumeSession(
@@ -152,10 +156,13 @@ export class InMemoryRunJournal implements RunJournal {
     if (this.deletedRunIds.includes(runId)) return Promise.resolve(null);
     const events = this.events.filter((event) => event.runId === runId);
     if (events.length === 0) return Promise.resolve(null);
+    const lastEvent = events.at(-1);
+    if (lastEvent === undefined) throw new Error("Missing fake journal event");
     return Promise.resolve({
       completedTasks: events
         .filter((event) => event.type === "task_completed")
         .map((event) => event.task),
+      lastEvent,
       snapshot:
         this.snapshots.filter((item) => item.runId === runId).at(-1) ?? null,
     });

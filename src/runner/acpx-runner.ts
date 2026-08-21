@@ -122,7 +122,10 @@ export class AcpxAgentRunner implements AgentRunner {
     await this.probeSkills(runtime, request.skills);
   }
 
-  async runInNewSession(request: AgentRequest): Promise<AgentTurn> {
+  async runInNewSession(
+    request: AgentRequest,
+    sessionStarted?: (session: AgentSession) => Promise<void>,
+  ): Promise<AgentTurn> {
     const sessionKey = `striker-${randomUUID()}`;
     const sessionEnvironment = permissionPolicyFor(
       this.options.approvalMode ?? "attended",
@@ -142,6 +145,7 @@ export class AcpxAgentRunner implements AgentRunner {
         ? {}
         : { resumeId: handle.backendSessionId }),
     };
+    await sessionStarted?.(session);
     return this.runTurn(handle, session, promptText(request));
   }
 

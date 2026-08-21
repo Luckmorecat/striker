@@ -126,12 +126,19 @@ function commandResult(result: DispatchResult): RunCommandResult {
     };
   }
   if (result.status === "needs_attention") {
+    const commands =
+      result.reason === "session_resume_failed"
+        ? "Run `striker retry` to start a fresh attempt."
+        : "Run `striker answer`, `striker resume`, or `striker retry`.";
     return {
-      message: `Run needs attention: ${result.reason}. Run \`striker answer\` or \`striker resume\`.`,
+      message: `Run needs attention: ${result.reason}. ${commands}`,
       status: "needs_attention",
     };
   }
-  return { message: `Run failed: ${result.error}.`, status: "failed" };
+  return {
+    message: `Run failed: ${result.error}. Run \`striker retry\` or \`striker discard --force\`.`,
+    status: "failed",
+  };
 }
 
 async function readAnswer(file: string | undefined): Promise<string> {
@@ -165,6 +172,20 @@ process.exitCode = await runCli(process.argv.slice(2), {
     resume: async () => {
       const dispatcher = await createDispatcher(await permissionConfig.read());
       return commandResult(await dispatcher.resume());
+    },
+  },
+  operationHandler: {
+    discard: async () => {
+      const dispatcher = await createDispatcher(await permissionConfig.read());
+      await dispatcher.discard();
+    },
+    retry: async () => {
+      const dispatcher = await createDispatcher(await permissionConfig.read());
+      return commandResult(await dispatcher.retry());
+    },
+    status: async () => {
+      const dispatcher = await createDispatcher(await permissionConfig.read());
+      return dispatcher.status();
     },
   },
   skillInstaller: createPublicSkillInstaller(skillsRoot),

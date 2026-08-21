@@ -7,12 +7,16 @@ import type {
   RecoveryCommandHandler,
   RunCommandHandler,
 } from "../core/contracts.js";
+import type { RecoveryOperationHandler } from "../core/recovery-operations.js";
 import { addAnswerCommand, type AnswerReader } from "./answer-command.js";
+import { addDiscardCommand } from "./discard-command.js";
 import { addPlanCommand } from "./plan-command.js";
 import { addPermissionsCommand } from "./permissions-command.js";
 import { addRunCommand } from "./run-command.js";
 import { addResumeCommand } from "./resume-command.js";
+import { addRetryCommand } from "./retry-command.js";
 import { addSkillsCommand } from "./skills-command.js";
+import { addStatusCommand } from "./status-command.js";
 
 export interface CliWriter {
   write(text: string): unknown;
@@ -25,6 +29,7 @@ export interface CliDependencies {
   readonly planValidator: PlanValidator;
   readonly runHandler?: RunCommandHandler;
   readonly recoveryHandler?: RecoveryCommandHandler;
+  readonly operationHandler?: RecoveryOperationHandler;
   readonly skillInstaller: PublicSkillInstaller;
   readonly stderr: CliWriter;
   readonly stdout: CliWriter;
@@ -73,6 +78,20 @@ export function createProgram(dependencies: CliDependencies): Command {
   if (dependencies.recoveryHandler !== undefined) {
     addResumeCommand(program, {
       handler: dependencies.recoveryHandler,
+      writeOut: (text) => dependencies.stdout.write(text),
+    });
+  }
+  if (dependencies.operationHandler !== undefined) {
+    addRetryCommand(program, {
+      handler: dependencies.operationHandler,
+      writeOut: (text) => dependencies.stdout.write(text),
+    });
+    addDiscardCommand(program, {
+      handler: dependencies.operationHandler,
+      writeOut: (text) => dependencies.stdout.write(text),
+    });
+    addStatusCommand(program, {
+      handler: dependencies.operationHandler,
       writeOut: (text) => dependencies.stdout.write(text),
     });
   }

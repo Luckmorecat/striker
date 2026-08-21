@@ -13,7 +13,7 @@ export function addResumeCommand(
 ): void {
   program
     .command("resume")
-    .description("Ask the agent to repair the active paused run")
+    .description("Resume an interrupted run or repair a paused run")
     .action(async () => {
       const result = await dependencies.handler.resume();
       if (result.status !== "completed") throw new Error(result.message);

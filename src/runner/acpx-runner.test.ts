@@ -120,6 +120,28 @@ describe("acpx task sessions", () => {
     });
     expect(runtime.turnText).toBe("Use the existing schema.");
   });
+
+  it("reports the durable session before starting the task turn", async () => {
+    const runtime = new FakeRuntime();
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
+    let startedSession;
+
+    await runner.runInNewSession(
+      { instructions: "Build task 08.", skills: [] },
+      (session) => {
+        startedSession = session;
+        expect(runtime.turnText).toBe("");
+        return Promise.resolve();
+      },
+    );
+
+    expect(startedSession).toMatchObject({ resumeId: "codex-session" });
+    expect(runtime.turnText).toContain("Build task 08.");
+  });
 });
 
 describe("acpx recovered task sessions", () => {

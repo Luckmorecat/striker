@@ -39,4 +39,36 @@ describe("striker resume", () => {
     expect(stderr).toContain("striker answer");
     expect(stderr).toContain("striker resume");
   });
+
+  it("reports retry when the provider session cannot be restored", async () => {
+    let stderr = "";
+    const exitCode = await runCli(["resume"], {
+      cwd: "/repo",
+      permissionConfig: {
+        read: () => Promise.resolve("attended"),
+        write: () => Promise.resolve(),
+      },
+      planValidator: { validate: () => Promise.resolve({ taskCount: 0 }) },
+      recoveryHandler: {
+        answer: () => {
+          throw new Error("Unexpected answer");
+        },
+        resume: () =>
+          Promise.resolve({
+            message:
+              "Run needs attention: session_resume_failed. Run `striker retry` to start a fresh attempt.",
+            status: "needs_attention",
+          }),
+      },
+      skillInstaller: {
+        install: () => Promise.resolve({ changed: false }),
+        supportedHarnesses: ["codex"],
+      },
+      stderr: { write: (text) => (stderr += text) },
+      stdout: { write: () => undefined },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("striker retry");
+  });
 });
