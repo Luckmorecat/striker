@@ -1,6 +1,6 @@
 interface:
-  display_name: "Striker plan"
+  display_name: "Striker Plan"
   short_description: "Create a validated Striker implementation plan"
-  default_prompt: "Use $striker-plan to create a validated implementation plan."
+  default_prompt: "Use $striker-plan to create a validated Striker plan."
 policy:
   allow_implicit_invocation: false

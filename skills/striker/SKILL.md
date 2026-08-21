@@ -1,8 +1,8 @@
 ---
 name: striker
 description:
-  Use only when the developer explicitly invokes $striker to run the
-  project-local Striker CLI.
+  Use only when the developer explicitly invokes $striker to operate the
+  project-local Striker task dispatcher.
 metadata:
   opencode/autoinvoke: "false"
 ---
@@ -11,14 +11,15 @@ metadata:
 
 Proceed only when the developer explicitly invoked `$striker`.
 
-Use the target project's installed `node_modules/.bin/striker`. Stop if that
-binary is absent. Do not substitute a global installation.
+Resolve the target Git root, then use its `node_modules/.bin/striker` binary.
+Stop when the binary is absent. A global installation or package runner is not
+the project-local Striker version.
 
-Run only the command the user requested. This package version supports:
+Translate the developer's request into one CLI operation. When its syntax is
+unclear, inspect the local binary's `--help` output and the relevant command's
+help. Keep the command reference out of this skill so it stays in sync with the
+installed binary.
 
-```text
-striker plan validate <source>
-striker skills install --harness codex|claude|opencode|pi
-```
-
-Report the command's exit status and error output when it fails.
+Run the requested operation and return its output. On failure or pause, include
+the exit status and Striker's recovery instructions. Pass answers through stdin
+unless the developer supplied an answer file.

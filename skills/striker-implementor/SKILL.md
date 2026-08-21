@@ -1,15 +1,13 @@
 ---
 name: striker-implementor
-description:
-  Implement one supplied Striker task, prove it, reconcile its plan, and create
-  one commit.
+description: Internal workflow for implementing one supplied Striker task.
 ---
 
 # Striker implementor
 
 The supplied task is the whole work contract. Implement that task and stop. The
-plan's out-of-scope section remains binding, and you do not select or inspect a
-later task.
+plan's out-of-scope section remains binding. Work only from the supplied task;
+later tasks stay unopened.
 
 Before editing, read the repository rules and the supplied plan context. Read
 [references/tdd.md](references/tdd.md) before writing tests and

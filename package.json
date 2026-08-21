@@ -3,12 +3,14 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "types": "./dist/index.d.ts",
   "sideEffects": false,
   "packageManager": "pnpm@11.18.0",
   "engines": {
     "node": ">=22.13.0"
   },
   "files": [
+    "README.md",
     "dist",
     "plan.schema.json",
     "schema.json",
@@ -23,7 +25,9 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./plan.schema.json": "./plan.schema.json",
+    "./schema.json": "./schema.json"
   },
   "dependencies": {
     "acpx": "0.13.1",
@@ -37,6 +41,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "prepack": "pnpm build && node validate-package.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
