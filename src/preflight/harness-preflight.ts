@@ -1,9 +1,25 @@
-import type { AgentHarness } from "../core/contracts.js";
+import type { AgentHarness, ApprovalMode } from "../core/contracts.js";
+import { permissionPolicyFor } from "../permissions/permission-policy.js";
 
 const resultPrefix = "STRIKER_PREFLIGHT_RESULT ";
 
 interface PreflightResult {
   readonly available: readonly string[];
+}
+
+export function assertPermissionCapability(
+  harness: AgentHarness,
+  mode: ApprovalMode,
+): void {
+  const policy = permissionPolicyFor(mode);
+  if (
+    policy.requiredHarness !== undefined &&
+    policy.requiredHarness !== harness
+  ) {
+    throw new Error(
+      `Harness "${harness}" does not support permission mode "${mode}"`,
+    );
+  }
 }
 
 export function harnessPreflightPrompt(skills: readonly string[]): string {

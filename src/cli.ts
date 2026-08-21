@@ -14,10 +14,12 @@ import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
 import { runCli } from "./cli/program.js";
 import { loadProjectConfig } from "./config/project-config.js";
 import { AdapterRegistry } from "./core/adapter-registry.js";
+import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
 import { Dispatcher } from "./core/dispatcher.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
 import { GitCliRepository } from "./infrastructure/git-cli.js";
 import { ShellVerifier } from "./infrastructure/shell-verifier.js";
+import { LocalPermissionConfig } from "./permissions/local-permission-config.js";
 import { createAcpxAgentRunner } from "./runner/acpx-runner.js";
 import { createPublicSkillInstaller } from "./skills/public-skill-installer.js";
 
@@ -43,7 +45,24 @@ async function relayPermission(request: AcpPermissionRequest) {
   }
 }
 
-async function dispatchRun(source: string, allowDirty: boolean) {
+async function permissionFilePath(): Promise<string> {
+  const root = await git.resolveRoot(cwd);
+  const stateRoot = await git.resolvePrivatePath(root, "striker");
+  return path.join(stateRoot, "permissions.json");
+}
+
+const permissionConfig: PermissionConfig = {
+  read: async () =>
+    new LocalPermissionConfig(await permissionFilePath()).read(),
+  write: async (mode) =>
+    new LocalPermissionConfig(await permissionFilePath()).write(mode),
+};
+
+async function dispatchRun(
+  source: string,
+  allowDirty: boolean,
+  approvalMode: ApprovalMode,
+) {
   const root = await git.resolveRoot(cwd);
   const config = await loadProjectConfig(root);
   const stateRoot = await git.resolvePrivatePath(root, "striker");
@@ -60,6 +79,7 @@ async function dispatchRun(source: string, allowDirty: boolean) {
     git,
     journal: new FileRunJournal(stateRoot),
     runner: createAcpxAgentRunner({
+      approvalMode,
       cwd: root,
       harness: config.harness,
       permissionRelay: relayPermission,
@@ -81,6 +101,7 @@ async function dispatchRun(source: string, allowDirty: boolean) {
 
 process.exitCode = await runCli(process.argv.slice(2), {
   cwd,
+  permissionConfig,
   planValidator: {
     validate: async (source) => {
       const plan = await parseStrikerPlan(path.resolve(cwd, source));
@@ -88,8 +109,8 @@ process.exitCode = await runCli(process.argv.slice(2), {
     },
   },
   runHandler: {
-    run: async ({ allowDirty, source }) => {
-      const result = await dispatchRun(source, allowDirty);
+    run: async ({ allowDirty, approvalMode, source }) => {
+      const result = await dispatchRun(source, allowDirty, approvalMode);
       if (result.status === "source_exhausted") {
         return {
           message: "Striker plan has no remaining tasks.",

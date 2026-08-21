@@ -38,6 +38,10 @@ describe("striker plan validate", () => {
 
     const exitCode = await runCli(["plan", "validate", root], {
       cwd: root,
+      permissionConfig: {
+        read: () => Promise.resolve("attended"),
+        write: () => Promise.resolve(),
+      },
       planValidator: {
         validate: async (source) => {
           const plan = await parseStrikerPlan(path.resolve(root, source));

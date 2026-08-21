@@ -34,6 +34,15 @@ describe("Striker project configuration", () => {
     ).toThrow();
   });
 
+  it("rejects tracked configuration that tries to grant unattended access", () => {
+    expect(() =>
+      parseProjectConfig({
+        approvalMode: "unattended",
+        taskSource: "striker-plan",
+      }),
+    ).toThrow();
+  });
+
   it("loads only the tracked project configuration file", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-config-"));
     await writeFile(

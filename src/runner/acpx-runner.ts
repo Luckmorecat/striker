@@ -18,12 +18,15 @@ import type {
   AgentRequest,
   AgentRunner,
   AgentTurn,
+  ApprovalMode,
   HarnessPreflightRequest,
 } from "../core/contracts.js";
 import {
+  assertPermissionCapability,
   assertPreflightResult,
   harnessPreflightPrompt,
 } from "../preflight/harness-preflight.js";
+import { permissionPolicyFor } from "../permissions/permission-policy.js";
 
 export interface AcpxRuntimeBoundary {
   close(input: {
@@ -47,6 +50,7 @@ export type PermissionRelay = (
 ) => Promise<AcpPermissionDecision | undefined>;
 
 interface RunnerOptions {
+  readonly approvalMode?: ApprovalMode;
   readonly cwd: string;
   readonly harness: AgentHarness;
   readonly preflightRuntime?: AcpxRuntimeBoundary;
@@ -104,6 +108,7 @@ export class AcpxAgentRunner implements AgentRunner {
   constructor(private readonly options: RunnerOptions) {}
 
   async preflight(request: HarnessPreflightRequest): Promise<void> {
+    this.assertHarnessSupportsMode();
     const runtime = this.options.preflightRuntime ?? this.options.runtime;
     await this.probeHarness(runtime);
     const report = await runtime.doctor();
@@ -118,11 +123,17 @@ export class AcpxAgentRunner implements AgentRunner {
 
   async runInNewSession(request: AgentRequest): Promise<AgentTurn> {
     const sessionKey = `striker-${randomUUID()}`;
+    const sessionEnvironment = permissionPolicyFor(
+      this.options.approvalMode ?? "attended",
+    ).sessionEnvironment;
     const handle = await this.options.runtime.ensureSession({
       agent: harnessCapabilities[this.options.harness].agent,
       cwd: this.options.cwd,
       mode: "persistent",
       sessionKey,
+      ...(sessionEnvironment === undefined
+        ? {}
+        : { sessionOptions: { env: sessionEnvironment } }),
     });
     const turn = this.options.runtime.startTurn({
       handle,
@@ -206,22 +217,34 @@ export class AcpxAgentRunner implements AgentRunner {
       });
     }
   }
+
+  private assertHarnessSupportsMode(): void {
+    assertPermissionCapability(
+      this.options.harness,
+      this.options.approvalMode ?? "attended",
+    );
+  }
 }
 
 export function createAcpxAgentRunner(options: {
+  readonly approvalMode: ApprovalMode;
   readonly cwd: string;
   readonly harness: AgentHarness;
   readonly permissionRelay: PermissionRelay;
   readonly stateDir: string;
 }): AcpxAgentRunner {
+  const policy = permissionPolicyFor(options.approvalMode);
   const agent = harnessCapabilities[options.harness].agent;
   const agentRegistry = createAgentRegistry();
   const runtime = createAcpRuntime({
     agentRegistry,
     cwd: options.cwd,
-    nonInteractivePermissions: "fail",
-    onPermissionRequest: (request) => options.permissionRelay(request),
-    permissionMode: "approve-reads",
+    nonInteractivePermissions: policy.nonInteractivePermissions,
+    onPermissionRequest: (request) =>
+      policy.relayRequests
+        ? options.permissionRelay(request)
+        : Promise.resolve({ outcome: "reject_once" }),
+    permissionMode: policy.acpxPermissionMode,
     sessionStore: createRuntimeStore({ stateDir: options.stateDir }),
   });
   const preflightRuntime = createAcpRuntime({
@@ -234,6 +257,7 @@ export function createAcpxAgentRunner(options: {
     sessionStore: createRuntimeStore({ stateDir: options.stateDir }),
   });
   return new AcpxAgentRunner({
+    approvalMode: options.approvalMode,
     cwd: options.cwd,
     harness: options.harness,
     preflightRuntime,

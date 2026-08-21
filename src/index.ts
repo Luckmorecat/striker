@@ -1,6 +1,6 @@
 export { AdapterRegistry } from "./core/adapter-registry.js";
 export { Dispatcher } from "./core/dispatcher.js";
-export { agentHarnesses } from "./core/contracts.js";
+export { agentHarnesses, approvalModes } from "./core/contracts.js";
 export {
   parseProjectConfig,
   projectConfigJsonSchema,
@@ -15,6 +15,7 @@ export type { PlanManifest } from "./adapters/striker-plan/plan-manifest.js";
 export type {
   AgentRequest,
   AgentHarness,
+  ApprovalMode,
   AgentRunner,
   AgentSession,
   AgentTurn,
@@ -29,6 +30,7 @@ export type {
   RunCommandResult,
   PlanValidationResult,
   PlanValidator,
+  PermissionConfig,
   PublicSkillInstaller,
   PublicSkillInstallRequest,
   PublicSkillInstallResult,

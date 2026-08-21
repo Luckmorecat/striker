@@ -68,6 +68,14 @@ export interface AgentSession {
 export const agentHarnesses = ["codex", "claude", "opencode", "pi"] as const;
 export type AgentHarness = (typeof agentHarnesses)[number];
 
+export const approvalModes = ["attended", "auto-review", "unattended"] as const;
+export type ApprovalMode = (typeof approvalModes)[number];
+
+export interface PermissionConfig {
+  read(): Promise<ApprovalMode>;
+  write(mode: ApprovalMode): Promise<void>;
+}
+
 export interface HarnessPreflightRequest {
   readonly skills: readonly string[];
 }
@@ -155,6 +163,7 @@ export interface PublicSkillInstaller {
 
 export interface RunCommandRequest {
   readonly allowDirty: boolean;
+  readonly approvalMode: ApprovalMode;
   readonly source: string;
 }
 

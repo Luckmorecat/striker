@@ -11,6 +11,10 @@ describe("striker run", () => {
 
     const exitCode = await runCli(["run", "plans/current", "--allow-dirty"], {
       cwd: "/repo",
+      permissionConfig: {
+        read: () => Promise.resolve("unattended"),
+        write: () => Promise.resolve(),
+      },
       planValidator: { validate: () => Promise.resolve({ taskCount: 0 }) },
       runHandler: {
         run: (value) => {
@@ -30,8 +34,14 @@ describe("striker run", () => {
     });
 
     expect(exitCode).toBe(0);
-    expect(request).toEqual({ allowDirty: true, source: "plans/current" });
-    expect(stdout).toBe("Completed tasks/01.md.\n");
+    expect(request).toEqual({
+      allowDirty: true,
+      approvalMode: "unattended",
+      source: "plans/current",
+    });
+    expect(stdout).toBe(
+      "Permission mode: unattended.\nCompleted tasks/01.md.\n",
+    );
     expect(stderr).toBe("");
   });
 
@@ -41,6 +51,10 @@ describe("striker run", () => {
 
     const exitCode = await runCli(["run", "plans/current"], {
       cwd: "/repo",
+      permissionConfig: {
+        read: () => Promise.resolve("auto-review"),
+        write: () => Promise.resolve(),
+      },
       planValidator: { validate: () => Promise.resolve({ taskCount: 0 }) },
       runHandler: {
         run: () =>
@@ -58,7 +72,7 @@ describe("striker run", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(stdout).toBe("");
+    expect(stdout).toBe("Permission mode: auto-review.\n");
     expect(stderr).toContain("verification_failed");
   });
 });

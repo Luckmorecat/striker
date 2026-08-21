@@ -2,10 +2,12 @@ import { Command, CommanderError } from "commander";
 
 import type {
   PlanValidator,
+  PermissionConfig,
   PublicSkillInstaller,
   RunCommandHandler,
 } from "../core/contracts.js";
 import { addPlanCommand } from "./plan-command.js";
+import { addPermissionsCommand } from "./permissions-command.js";
 import { addRunCommand } from "./run-command.js";
 import { addSkillsCommand } from "./skills-command.js";
 
@@ -15,6 +17,7 @@ export interface CliWriter {
 
 export interface CliDependencies {
   readonly cwd: string;
+  readonly permissionConfig: PermissionConfig;
   readonly planValidator: PlanValidator;
   readonly runHandler?: RunCommandHandler;
   readonly skillInstaller: PublicSkillInstaller;
@@ -41,9 +44,14 @@ export function createProgram(dependencies: CliDependencies): Command {
       dependencies.stdout.write(text);
     },
   });
+  addPermissionsCommand(program, {
+    config: dependencies.permissionConfig,
+    writeOut: (text) => dependencies.stdout.write(text),
+  });
   if (dependencies.runHandler !== undefined) {
     addRunCommand(program, {
       handler: dependencies.runHandler,
+      permissionConfig: dependencies.permissionConfig,
       writeOut: (text) => dependencies.stdout.write(text),
     });
   }

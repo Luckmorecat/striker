@@ -31,6 +31,10 @@ describe("striker skills install", () => {
       ["skills", "install", "--harness", "claude"],
       {
         cwd: projectRoot,
+        permissionConfig: {
+          read: () => Promise.resolve("attended"),
+          write: () => Promise.resolve(),
+        },
         planValidator: { validate: () => Promise.resolve({ taskCount: 0 }) },
         stderr: { write: (text) => (stderr += text) },
         skillInstaller: createPublicSkillInstaller(skillsSourceRoot),

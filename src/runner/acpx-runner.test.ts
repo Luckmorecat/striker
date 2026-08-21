@@ -160,4 +160,40 @@ describe("acpx harness preflight", () => {
       'Configured skill "security" is unavailable in harness "claude"',
     );
   });
+
+  it("rejects auto-review when the selected harness has no reviewer capability", async () => {
+    const runtime = new FakeRuntime();
+    const runner = new AcpxAgentRunner({
+      approvalMode: "auto-review",
+      cwd: "/repo",
+      harness: "claude",
+      runtime,
+    });
+
+    await expect(runner.preflight({ skills: [] })).rejects.toThrow(
+      'Harness "claude" does not support permission mode "auto-review"',
+    );
+    expect(runtime.ensureInputs).toEqual([]);
+  });
+
+  it("applies the proved Codex auto-review config to task sessions", async () => {
+    const runtime = new FakeRuntime();
+    runtime.output = 'STRIKER_PREFLIGHT_RESULT {"available":[]}';
+    const runner = new AcpxAgentRunner({
+      approvalMode: "auto-review",
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
+
+    await runner.preflight({ skills: [] });
+    await runner.runInNewSession({ instructions: "Build.", skills: [] });
+
+    expect(runtime.ensureInputs.at(-1)?.sessionOptions).toEqual({
+      env: {
+        CODEX_CONFIG:
+          '{"approval_policy":"on-request","approvals_reviewer":"auto_review","sandbox_mode":"workspace-write"}',
+      },
+    });
+  });
 });
