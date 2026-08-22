@@ -19,7 +19,11 @@ import {
   executionAttention,
   inspectBaseline,
 } from "./dispatch-evidence.js";
-import { replaceRunningAttempt } from "./attempt-journal.js";
+import {
+  ensureRunStarted,
+  loadCompletedTasks,
+} from "./dispatch-run-lifecycle.js";
+import { recordAttemptStart } from "./attempt-journal.js";
 import { runInFreshSession } from "./fresh-session.js";
 import { PausedRunRecovery } from "./paused-run-recovery.js";
 import { transitionRun } from "./run-state.js";
@@ -38,7 +42,10 @@ export class Dispatcher {
   constructor(private readonly dependencies: DispatcherDependencies) {}
 
   async dispatch(request: DispatchRequest): Promise<DispatchResult> {
-    const completed = await this.completedTasks(request);
+    const completed = await loadCompletedTasks(
+      this.dependencies.journal,
+      request,
+    );
     let latest: DispatchResult | undefined;
     let preflight = true;
     for (;;) {
@@ -52,7 +59,10 @@ export class Dispatcher {
   }
 
   async dispatchOne(request: DispatchRequest): Promise<DispatchResult> {
-    const completed = await this.completedTasks(request);
+    const completed = await loadCompletedTasks(
+      this.dependencies.journal,
+      request,
+    );
     const result = await this.dispatchNext(request, completed, true);
     if (result.status === "source_exhausted") return result;
     if (result.status !== "completed") return result;
@@ -105,10 +115,13 @@ export class Dispatcher {
     preflight: boolean,
   ): Promise<DispatchResult> {
     const selection = await this.selectTask(request, completed);
-    if ("conflict" in selection)
+    if ("conflict" in selection) {
+      await ensureRunStarted(this.dependencies.journal, request);
       return this.finishSourceConflict(request.runId, selection.conflict);
+    }
     const { source, task } = selection;
     if (task === null) {
+      await ensureRunStarted(this.dependencies.journal, request);
       await finalizeExhaustedSource(
         this.dependencies.journal,
         request.runId,
@@ -124,10 +137,21 @@ export class Dispatcher {
       task,
       request.allowDirty ?? false,
     );
-    await this.ensureRunning(request, task, before);
+    await ensureRunStarted(this.dependencies.journal, request);
+    await this.dependencies.journal.append({
+      runId: request.runId,
+      task,
+      type: "task_selected",
+    });
+    await this.dependencies.journal.append({
+      before: before ?? null,
+      runId: request.runId,
+      task: task.identity,
+      type: "task_baseline_recorded",
+    });
+    await recordAttemptStart(this.dependencies.journal, request, task, 1);
     const turn = await runInFreshSession({
       attempt: 1,
-      before,
       journal: this.dependencies.journal,
       request,
       runner: this.dependencies.runner,
@@ -135,7 +159,7 @@ export class Dispatcher {
     });
     if (turn.status === "needs_attention") return turn;
     if (turn.status === "failed") {
-      return this.finishFailed(request, task, turn.session, turn.error, before);
+      return this.finishFailed(request, task, turn.session, turn.error);
     }
     return this.completeReturnedTurn(
       request,
@@ -168,7 +192,6 @@ export class Dispatcher {
     session: AgentSession,
     before: GitState | undefined,
     agentOutput: string,
-    attempt = 1,
   ): Promise<DispatchResult> {
     const execution = await collectExecutionEvidence(
       this.dependencies,
@@ -177,14 +200,7 @@ export class Dispatcher {
     );
     const attention = executionAttention(execution);
     if (attention !== null) {
-      return this.finishNeedsAttention(
-        request,
-        task,
-        session,
-        attention,
-        before,
-        attempt,
-      );
+      return this.finishNeedsAttention(request, task, session, attention);
     }
     const completion = await source.completionEvidence(
       task,
@@ -197,8 +213,6 @@ export class Dispatcher {
         task,
         session,
         completion.attention,
-        before,
-        attempt,
       );
     }
     const { evidence } = completion;
@@ -223,68 +237,20 @@ export class Dispatcher {
     };
   }
 
-  private async completedTasks(
-    request: DispatchRequest,
-  ): Promise<TaskIdentity[]> {
-    const completed = [...request.completedTasks];
-    const recovery = await this.dependencies.journal.load(request.runId);
-    for (const identity of recovery?.completedTasks ?? []) {
-      const known = completed.some(
-        (item) =>
-          item.id === identity.id && item.revision === identity.revision,
-      );
-      if (!known) completed.push(identity);
-    }
-    return completed;
-  }
-
-  private async ensureRunning(
-    request: DispatchRequest,
-    task: ImplementationTask,
-    before: GitState | undefined,
-  ): Promise<void> {
-    const { runId } = request;
-    const recovery = await this.dependencies.journal.load(runId);
-    if (recovery === null) {
-      transitionRun("created", "start");
-      await this.dependencies.journal.append({ runId, type: "run_started" });
-    }
-    await replaceRunningAttempt(
-      this.dependencies.journal,
-      request,
-      task,
-      before,
-      1,
-      null,
-    );
-  }
-
   private async finishNeedsAttention(
     request: DispatchRequest,
     task: ImplementationTask,
     session: AgentSession,
     attention: RunAttention,
-    before: GitState | undefined,
-    attempt = 1,
   ): Promise<DispatchResult> {
     const { runId } = request;
-    const status = transitionRun("running", "request_attention");
+    transitionRun("running", "request_attention");
     await this.dependencies.journal.append({
       attention,
       runId,
       session,
       task: task.identity,
       type: "run_needs_attention",
-    });
-    await this.dependencies.journal.replace({
-      attempt,
-      attention,
-      before: before ?? null,
-      request,
-      runId,
-      session,
-      status,
-      task,
     });
     return {
       reason: attention.reason,
@@ -299,22 +265,12 @@ export class Dispatcher {
     runId: string,
     conflict: TaskSourceConflict,
   ): Promise<DispatchResult> {
-    if ((await this.dependencies.journal.load(runId)) === null) {
-      transitionRun("created", "start");
-      await this.dependencies.journal.append({ runId, type: "run_started" });
-    }
-    const status = transitionRun("running", "request_attention");
+    transitionRun("running", "request_attention");
     await this.dependencies.journal.append({
       current: conflict.current,
       runId,
       task: conflict.completed,
       type: "run_source_changed",
-    });
-    await this.dependencies.journal.replace({
-      runId,
-      session: null,
-      status,
-      task: null,
     });
     return {
       completedTask: conflict.completed,
@@ -332,27 +288,15 @@ export class Dispatcher {
     task: ImplementationTask,
     session: AgentSession,
     error: string,
-    before: GitState | undefined,
-    attempt = 1,
   ): Promise<DispatchResult> {
     const { runId } = request;
-    const status = transitionRun("running", "fail");
+    transitionRun("running", "fail");
     await this.dependencies.journal.append({
       error,
       runId,
       session,
       task: task.identity,
       type: "run_failed",
-    });
-    await this.dependencies.journal.replace({
-      attempt,
-      attention: null,
-      before: before ?? null,
-      request,
-      runId,
-      session,
-      status,
-      task,
     });
     return { error, runId, session, status: "failed", task };
   }

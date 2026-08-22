@@ -24,6 +24,7 @@ const fileTask = {
 };
 const fileRequest = {
   completedTasks: [],
+  planId: "run-file",
   runId: "run-file",
   skills: [],
   taskSource: { location: "memory://plan", type: "memory" },
@@ -31,7 +32,29 @@ const fileRequest = {
 
 async function seedFailedJournal(journal: FileRunJournal): Promise<void> {
   const session = { id: "runtime-old", resumeId: "provider-old" };
-  await journal.append({ runId: fileRequest.runId, type: "run_started" });
+  await journal.append({
+    planId: fileRequest.planId,
+    request: fileRequest,
+    runId: fileRequest.runId,
+    type: "run_started",
+  });
+  await journal.append({
+    runId: fileRequest.runId,
+    task: fileTask,
+    type: "task_selected",
+  });
+  await journal.append({
+    before: null,
+    runId: fileRequest.runId,
+    task: fileTask.identity,
+    type: "task_baseline_recorded",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: fileRequest.runId,
+    task: fileTask.identity,
+    type: "task_attempt_started",
+  });
   await journal.append({
     attempt: 1,
     runId: fileRequest.runId,
@@ -45,15 +68,6 @@ async function seedFailedJournal(journal: FileRunJournal): Promise<void> {
     session,
     task: fileTask.identity,
     type: "run_failed",
-  });
-  await journal.replace({
-    attempt: 1,
-    before: null,
-    request: fileRequest,
-    runId: fileRequest.runId,
-    session,
-    status: "failed",
-    task: fileTask,
   });
 }
 

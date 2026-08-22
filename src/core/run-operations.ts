@@ -36,6 +36,9 @@ export class RunOperations {
     if (snapshot.status !== "failed" && snapshot.status !== "needs_attention") {
       throw new Error("Only paused or failed Striker runs can be discarded");
     }
-    await this.journal.delete(snapshot.runId);
+    await this.journal.append({
+      runId: snapshot.runId,
+      type: "run_discarded",
+    });
   }
 }

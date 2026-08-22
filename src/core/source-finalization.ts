@@ -8,7 +8,6 @@ export async function finalizeExhaustedSource(
   completed: readonly TaskIdentity[],
 ): Promise<void> {
   await source.finalizeCompleted?.(completed);
-  if ((await journal.load(runId)) === null) return;
   transitionRun("running", "complete");
-  await journal.delete(runId);
+  await journal.append({ runId, type: "run_completed" });
 }

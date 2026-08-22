@@ -1,13 +1,6 @@
-import {
-  chmod,
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rm,
-  unlink,
-} from "node:fs/promises";
+import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
 import type {
   RunJournal,
@@ -15,20 +8,28 @@ import type {
   RunRecoveryState,
   RunSnapshot,
 } from "../core/contracts.js";
-import { transitionRun } from "../core/run-state.js";
-import { replayEvent } from "./run-journal-replay.js";
+import { terminalRunStatus } from "../core/run-state.js";
 import {
-  assertEventSequence,
   assertSnapshotPrefix,
-  inferSnapshotEventCount,
+  replayPlanJournal,
 } from "./run-journal-sequence.js";
 import {
   eventEnvelopeSchema,
   runJournalEventSchema,
   runJournalSchemaId,
-  runSnapshotSchema,
   snapshotEnvelopeSchema,
 } from "./run-journal-schema.js";
+
+interface ActiveClaim {
+  readonly ownerPid: number;
+  readonly planId: string;
+  readonly runId: string;
+}
+
+interface ClaimedRun {
+  readonly claim: ActiveClaim;
+  readonly created: boolean;
+}
 
 async function syncDirectory(directory: string): Promise<void> {
   const handle = await open(directory, "r");
@@ -66,69 +67,126 @@ function rejectUnsupportedSchema(value: unknown): void {
   const schema = schemaValue(value);
   if (schema !== undefined && schema !== runJournalSchemaId) {
     const label = typeof schema === "string" ? schema : JSON.stringify(schema);
-    throw new Error(`Unsupported Striker run journal schema: ${label}`);
+    throw new Error(`Unsupported Striker plan journal schema: ${label}`);
   }
 }
 
 function parseEvent(line: string): RunJournalEvent {
-  const value = parseJson(line, "Invalid Striker run journal event");
+  const value = parseJson(line, "Invalid Striker plan journal event");
   rejectUnsupportedSchema(value);
   const parsed = eventEnvelopeSchema.safeParse(value);
   if (!parsed.success) {
-    throw new Error("Invalid Striker run journal event", {
+    throw new Error("Invalid Striker plan journal event", {
       cause: parsed.error,
     });
   }
   return parsed.data.event as RunJournalEvent;
 }
 
-function recoverMissingSnapshot(
-  events: readonly RunJournalEvent[],
-  runId: string,
-): RunSnapshot {
-  if (events.length === 1 && events[0]?.type === "run_started") {
-    return {
-      attention: {
-        detail:
-          "The process stopped before Striker recorded the first task. Discard this run before starting another.",
-        reason: "run_initialization_interrupted",
-      },
-      runId,
-      session: null,
-      status: "failed",
-      task: null,
-    };
+function validateId(value: string, label: string): void {
+  if (!/^[A-Za-z0-9._-]+$/.test(value) || value === "." || value === "..") {
+    throw new Error(`Invalid ${label}`);
   }
-  if (
-    events.length === 2 &&
-    events[0]?.type === "run_started" &&
-    events[1]?.type === "run_source_changed"
-  ) {
-    return {
-      attention: null,
-      runId,
-      session: null,
-      status: transitionRun("running", "request_attention"),
-      task: null,
-    };
+}
+
+function processIsRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !hasCode(error, "ESRCH");
   }
-  throw new Error("Striker run journal events are missing their snapshot");
+}
+
+function isActiveClaim(value: unknown): value is ActiveClaim {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "planId" in value &&
+    typeof value.planId === "string" &&
+    "ownerPid" in value &&
+    typeof value.ownerPid === "number" &&
+    Number.isInteger(value.ownerPid) &&
+    value.ownerPid > 0 &&
+    "runId" in value &&
+    typeof value.runId === "string"
+  );
 }
 
 export class FileRunJournal implements RunJournal {
-  readonly #runsRoot: string;
+  readonly #claimPath: string;
+  readonly #plansRoot: string;
 
-  constructor(stateRoot: string) {
-    this.#runsRoot = path.join(stateRoot, "runs");
+  constructor(private readonly stateRoot: string) {
+    this.#claimPath = path.join(stateRoot, "active-run.json");
+    this.#plansRoot = path.join(stateRoot, "plans");
   }
 
   async append(event: RunJournalEvent): Promise<void> {
-    runJournalEventSchema.parse(event);
-    await ensurePrivateDirectory(this.#runsRoot);
-    if (event.type === "run_started") await this.claimRun(event.runId);
-    const runRoot = this.runRoot(event.runId);
-    await ensurePrivateDirectory(runRoot);
-    const eventsPath = path.join(runRoot, "events.ndjson");
+    const normalized = runJournalEventSchema.parse(event) as RunJournalEvent;
+    await ensurePrivateDirectory(this.stateRoot);
+    await ensurePrivateDirectory(this.#plansRoot);
+    const claimed =
+      normalized.type === "run_started"
+        ? await this.claimRun(normalized.planId, normalized.runId)
+        : { claim: await this.requireClaim(normalized.runId), created: false };
+    const { claim } = claimed;
+    const planRoot = this.planRoot(claim.planId);
+    let appended = false;
+    try {
+      await ensurePrivateDirectory(planRoot);
+      const previous = (await this.readEvents(claim.planId, true)) ?? [];
+      const duplicate = isDeepStrictEqual(previous.at(-1), normalized);
+      const events = duplicate ? previous : [...previous, normalized];
+      const recovery = replayPlanJournal(events, claim.planId);
+      if (!duplicate) await this.appendEvent(planRoot, normalized);
+      appended = true;
+      await this.writeSnapshot(claim.planId, recovery.snapshot, events.length);
+      if (terminalRunStatus(normalized) !== null) await this.releaseRun(claim);
+    } catch (error) {
+      if (claimed.created && !appended) await this.releaseRun(claim);
+      throw error;
+    }
+  }
+
+  async load(planId: string): Promise<RunRecoveryState | null> {
+    const events = await this.readEvents(planId, true);
+    if (events === null) return null;
+    const recovery = replayPlanJournal(events, planId);
+    const projection = await this.readSnapshot(planId, events);
+    if (projection === null || projection.eventCount < events.length) {
+      await this.writeSnapshot(planId, recovery.snapshot, events.length);
+    }
+    return recovery;
+  }
+
+  async loadActive(): Promise<RunRecoveryState | null> {
+    const claim = await this.readClaim();
+    if (claim === null) return null;
+    const recovery = await this.load(claim.planId);
+    if (recovery === null) {
+      if (processIsRunning(claim.ownerPid)) {
+        throw new Error("Active Striker run is still initializing");
+      }
+      await this.releaseRun(claim);
+      return null;
+    }
+    const snapshot = recovery.snapshot;
+    if (snapshot?.runId !== claim.runId) {
+      throw new Error("Active Striker run is missing its plan journal");
+    }
+    if (snapshot.status === "completed" || snapshot.status === "discarded") {
+      await this.releaseRun(claim);
+      return null;
+    }
+    return recovery;
+  }
+
+  private async appendEvent(
+    planRoot: string,
+    event: RunJournalEvent,
+  ): Promise<void> {
+    const eventsPath = path.join(planRoot, "events.ndjson");
     const handle = await open(eventsPath, "a", 0o600);
     try {
       await handle.writeFile(
@@ -139,33 +197,25 @@ export class FileRunJournal implements RunJournal {
       await handle.close();
     }
     await chmod(eventsPath, 0o600);
-    await syncDirectory(runRoot);
-  }
-
-  async replace(snapshot: RunSnapshot): Promise<void> {
-    const events = await this.readEvents(snapshot.runId);
-    if (events === null) throw new Error("Striker run journal is missing");
-    await this.writeSnapshot(snapshot, events.length);
+    await syncDirectory(planRoot);
   }
 
   private async writeSnapshot(
+    planId: string,
     snapshot: RunSnapshot,
     eventCount: number,
   ): Promise<void> {
-    const runRoot = this.runRoot(snapshot.runId);
-    await ensurePrivateDirectory(runRoot);
-    const target = path.join(runRoot, "snapshot.json");
-    const temporary = path.join(runRoot, `snapshot.${String(process.pid)}.tmp`);
+    const planRoot = this.planRoot(planId);
+    const target = path.join(planRoot, "snapshot.json");
+    const temporary = path.join(
+      planRoot,
+      `snapshot.${String(process.pid)}.tmp`,
+    );
     const handle = await open(temporary, "w", 0o600);
     try {
-      const normalized = runSnapshotSchema.parse(snapshot) as RunSnapshot;
       await handle.writeFile(
         `${JSON.stringify(
-          {
-            eventCount,
-            schema: runJournalSchemaId,
-            snapshot: normalized,
-          },
+          { eventCount, schema: runJournalSchemaId, snapshot },
           null,
           2,
         )}\n`,
@@ -176,57 +226,20 @@ export class FileRunJournal implements RunJournal {
     }
     await rename(temporary, target);
     await chmod(target, 0o600);
-    await syncDirectory(runRoot);
-  }
-
-  async delete(runId: string): Promise<void> {
-    await rm(this.runRoot(runId), { force: true, recursive: true });
-    await this.releaseRun(runId);
-    await syncDirectory(this.#runsRoot);
-  }
-
-  async load(runId: string): Promise<RunRecoveryState | null> {
-    const events = await this.readEvents(runId, true);
-    if (events === null) return null;
-    assertEventSequence(events, runId);
-    const completedTasks = events
-      .filter((event) => event.type === "task_completed")
-      .map((event) => event.task);
-    const snapshot =
-      (await this.readSnapshot(runId, events)) ??
-      recoverMissingSnapshot(events, runId);
-    const lastEvent = events.at(-1);
-    if (lastEvent === undefined) {
-      throw new Error("Striker run journal is empty");
-    }
-    return { completedTasks, lastEvent, snapshot };
-  }
-
-  async loadActive(): Promise<RunRecoveryState | null> {
-    const claimPath = path.join(this.#runsRoot, "active-run");
-    let runId: string;
-    try {
-      runId = (await readFile(claimPath, "utf8")).trim();
-    } catch (error) {
-      if (hasCode(error, "ENOENT")) return null;
-      throw error;
-    }
-    const recovery = await this.load(runId);
-    if (recovery === null) {
-      throw new Error("Active Striker run is missing its journal");
-    }
-    return recovery;
+    await syncDirectory(planRoot);
   }
 
   private async readEvents(
-    runId: string,
-    allowMissing = false,
+    planId: string,
+    allowMissing: boolean,
   ): Promise<readonly RunJournalEvent[] | null> {
-    const eventsPath = path.join(this.runRoot(runId), "events.ndjson");
+    const eventsPath = path.join(this.planRoot(planId), "events.ndjson");
     try {
       const content = await readFile(eventsPath, "utf8");
-      const lines = content.split("\n").filter((line) => line.length > 0);
-      return lines.map(parseEvent);
+      return content
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map(parseEvent);
     } catch (error) {
       if (allowMissing && hasCode(error, "ENOENT")) return null;
       throw error;
@@ -234,10 +247,10 @@ export class FileRunJournal implements RunJournal {
   }
 
   private async readSnapshot(
-    runId: string,
+    planId: string,
     events: readonly RunJournalEvent[],
-  ): Promise<RunSnapshot | null> {
-    const snapshotPath = path.join(this.runRoot(runId), "snapshot.json");
+  ): Promise<{ readonly eventCount: number } | null> {
+    const snapshotPath = path.join(this.planRoot(planId), "snapshot.json");
     let content: string;
     try {
       content = await readFile(snapshotPath, "utf8");
@@ -251,64 +264,79 @@ export class FileRunJournal implements RunJournal {
     if (!parsed.success) {
       throw new Error("Invalid Striker run snapshot", { cause: parsed.error });
     }
-    const { snapshot } = parsed.data;
-    if (snapshot.runId !== runId) {
-      throw new Error("Striker run snapshot contains a mismatched run id");
+    const count = parsed.data.eventCount ?? events.length;
+    if (count > events.length) {
+      throw new Error("Striker run snapshot is ahead of its plan journal");
     }
-    if (
-      parsed.data.eventCount !== undefined &&
-      parsed.data.eventCount > events.length
-    ) {
-      throw new Error("Striker run snapshot is ahead of its event journal");
-    }
-    const eventCount =
-      parsed.data.eventCount ??
-      inferSnapshotEventCount(snapshot as RunSnapshot, events);
-    assertSnapshotPrefix(snapshot as RunSnapshot, events.slice(0, eventCount));
-    const recovered = events
-      .slice(eventCount)
-      .reduce(replayEvent, snapshot as RunSnapshot);
-    if (eventCount < events.length) {
-      await this.writeSnapshot(recovered, events.length);
-    }
-    return recovered;
+    assertSnapshotPrefix(
+      parsed.data.snapshot as RunSnapshot,
+      events.slice(0, count),
+      planId,
+    );
+    return { eventCount: count };
   }
 
-  private async claimRun(runId: string): Promise<void> {
-    const claimPath = path.join(this.#runsRoot, "active-run");
+  private async claimRun(planId: string, runId: string): Promise<ClaimedRun> {
+    validateId(planId, "plan identity");
+    validateId(runId, "run id");
+    const claim = { ownerPid: process.pid, planId, runId };
     try {
-      const handle = await open(claimPath, "wx", 0o600);
+      const handle = await open(this.#claimPath, "wx", 0o600);
       try {
-        await handle.writeFile(`${runId}\n`);
+        await handle.writeFile(`${JSON.stringify(claim)}\n`);
         await handle.sync();
       } finally {
         await handle.close();
       }
-      await syncDirectory(this.#runsRoot);
+      await syncDirectory(this.stateRoot);
+      return { claim, created: true };
     } catch (error) {
       if (!hasCode(error, "EEXIST")) throw error;
-      const active = (await readFile(claimPath, "utf8")).trim();
-      if (active !== runId) {
-        throw new Error(`Another Striker run is active: ${active}`, {
-          cause: error,
-        });
+      const active = await this.readClaim();
+      if (active?.runId !== runId || active.planId !== planId) {
+        throw new Error(
+          `Another Striker run is active: ${active?.runId ?? "unknown"}`,
+          { cause: error },
+        );
       }
+      return { claim: active, created: false };
     }
   }
 
-  private async releaseRun(runId: string): Promise<void> {
-    const claimPath = path.join(this.#runsRoot, "active-run");
+  private async requireClaim(runId: string): Promise<ActiveClaim> {
+    const claim = await this.readClaim();
+    if (claim?.runId !== runId) {
+      throw new Error("Striker event does not belong to the active run");
+    }
+    return claim;
+  }
+
+  private async readClaim(): Promise<ActiveClaim | null> {
     try {
-      if ((await readFile(claimPath, "utf8")).trim() === runId) {
-        await unlink(claimPath);
+      const value = parseJson(
+        await readFile(this.#claimPath, "utf8"),
+        "Invalid active Striker run index",
+      );
+      if (!isActiveClaim(value)) {
+        throw new Error("Invalid active Striker run index");
       }
+      return value;
     } catch (error) {
-      if (!hasCode(error, "ENOENT")) throw error;
+      if (hasCode(error, "ENOENT")) return null;
+      throw error;
     }
   }
 
-  private runRoot(runId: string): string {
-    if (!/^[A-Za-z0-9._-]+$/.test(runId)) throw new Error("Invalid run id");
-    return path.join(this.#runsRoot, runId);
+  private async releaseRun(claim: ActiveClaim): Promise<void> {
+    const active = await this.readClaim();
+    if (active?.planId === claim.planId && active.runId === claim.runId) {
+      await unlink(this.#claimPath);
+      await syncDirectory(this.stateRoot);
+    }
+  }
+
+  private planRoot(planId: string): string {
+    validateId(planId, "plan identity");
+    return path.join(this.#plansRoot, planId);
   }
 }

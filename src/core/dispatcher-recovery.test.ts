@@ -251,6 +251,7 @@ describe("Dispatcher paused-session recovery", () => {
     const { dispatcher, journal, runner, source } = dispatcherFixture();
     const request = {
       completedTasks: [],
+      planId: "run-answer",
       runId: "run-answer",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -276,7 +277,7 @@ describe("Dispatcher paused-session recovery", () => {
     expect(
       journal.events.filter((event) => event.type === "run_answered"),
     ).toHaveLength(1);
-    expect(journal.deletedRunIds).toEqual(["run-answer"]);
+    expect(journal.releasedRunIds).toEqual(["run-answer"]);
     expect(source.marked).toBe(true);
   });
 
@@ -286,6 +287,7 @@ describe("Dispatcher paused-session recovery", () => {
     ]);
     const request = {
       completedTasks: [],
+      planId: "run-resume",
       runId: "run-resume",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -315,6 +317,7 @@ describe("Dispatcher recovery failures", () => {
     ]);
     const request = {
       completedTasks: [],
+      planId: "run-resume-twice",
       runId: "run-resume-twice",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -344,16 +347,23 @@ describe("Dispatcher recovery failures", () => {
         preflight: () => Promise.resolve(),
         resumeSession: () =>
           Promise.reject(new Error("replaced the preserved backend session")),
-        runInNewSession: () =>
-          Promise.resolve({
+        runInNewSession: async (_request, sessionStarted) => {
+          const session = {
+            id: "runtime-session",
+            resumeId: "agent-session",
+          };
+          await sessionStarted?.(session);
+          return {
             output: "I need a decision.",
-            session: { id: "runtime-session", resumeId: "agent-session" },
+            session,
             status: "returned",
-          }),
+          };
+        },
       },
     });
     await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: "run-lost-session",
       runId: "run-lost-session",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -392,6 +402,7 @@ describe("Dispatcher replacement-session recovery", () => {
     const dispatcher = new Dispatcher({ adapters: registry, journal, runner });
     await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: "run-replacement-session",
       runId: "run-replacement-session",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -416,6 +427,7 @@ describe("Dispatcher attention evidence", () => {
 
     await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: `run-${reason}`,
       runId: `run-${reason}`,
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -433,6 +445,7 @@ describe("Dispatcher attention evidence", () => {
 
     await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: `run-${reason}`,
       runId: `run-${reason}`,
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },

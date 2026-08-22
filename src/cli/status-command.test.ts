@@ -43,6 +43,64 @@ function cliDependencies(status: RecoveryOperationHandler["status"]) {
   };
 }
 
+async function pausedFileJournal(): Promise<FileRunJournal> {
+  const root = await mkdtemp(path.join(tmpdir(), "striker-cli-status-"));
+  await execFileAsync("git", ["-C", root, "init"]);
+  const journal = new FileRunJournal(
+    await new GitCliRepository().resolvePrivatePath(root, "striker"),
+  );
+  const task = {
+    identity: { id: "tasks/04.md", revision: "revision-4" },
+    instructions: "Build.",
+    title: "Build",
+  };
+  const session = { id: "runtime-file", resumeId: "provider-file" };
+  const request = {
+    completedTasks: [],
+    planId: "run-file",
+    runId: "run-file",
+    skills: [],
+    taskSource: { location: "/repo/plan", type: "striker-plan" },
+  } as const;
+  await journal.append({
+    planId: request.planId,
+    request,
+    runId: request.runId,
+    type: "run_started",
+  });
+  await journal.append({ runId: "run-file", task, type: "task_selected" });
+  await journal.append({
+    before: null,
+    runId: "run-file",
+    task: task.identity,
+    type: "task_baseline_recorded",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: "run-file",
+    task: task.identity,
+    type: "task_attempt_started",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: "run-file",
+    session,
+    task: task.identity,
+    type: "task_session_started",
+  });
+  await journal.append({
+    attention: {
+      detail: "Verification failed.",
+      reason: "verification_failed",
+    },
+    runId: "run-file",
+    session,
+    task: task.identity,
+    type: "run_needs_attention",
+  });
+  return journal;
+}
+
 describe("striker status", () => {
   it("reports the active attempt and last durable transition", async () => {
     const fixture = cliDependencies(() =>
@@ -75,37 +133,7 @@ describe("striker status", () => {
   });
 
   it("reads status from a temporary Git-private journal", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-cli-status-"));
-    await execFileAsync("git", ["-C", root, "init"]);
-    const journal = new FileRunJournal(
-      await new GitCliRepository().resolvePrivatePath(root, "striker"),
-    );
-    const task = {
-      identity: { id: "tasks/04.md", revision: "revision-4" },
-      instructions: "Build.",
-      title: "Build",
-    };
-    const session = { id: "runtime-file", resumeId: "provider-file" };
-    const attention = {
-      detail: "Verification failed.",
-      reason: "verification_failed" as const,
-    };
-    await journal.append({ runId: "run-file", type: "run_started" });
-    await journal.append({
-      attention,
-      runId: "run-file",
-      session,
-      task: task.identity,
-      type: "run_needs_attention",
-    });
-    await journal.replace({
-      attempt: 1,
-      attention,
-      runId: "run-file",
-      session,
-      status: "needs_attention",
-      task,
-    });
+    const journal = await pausedFileJournal();
     const fixture = cliDependencies(() => new RunOperations(journal).status());
 
     await expect(runCli(["status"], fixture.dependencies)).resolves.toBe(0);

@@ -15,6 +15,8 @@ import type {
   TaskSource,
   TaskSourceAdapter,
 } from "../core/contracts.js";
+import { terminalRunStatus } from "../core/run-state.js";
+import { replayPlanJournal } from "../infrastructure/run-journal-sequence.js";
 
 class InMemoryTaskSource implements TaskSource {
   constructor(
@@ -133,47 +135,58 @@ export class FakeAgentRunner implements AgentRunner {
 }
 
 export class InMemoryRunJournal implements RunJournal {
-  readonly deletedRunIds: string[] = [];
+  readonly releasedRunIds: string[] = [];
   readonly events: RunJournalEvent[] = [];
   readonly snapshots: RunSnapshot[] = [];
 
   append(event: RunJournalEvent): Promise<void> {
+    const planId = this.planIdFor(event);
+    const events = [...this.eventsForPlan(planId), event];
+    const recovery = replayPlanJournal(events, planId);
     this.events.push(event);
+    this.snapshots.push(recovery.snapshot);
+    if (terminalRunStatus(event) !== null) {
+      this.releasedRunIds.push(event.runId);
+    }
     return Promise.resolve();
   }
 
-  replace(snapshot: RunSnapshot): Promise<void> {
-    this.snapshots.push(snapshot);
-    return Promise.resolve();
-  }
-
-  delete(runId: string): Promise<void> {
-    this.deletedRunIds.push(runId);
-    return Promise.resolve();
-  }
-
-  load(runId: string): Promise<RunRecoveryState | null> {
-    if (this.deletedRunIds.includes(runId)) return Promise.resolve(null);
-    const events = this.events.filter((event) => event.runId === runId);
-    if (events.length === 0) return Promise.resolve(null);
-    const lastEvent = events.at(-1);
-    if (lastEvent === undefined) throw new Error("Missing fake journal event");
-    return Promise.resolve({
-      completedTasks: events
-        .filter((event) => event.type === "task_completed")
-        .map((event) => event.task),
-      lastEvent,
-      snapshot:
-        this.snapshots.filter((item) => item.runId === runId).at(-1) ?? null,
-    });
+  load(planId: string): Promise<RunRecoveryState | null> {
+    const events = this.eventsForPlan(planId);
+    return Promise.resolve(
+      events.length === 0 ? null : replayPlanJournal(events, planId),
+    );
   }
 
   loadActive(): Promise<RunRecoveryState | null> {
-    const runId = this.events.find(
-      (event) =>
+    const start = this.events.findLast(
+      (event): event is Extract<RunJournalEvent, { type: "run_started" }> =>
         event.type === "run_started" &&
-        !this.deletedRunIds.includes(event.runId),
-    )?.runId;
-    return runId === undefined ? Promise.resolve(null) : this.load(runId);
+        !this.releasedRunIds.includes(event.runId),
+    );
+    return start === undefined
+      ? Promise.resolve(null)
+      : this.load(start.planId);
+  }
+
+  private eventsForPlan(planId: string): RunJournalEvent[] {
+    const runIds = this.events
+      .filter(
+        (event) => event.type === "run_started" && event.planId === planId,
+      )
+      .map((event) => event.runId);
+    return this.events.filter((event) => runIds.includes(event.runId));
+  }
+
+  private planIdFor(event: RunJournalEvent): string {
+    if (event.type === "run_started") return event.planId;
+    const start = this.events.find(
+      (candidate) =>
+        candidate.type === "run_started" && candidate.runId === event.runId,
+    );
+    if (start?.type !== "run_started") {
+      throw new Error("Fake journal event has no run start");
+    }
+    return start.planId;
   }
 }

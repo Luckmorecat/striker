@@ -69,24 +69,30 @@ describe("striker discard", () => {
     });
   });
 
-  it("deletes a paused Git-private journal through the CLI boundary", async () => {
+  it("records discard and retains Git-private plan history", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-cli-discard-"));
     await execFileAsync("git", ["-C", root, "init"]);
     const journal = new FileRunJournal(
       await new GitCliRepository().resolvePrivatePath(root, "striker"),
     );
-    await journal.append({ runId: "run-1", type: "run_started" });
+    const request = {
+      completedTasks: [],
+      planId: "plan-1",
+      runId: "run-1",
+      skills: [],
+      taskSource: { location: "/repo/plan", type: "striker-plan" },
+    } as const;
+    await journal.append({
+      planId: request.planId,
+      request,
+      runId: request.runId,
+      type: "run_started",
+    });
     await journal.append({
       current: null,
       runId: "run-1",
       task: { id: "tasks/01.md", revision: "removed" },
       type: "run_source_changed",
-    });
-    await journal.replace({
-      runId: "run-1",
-      session: null,
-      status: "needs_attention",
-      task: null,
     });
     const operations = new RunOperations(journal);
     const test = fixture();
@@ -101,5 +107,9 @@ describe("striker discard", () => {
 
     await expect(runCli(["discard", "--force"], dependencies)).resolves.toBe(0);
     await expect(journal.loadActive()).resolves.toBeNull();
+    await expect(journal.load("plan-1")).resolves.toMatchObject({
+      lastEvent: { runId: "run-1", type: "run_discarded" },
+      snapshot: { status: "discarded" },
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const runJournalSchemaId = "striker.run.v1";
+export const runJournalSchemaId = "striker.plan-journal.v2";
 
 const taskIdentitySchema = z
   .object({ id: z.string().min(1), revision: z.string().min(1) })
@@ -54,6 +54,7 @@ const dispatchRequestSchema = z
   .object({
     allowDirty: z.boolean().optional(),
     completedTasks: z.array(taskIdentitySchema),
+    planId: z.string().min(1),
     runId: z.string().min(1),
     skills: z.array(z.string()),
     taskSource: z
@@ -79,8 +80,10 @@ export const runSnapshotSchema = z
   .object({
     attempt: z.number().int().positive().optional(),
     attention: runAttentionSchema.nullable().optional(),
+    baselineRecorded: z.boolean().optional(),
     before: gitStateSchema.nullable().optional(),
-    request: dispatchRequestSchema.optional(),
+    planId: z.string().min(1),
+    request: dispatchRequestSchema,
     runId: z.string().min(1),
     session: agentSessionSchema.nullable(),
     status: z.enum([
@@ -89,13 +92,42 @@ export const runSnapshotSchema = z
       "needs_attention",
       "failed",
       "completed",
+      "discarded",
     ]),
     task: implementationTaskSchema.nullable(),
   })
   .strict();
 
 const runStartedSchema = z
-  .object({ runId: z.string().min(1), type: z.literal("run_started") })
+  .object({
+    planId: z.string().min(1),
+    request: dispatchRequestSchema,
+    runId: z.string().min(1),
+    type: z.literal("run_started"),
+  })
+  .strict();
+const taskSelectedSchema = z
+  .object({
+    runId: z.string().min(1),
+    task: implementationTaskSchema,
+    type: z.literal("task_selected"),
+  })
+  .strict();
+const taskBaselineRecordedSchema = z
+  .object({
+    before: gitStateSchema.nullable(),
+    runId: z.string().min(1),
+    task: taskIdentitySchema,
+    type: z.literal("task_baseline_recorded"),
+  })
+  .strict();
+const taskAttemptStartedSchema = z
+  .object({
+    attempt: z.number().int().positive(),
+    runId: z.string().min(1),
+    task: taskIdentitySchema,
+    type: z.literal("task_attempt_started"),
+  })
   .strict();
 const taskSessionStartedSchema = z
   .object({
@@ -108,7 +140,7 @@ const taskSessionStartedSchema = z
   .strict();
 const runRetriedSchema = z
   .object({
-    attempt: z.number().int().positive(),
+    attempt: z.number().int().nonnegative(),
     runId: z.string().min(1),
     task: taskIdentitySchema,
     type: z.literal("run_retried"),
@@ -168,9 +200,18 @@ const runSourceChangedSchema = z
     type: z.literal("run_source_changed"),
   })
   .strict();
+const runCompletedSchema = z
+  .object({ runId: z.string().min(1), type: z.literal("run_completed") })
+  .strict();
+const runDiscardedSchema = z
+  .object({ runId: z.string().min(1), type: z.literal("run_discarded") })
+  .strict();
 
 export const runJournalEventSchema = z.discriminatedUnion("type", [
   runStartedSchema,
+  taskSelectedSchema,
+  taskBaselineRecordedSchema,
+  taskAttemptStartedSchema,
   taskSessionStartedSchema,
   runRetriedSchema,
   taskCompletedSchema,
@@ -179,6 +220,8 @@ export const runJournalEventSchema = z.discriminatedUnion("type", [
   runResumedSchema,
   runFailedSchema,
   runSourceChangedSchema,
+  runCompletedSchema,
+  runDiscardedSchema,
 ]);
 
 export const eventEnvelopeSchema = z

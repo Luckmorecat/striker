@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapter.js";
+import { parseStrikerPlan } from "../adapters/striker-plan/plan-parser.js";
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
 import { AdapterRegistry } from "./adapter-registry.js";
@@ -14,9 +15,24 @@ import type { AgentRunner, TaskIdentity, TaskSource } from "./contracts.js";
 import { Dispatcher } from "./dispatcher.js";
 
 const execFileAsync = promisify(execFile);
+const immutablePlanPaths = [
+  "plan.json",
+  "spine.md",
+  "map.md",
+  "tasks/01.md",
+  "tasks/02.md",
+] as const;
 
 async function git(root: string, ...arguments_: string[]): Promise<void> {
   await execFileAsync("git", ["-C", root, ...arguments_]);
+}
+
+function readImmutablePlan(planRoot: string): Promise<string[]> {
+  return Promise.all(
+    immutablePlanPaths.map((file) =>
+      readFile(path.join(planRoot, file), "utf8"),
+    ),
+  );
 }
 
 function taskText(title: string, target: string): string {
@@ -142,23 +158,45 @@ async function recoveryFixture() {
 describe("Dispatcher completed-event recovery", () => {
   it("uses the durable completion before selecting another task", async () => {
     const fixture = await recoveryFixture();
+    const plan = await parseStrikerPlan(fixture.planRoot);
     const journal = new FileRunJournal(path.join(fixture.root, "state"));
     const session = { id: "runtime-session", resumeId: "provider-session" };
     const request = {
       completedTasks: [],
+      planId: plan.identity,
       runId: "run-marker",
       skills: [],
       taskSource: { location: fixture.planRoot, type: "striker-plan" },
     } as const;
-    await journal.append({ runId: request.runId, type: "run_started" });
-    await journal.replace({
-      attempt: 1,
-      before: null,
+    await journal.append({
+      planId: request.planId,
       request,
       runId: request.runId,
-      session,
-      status: "running",
+      type: "run_started",
+    });
+    await journal.append({
+      runId: request.runId,
       task: fixture.task,
+      type: "task_selected",
+    });
+    await journal.append({
+      before: null,
+      runId: request.runId,
+      task: fixture.task.identity,
+      type: "task_baseline_recorded",
+    });
+    await journal.append({
+      attempt: 1,
+      runId: request.runId,
+      task: fixture.task.identity,
+      type: "task_attempt_started",
+    });
+    await journal.append({
+      attempt: 1,
+      runId: request.runId,
+      session,
+      task: fixture.task.identity,
+      type: "task_session_started",
     });
     await journal.append({
       evidence: { summary: "task complete" },
@@ -237,6 +275,7 @@ describe("Dispatcher finalization recovery", () => {
     const dispatcher = new Dispatcher({ adapters, journal, runner });
     const request = {
       completedTasks: [],
+      planId: "run-finalization-retry",
       runId: "run-finalization-retry",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -258,6 +297,7 @@ describe("Dispatcher finalization recovery", () => {
 describe("Dispatcher immutable multi-task plans", () => {
   it("runs two Git tasks without modifying plan files", async () => {
     const fixture = await twoTaskFixture();
+    const plan = await parseStrikerPlan(fixture.planRoot);
     const repository = new GitCliRepository();
     const journal = new FileRunJournal(
       await repository.resolvePrivatePath(fixture.root, "striker"),
@@ -269,18 +309,7 @@ describe("Dispatcher immutable multi-task plans", () => {
         workflowRoot: fixture.workflowRoot,
       }),
     );
-    const immutablePaths = [
-      "plan.json",
-      "spine.md",
-      "map.md",
-      "tasks/01.md",
-      "tasks/02.md",
-    ];
-    const planBefore = await Promise.all(
-      immutablePaths.map((file) =>
-        readFile(path.join(fixture.planRoot, file), "utf8"),
-      ),
-    );
+    const planBefore = await readImmutablePlan(fixture.planRoot);
     let sessionCount = 0;
     const runner: AgentRunner = {
       preflight: () => Promise.resolve(),
@@ -319,6 +348,7 @@ describe("Dispatcher immutable multi-task plans", () => {
       },
     }).dispatch({
       completedTasks: [],
+      planId: plan.identity,
       runId: "run-two-task",
       skills: [],
       taskSource: { location: fixture.planRoot, type: "striker-plan" },
@@ -326,13 +356,14 @@ describe("Dispatcher immutable multi-task plans", () => {
 
     expect(result).toMatchObject({ status: "completed" });
     expect(sessionCount).toBe(2);
-    await expect(
-      Promise.all(
-        immutablePaths.map((file) =>
-          readFile(path.join(fixture.planRoot, file), "utf8"),
-        ),
-      ),
-    ).resolves.toEqual(planBefore);
+    await expect(readImmutablePlan(fixture.planRoot)).resolves.toEqual(
+      planBefore,
+    );
     await expect(journal.loadActive()).resolves.toBeNull();
+    await expect(journal.load(plan.identity)).resolves.toMatchObject({
+      completedTasks: plan.tasks.map((task) => task.identity),
+      lastEvent: { type: "run_completed" },
+      snapshot: { status: "completed" },
+    });
   });
 });

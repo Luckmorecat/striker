@@ -96,13 +96,16 @@ async function dispatchRun(
   const root = await git.resolveRoot(cwd);
   const config = await loadProjectConfig(root);
   const dispatcher = await createDispatcher(approvalMode);
+  const sourcePath = path.resolve(cwd, source);
+  const plan = await parseStrikerPlan(sourcePath);
   return dispatcher.dispatch({
     allowDirty,
     completedTasks: [],
+    planId: plan.identity,
     runId: randomUUID(),
     skills: config.skills,
     taskSource: {
-      location: path.resolve(cwd, source),
+      location: sourcePath,
       type: config.taskSource,
     },
   });

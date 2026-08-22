@@ -202,7 +202,16 @@ pnpm exec striker run path/to/plan --allow-dirty
 After each task, Striker requires one descendant commit, an unchanged allowed
 dirty baseline, the exact verification result, and both implementor review
 results. It records completion in the Git-private run journal before selecting
-the next task. Once the source is exhausted, Striker deletes the run journal.
+the next task.
+
+Striker keys one persistent event journal by the immutable plan identity under
+Git-private checkout storage. The journal records each run, task selection,
+baseline, attempt, session, continuation, failure, attention state, completion,
+source conflict, discard, and terminal completion. The active-run file is only a
+lock and lookup index. Successful completion and explicit discard release that
+claim without deleting plan history. `snapshot.json` is a rebuildable
+projection; Striker repairs or recreates it from `events.ndjson` after an
+interrupted projection write.
 
 One nonterminal run may exist per checkout. Inspect or operate it with:
 
@@ -218,9 +227,9 @@ pnpm exec striker discard --force
 `resume` continues an interrupted session or sends a repair request back to a
 paused session. `answer` continues that same session with developer input.
 `retry` records the failed attempt and starts the incomplete task in a fresh
-session. `discard --force` deletes recovery state only for a paused or failed
-run. Paused and failed journals remain Git-private until recovery or explicit
-discard; successful journals are removed.
+session. `discard --force` records a terminal discard only for a paused or
+failed run, then releases the active claim. All plan events remain Git-private
+after completion or discard.
 
 ## Permission modes
 

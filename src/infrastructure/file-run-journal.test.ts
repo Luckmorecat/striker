@@ -4,54 +4,112 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { RunOperations } from "../core/run-operations.js";
+import type {
+  DispatchRequest,
+  ImplementationTask,
+  RunJournalEvent,
+} from "../core/contracts.js";
 import { FileRunJournal } from "./file-run-journal.js";
+import { runJournalSchemaId } from "./run-journal-schema.js";
 
-describe("file run journal", () => {
-  it("writes versioned private events before atomic snapshots", async () => {
+const identity = { id: "tasks/01.md", revision: "revision-1" };
+const task: ImplementationTask = {
+  identity,
+  instructions: "Build.",
+  title: "Build",
+};
+
+function request(planId = "plan-1", runId = "run-1"): DispatchRequest {
+  return {
+    completedTasks: [],
+    planId,
+    runId,
+    skills: [],
+    taskSource: { location: "/repo/plan", type: "striker-plan" },
+  };
+}
+
+async function start(
+  journal: FileRunJournal,
+  value = request(),
+): Promise<void> {
+  await journal.append({
+    planId: value.planId,
+    request: value,
+    runId: value.runId,
+    type: "run_started",
+  });
+}
+
+async function startAttempt(
+  journal: FileRunJournal,
+  value = request(),
+  session = { id: "session-1" },
+): Promise<void> {
+  await start(journal, value);
+  await journal.append({ runId: value.runId, task, type: "task_selected" });
+  await journal.append({
+    before: null,
+    runId: value.runId,
+    task: identity,
+    type: "task_baseline_recorded",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: value.runId,
+    task: identity,
+    type: "task_attempt_started",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: value.runId,
+    session,
+    task: identity,
+    type: "task_session_started",
+  });
+}
+
+describe("file plan journal storage", () => {
+  it("writes versioned private events and an atomic projection by plan id", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-"));
     const journal = new FileRunJournal(root);
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.replace({
-      runId: "run-1",
-      session: null,
-      status: "running",
-      task: null,
-    });
-    const runRoot = path.join(root, "runs/run-1");
+    await start(journal);
+    const planRoot = path.join(root, "plans/plan-1");
 
     expect(
-      await readFile(path.join(runRoot, "events.ndjson"), "utf8"),
-    ).toContain('"schema":"striker.run.v1"');
+      await readFile(path.join(planRoot, "events.ndjson"), "utf8"),
+    ).toContain(`"schema":"${runJournalSchemaId}"`);
     expect(
-      await readFile(path.join(runRoot, "snapshot.json"), "utf8"),
-    ).toContain('"status": "running"');
-    expect((await stat(runRoot)).mode & 0o777).toBe(0o700);
-    expect((await stat(path.join(runRoot, "snapshot.json"))).mode & 0o777).toBe(
-      0o600,
-    );
+      await readFile(path.join(planRoot, "snapshot.json"), "utf8"),
+    ).toContain('"planId": "plan-1"');
+    expect((await stat(planRoot)).mode & 0o777).toBe(0o700);
+    expect(
+      (await stat(path.join(planRoot, "snapshot.json"))).mode & 0o777,
+    ).toBe(0o600);
   });
 
-  it("allows only one active run and deletes successful state", async () => {
+  it("allows one active run and releases only its claim at completion", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-guard-"));
     const journal = new FileRunJournal(root);
-    await journal.append({ runId: "run-1", type: "run_started" });
+    await start(journal);
 
+    await expect(start(journal, request("plan-2", "run-2"))).rejects.toThrow(
+      "Another Striker run is active: run-1",
+    );
+    await journal.append({ runId: "run-1", type: "run_completed" });
     await expect(
-      journal.append({ runId: "run-2", type: "run_started" }),
-    ).rejects.toThrow("Another Striker run is active: run-1");
-
-    await journal.delete("run-1");
-    await expect(
-      journal.append({ runId: "run-2", type: "run_started" }),
+      start(journal, request("plan-2", "run-2")),
     ).resolves.toBeUndefined();
+    await expect(journal.load("plan-1")).resolves.toMatchObject({
+      lastEvent: { type: "run_completed" },
+    });
   });
 
-  it("claims the active run atomically across concurrent starts", async () => {
+  it("claims concurrent starts atomically", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-race-"));
     const results = await Promise.allSettled([
-      new FileRunJournal(root).append({ runId: "run-a", type: "run_started" }),
-      new FileRunJournal(root).append({ runId: "run-b", type: "run_started" }),
+      start(new FileRunJournal(root), request("plan-a", "run-a")),
+      start(new FileRunJournal(root), request("plan-b", "run-b")),
     ]);
 
     expect(
@@ -61,74 +119,44 @@ describe("file run journal", () => {
       results.filter((result) => result.status === "rejected"),
     ).toHaveLength(1);
   });
-});
 
-describe("file run journal completed-task recovery", () => {
-  it("recovers completed task identities from durable events", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-read-"));
+  it("releases an orphaned claim left before the start event", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-orphan-"));
     const journal = new FileRunJournal(root);
-    const task = { id: "tasks/01.md", revision: "revision-1" };
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.replace({
-      runId: "run-1",
-      session: { id: "session-1" },
-      status: "running",
-      task: {
-        identity: task,
-        instructions: "Build.",
-        title: "Build",
-      },
-    });
-    await journal.append({
-      runId: "run-1",
-      session: { id: "session-1" },
-      task,
-      type: "task_completed",
-    });
+    await writeFile(
+      path.join(root, "active-run.json"),
+      `${JSON.stringify({ ownerPid: 2_000_000_000, planId: "orphan", runId: "orphan" })}\n`,
+    );
 
-    await expect(journal.load("missing")).resolves.toBeNull();
-    await expect(journal.load("run-1")).resolves.toMatchObject({
-      completedTasks: [task],
-      lastEvent: {
-        runId: "run-1",
-        session: { id: "session-1" },
-        task,
-        type: "task_completed",
-      },
-      snapshot: { session: null, status: "running", task: null },
-    });
+    await expect(journal.loadActive()).resolves.toBeNull();
+    await expect(start(journal)).resolves.toBeUndefined();
   });
 });
 
-describe("file run journal validation and replay", () => {
-  it("replays a fully appended attention event and repairs the stale snapshot", async () => {
+describe("file plan journal validation and replay", () => {
+  it("repairs a projection that trails an authoritative append", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-replay-"));
     const journal = new FileRunJournal(root);
-    const task = {
-      identity: { id: "tasks/01.md", revision: "revision-1" },
-      instructions: "Build the task.",
-      title: "Build the task",
-    };
-    const session = { id: "runtime-key", resumeId: "provider-session" };
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.replace({
-      attempt: 1,
-      runId: "run-1",
-      session,
-      status: "running",
-      task,
-    });
-    await journal.append({
+    const session = { id: "session-1" };
+    await startAttempt(journal, request(), session);
+    const planRoot = path.join(root, "plans/plan-1");
+    const eventsPath = path.join(planRoot, "events.ndjson");
+    const event: RunJournalEvent = {
       attention: {
         detail: "Verification failed.",
         reason: "verification_failed",
       },
       runId: "run-1",
       session,
-      task: task.identity,
+      task: identity,
       type: "run_needs_attention",
-    });
+    };
+    await writeFile(
+      eventsPath,
+      `${await readFile(eventsPath, "utf8")}${JSON.stringify({ event, schema: runJournalSchemaId })}\n`,
+    );
 
+    await expect(journal.append(event)).resolves.toBeUndefined();
     await expect(journal.loadActive()).resolves.toMatchObject({
       lastEvent: { type: "run_needs_attention" },
       snapshot: {
@@ -137,359 +165,213 @@ describe("file run journal validation and replay", () => {
       },
     });
     expect(
-      await readFile(path.join(root, "runs/run-1/snapshot.json"), "utf8"),
-    ).toContain('"eventCount": 2');
+      await readFile(path.join(planRoot, "snapshot.json"), "utf8"),
+    ).toContain('"eventCount": 6');
+    expect(
+      (await readFile(eventsPath, "utf8")).trim().split("\n"),
+    ).toHaveLength(6);
   });
-});
 
-describe("file run journal version and corruption checks", () => {
-  it("rejects unknown event versions without rewriting journal files", async () => {
+  it("rejects unknown schema versions without rewriting events", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-version-"));
     const journal = new FileRunJournal(root);
-    await journal.append({ runId: "run-1", type: "run_started" });
-    const eventsPath = path.join(root, "runs/run-1/events.ndjson");
-    const unsupported = `${JSON.stringify({
-      event: { runId: "run-1", type: "run_started" },
-      schema: "striker.run.v2",
-    })}\n`;
+    await start(journal);
+    const eventsPath = path.join(root, "plans/plan-1/events.ndjson");
+    const unsupported = `${JSON.stringify({ event: { runId: "run-1", type: "run_completed" }, schema: "striker.plan-journal.v3" })}\n`;
     await writeFile(eventsPath, unsupported);
 
-    await expect(journal.load("run-1")).rejects.toThrow(
-      "Unsupported Striker run journal schema: striker.run.v2",
+    await expect(journal.load("plan-1")).rejects.toThrow(
+      "Unsupported Striker plan journal schema: striker.plan-journal.v3",
     );
     expect(await readFile(eventsPath, "utf8")).toBe(unsupported);
   });
 
-  it("rejects unknown snapshot versions without rewriting the snapshot", async () => {
-    const root = await mkdtemp(
-      path.join(tmpdir(), "striker-journal-snapshot-version-"),
-    );
-    const journal = new FileRunJournal(root);
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.replace({
-      runId: "run-1",
-      session: null,
-      status: "running",
-      task: null,
-    });
-    const snapshotPath = path.join(root, "runs/run-1/snapshot.json");
-    const parsed = JSON.parse(await readFile(snapshotPath, "utf8")) as Record<
-      string,
-      unknown
-    >;
-    parsed.schema = "striker.run.v2";
-    const unsupported = `${JSON.stringify(parsed)}\n`;
-    await writeFile(snapshotPath, unsupported);
-
-    await expect(journal.load("run-1")).rejects.toThrow(
-      "Unsupported Striker run journal schema: striker.run.v2",
-    );
-    expect(await readFile(snapshotPath, "utf8")).toBe(unsupported);
-  });
-
-  it("rejects corrupt and contradictory state", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-invalid-"));
-    const journal = new FileRunJournal(root);
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.replace({
-      runId: "run-1",
-      session: null,
-      status: "running",
-      task: null,
-    });
-    const snapshotPath = path.join(root, "runs/run-1/snapshot.json");
-    const parsed = JSON.parse(await readFile(snapshotPath, "utf8")) as Record<
-      string,
-      unknown
-    >;
-    parsed.eventCount = 2;
-    await writeFile(snapshotPath, `${JSON.stringify(parsed)}\n`);
-
-    await expect(journal.load("run-1")).rejects.toThrow(
-      "Striker run snapshot is ahead of its event journal",
-    );
-
-    await writeFile(path.join(root, "runs/run-1/events.ndjson"), "not-json\n");
-    await expect(journal.load("run-1")).rejects.toThrow(
-      "Invalid Striker run journal event",
-    );
-  });
-});
-
-describe("file run journal contradiction checks", () => {
-  it("rejects an invalid durable event order", async () => {
+  it("rejects an event before writing when its ordering is invalid", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-order-"));
     const journal = new FileRunJournal(root);
-    const task = { id: "tasks/01.md", revision: "revision-1" };
-    const session = { id: "runtime-session" };
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.append({
-      error: "failed",
-      runId: "run-1",
-      session,
-      task,
-      type: "run_failed",
-    });
-    await journal.append({
-      attempt: 1,
-      runId: "run-1",
-      session,
-      task,
-      type: "task_session_started",
-    });
+    await start(journal);
 
-    await expect(journal.load("run-1")).rejects.toThrow(
-      "Striker session event has an invalid attempt",
-    );
-  });
-
-  it("rejects a snapshot that contradicts its applied event prefix", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-prefix-state-"));
-    const journal = new FileRunJournal(root);
-    const task = {
-      identity: { id: "tasks/01.md", revision: "revision-1" },
-      instructions: "Build.",
-      title: "Build",
-    };
-    const session = { id: "runtime-session" };
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.append({
-      attention: { detail: "failed", reason: "verification_failed" },
-      runId: "run-1",
-      session,
-      task: task.identity,
-      type: "run_needs_attention",
-    });
-    await journal.replace({
-      attention: null,
-      runId: "run-1",
-      session,
-      status: "running",
-      task,
-    });
-
-    await expect(journal.load("run-1")).rejects.toThrow(
-      "Striker run snapshot contradicts its event status",
-    );
-  });
-
-  it("rejects a provider session change inside one attempt", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-session-change-"));
-    const journal = new FileRunJournal(root);
-    const task = { id: "tasks/01.md", revision: "revision-1" };
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.append({
-      attempt: 1,
-      runId: "run-1",
-      session: { id: "runtime-a", resumeId: "provider-a" },
-      task,
-      type: "task_session_started",
-    });
-    await journal.append({
-      attention: { detail: "failed", reason: "verification_failed" },
-      runId: "run-1",
-      session: { id: "runtime-b", resumeId: "provider-b" },
-      task,
-      type: "run_needs_attention",
-    });
-
-    await expect(journal.load("run-1")).rejects.toThrow(
-      "Striker run event changes the active session",
-    );
-  });
-});
-
-describe("file run journal initialization recovery", () => {
-  it("turns an interrupted run claim into discardable failed state", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-orphan-run-"));
-    const journal = new FileRunJournal(root);
-    await journal.append({ runId: "run-1", type: "run_started" });
-
-    await expect(journal.loadActive()).resolves.toMatchObject({
-      snapshot: {
-        attention: { reason: "run_initialization_interrupted" },
+    await expect(
+      journal.append({
+        attempt: 1,
         runId: "run-1",
-        status: "failed",
-      },
-    });
-    await new RunOperations(journal).discard();
-    await expect(journal.loadActive()).resolves.toBeNull();
-  });
-
-  it("recovers a source conflict appended before the first snapshot", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-orphan-source-"));
-    const journal = new FileRunJournal(root);
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.append({
-      current: null,
-      runId: "run-1",
-      task: { id: "tasks/01.md", revision: "removed" },
-      type: "run_source_changed",
-    });
-
-    await expect(journal.loadActive()).resolves.toMatchObject({
-      snapshot: { session: null, status: "needs_attention", task: null },
-    });
-    await new RunOperations(journal).discard();
-    await expect(journal.loadActive()).resolves.toBeNull();
+        session: { id: "session-1" },
+        task: identity,
+        type: "task_session_started",
+      }),
+    ).rejects.toThrow("selected task");
+    expect(
+      await readFile(path.join(root, "plans/plan-1/events.ndjson"), "utf8"),
+    ).not.toContain("task_session_started");
   });
 });
 
-describe("file run journal legacy snapshot recovery", () => {
-  it("infers the applied prefix for a stale v1 snapshot without a cursor", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-legacy-snapshot-"));
+describe("file plan journal event ordering", () => {
+  it("requires a baseline event before starting an attempt", async () => {
+    const root = await mkdtemp(
+      path.join(tmpdir(), "striker-journal-baseline-"),
+    );
     const journal = new FileRunJournal(root);
-    const task = {
-      identity: { id: "tasks/01.md", revision: "revision-1" },
-      instructions: "Build.",
-      title: "Build",
-    };
-    const session = { id: "runtime-session", resumeId: "provider-session" };
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.replace({
+    await start(journal);
+    await journal.append({ runId: "run-1", task, type: "task_selected" });
+
+    await expect(
+      journal.append({
+        attempt: 1,
+        runId: "run-1",
+        task: identity,
+        type: "task_attempt_started",
+      }),
+    ).rejects.toThrow("baseline");
+  });
+
+  it("rejects a session start while the run needs attention", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-paused-"));
+    const journal = new FileRunJournal(root);
+    await start(journal);
+    await journal.append({ runId: "run-1", task, type: "task_selected" });
+    await journal.append({
+      before: null,
+      runId: "run-1",
+      task: identity,
+      type: "task_baseline_recorded",
+    });
+    await journal.append({
       attempt: 1,
       runId: "run-1",
-      session,
-      status: "running",
-      task,
+      task: identity,
+      type: "task_attempt_started",
     });
-    const snapshotPath = path.join(root, "runs/run-1/snapshot.json");
-    const legacy = JSON.parse(await readFile(snapshotPath, "utf8")) as Record<
-      string,
-      unknown
-    >;
-    delete legacy.eventCount;
-    await writeFile(snapshotPath, `${JSON.stringify(legacy)}\n`);
     await journal.append({
-      attention: { detail: "failed", reason: "verification_failed" },
+      attention: {
+        detail: "Session setup stopped.",
+        reason: "run_initialization_interrupted",
+      },
       runId: "run-1",
-      session,
-      task: task.identity,
+      session: null,
+      task: identity,
       type: "run_needs_attention",
     });
 
-    await expect(journal.loadActive()).resolves.toMatchObject({
-      snapshot: {
-        attention: { reason: "verification_failed" },
-        status: "needs_attention",
-      },
-    });
+    await expect(
+      journal.append({
+        attempt: 1,
+        runId: "run-1",
+        session: { id: "late-session" },
+        task: identity,
+        type: "task_session_started",
+      }),
+    ).rejects.toThrow("invalid attempt");
   });
 });
 
-describe("file run journal task attempt reset", () => {
-  it("starts the next task at attempt one after a retried task completes", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-attempt-reset-"));
+describe("file plan journal transition validation", () => {
+  it("normalizes task events before detecting an append retry", async () => {
+    const root = await mkdtemp(
+      path.join(tmpdir(), "striker-journal-normalize-"),
+    );
     const journal = new FileRunJournal(root);
-    const first = { id: "tasks/01.md", revision: "revision-1" };
-    const second = { id: "tasks/02.md", revision: "revision-2" };
-    const firstSession = { id: "runtime-1" };
-    await journal.append({ runId: "run-1", type: "run_started" });
-    await journal.append({
-      attempt: 1,
+    const selected = {
       runId: "run-1",
-      session: firstSession,
-      task: first,
-      type: "task_session_started",
-    });
+      task: {
+        ...task,
+        affectedPaths: ["src/task.ts"],
+        path: "tasks/01.md",
+        verifyCommand: "pnpm check",
+      },
+      type: "task_selected" as const,
+    };
+    await start(journal);
+    await journal.append(selected);
+
+    await expect(journal.append(selected)).resolves.toBeUndefined();
+    expect(
+      (await readFile(path.join(root, "plans/plan-1/events.ndjson"), "utf8"))
+        .trim()
+        .split("\n"),
+    ).toHaveLength(2);
+  });
+
+  it("rejects task completion after the run has failed", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-failed-"));
+    const journal = new FileRunJournal(root);
+    const session = { id: "session-1" };
+    await startAttempt(journal, request(), session);
     await journal.append({
       error: "failed",
       runId: "run-1",
-      session: firstSession,
-      task: first,
+      session,
+      task: identity,
       type: "run_failed",
     });
-    await journal.append({
-      attempt: 1,
-      runId: "run-1",
-      task: first,
-      type: "run_retried",
-    });
-    const retrySession = { id: "runtime-2" };
-    await journal.append({
-      attempt: 2,
-      runId: "run-1",
-      session: retrySession,
-      task: first,
-      type: "task_session_started",
-    });
-    await journal.append({
-      runId: "run-1",
-      session: retrySession,
-      task: first,
-      type: "task_completed",
-    });
-    const secondSession = { id: "runtime-3" };
-    await journal.append({
-      attempt: 1,
-      runId: "run-1",
-      session: secondSession,
-      task: second,
-      type: "task_session_started",
-    });
-    await journal.replace({
-      attempt: 1,
-      runId: "run-1",
-      session: secondSession,
-      status: "running",
-      task: { identity: second, instructions: "Build.", title: "Build" },
-    });
 
-    await expect(journal.load("run-1")).resolves.toMatchObject({
-      snapshot: { attempt: 1, task: { identity: second } },
-    });
+    await expect(
+      journal.append({
+        runId: "run-1",
+        session,
+        task: identity,
+        type: "task_completed",
+      }),
+    ).rejects.toThrow("Illegal run transition: failed -> complete_task");
+  });
+
+  it("rejects a projection ahead of the journal", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-ahead-"));
+    const journal = new FileRunJournal(root);
+    await start(journal);
+    const snapshotPath = path.join(root, "plans/plan-1/snapshot.json");
+    const snapshot = JSON.parse(await readFile(snapshotPath, "utf8")) as {
+      eventCount: number;
+    };
+    snapshot.eventCount = 2;
+    await writeFile(snapshotPath, `${JSON.stringify(snapshot)}\n`);
+
+    await expect(journal.load("plan-1")).rejects.toThrow(
+      "snapshot is ahead of its plan journal",
+    );
   });
 });
 
-describe("file run journal recovery", () => {
-  it("recovers the active paused session, reason, and developer answer", async () => {
+describe("file plan journal recovery", () => {
+  it("replays completed identities captured by the run start", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-seed-"));
+    const journal = new FileRunJournal(root);
+    await start(journal, { ...request(), completedTasks: [identity] });
+
+    await expect(journal.load("plan-1")).resolves.toMatchObject({
+      completedTasks: [identity],
+    });
+  });
+
+  it("rebuilds a paused session and developer continuation", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-pause-"));
     const journal = new FileRunJournal(root);
-    const task = {
-      identity: { id: "tasks/01.md", revision: "revision-1" },
-      instructions: "Build the task.",
-      title: "Build the task",
-    };
-    const session = { id: "runtime-key", resumeId: "agent-session" };
+    const session = { id: "session-1", resumeId: "provider-1" };
     const attention = {
-      detail: "The verification command exited with code 1.\nfailed output",
+      detail: "Verification failed.",
       reason: "verification_failed" as const,
     };
-    await journal.append({ runId: "run-1", type: "run_started" });
+    await startAttempt(journal, request(), session);
     await journal.append({
       attention,
       runId: "run-1",
       session,
-      task: task.identity,
+      task: identity,
       type: "run_needs_attention",
     });
     await journal.append({
-      answer: "Use the existing schema.",
+      answer: "Use the schema.",
       runId: "run-1",
       session,
-      task: task.identity,
+      task: identity,
       type: "run_answered",
     });
     await journal.append({
       attention,
       runId: "run-1",
       session,
-      task: task.identity,
+      task: identity,
       type: "run_needs_attention",
-    });
-    await journal.replace({
-      attention,
-      before: null,
-      request: {
-        completedTasks: [],
-        runId: "run-1",
-        skills: [],
-        taskSource: { location: "/repo/plan", type: "striker-plan" },
-      },
-      runId: "run-1",
-      session,
-      status: "needs_attention",
-      task,
     });
 
     await expect(journal.loadActive()).resolves.toMatchObject({
@@ -500,10 +382,108 @@ describe("file run journal recovery", () => {
         status: "needs_attention",
       },
     });
-    const eventsPath = path.join(root, "runs/run-1/events.ndjson");
-    expect(await readFile(eventsPath, "utf8")).toContain(
-      "Use the existing schema.",
-    );
-    expect((await stat(eventsPath)).mode & 0o777).toBe(0o600);
+    expect(
+      await readFile(path.join(root, "plans/plan-1/events.ndjson"), "utf8"),
+    ).toContain("Use the schema.");
+  });
+
+  it("retains completed tasks across a discarded later run", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-history-"));
+    const journal = new FileRunJournal(root);
+    const session = { id: "session-1" };
+    await startAttempt(journal, request(), session);
+    await journal.append({
+      runId: "run-1",
+      session,
+      task: identity,
+      type: "task_completed",
+    });
+    await journal.append({ runId: "run-1", type: "run_completed" });
+    await start(journal, request("plan-1", "run-2"));
+    await journal.append({
+      current: null,
+      runId: "run-2",
+      task: { id: "tasks/02.md", revision: "removed" },
+      type: "run_source_changed",
+    });
+    await journal.append({ runId: "run-2", type: "run_discarded" });
+
+    await expect(journal.load("plan-1")).resolves.toMatchObject({
+      completedTasks: [identity],
+      lastEvent: { runId: "run-2", type: "run_discarded" },
+      snapshot: { status: "discarded" },
+    });
+  });
+});
+
+describe("file plan journal attempt replay", () => {
+  it("resets the next task to attempt one after a retried task", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-retry-"));
+    const journal = new FileRunJournal(root);
+    const firstSession = { id: "session-1" };
+    await startAttempt(journal, request(), firstSession);
+    await journal.append({
+      error: "failed",
+      runId: "run-1",
+      session: firstSession,
+      task: identity,
+      type: "run_failed",
+    });
+    await journal.append({
+      attempt: 1,
+      runId: "run-1",
+      task: identity,
+      type: "run_retried",
+    });
+    await journal.append({
+      attempt: 2,
+      runId: "run-1",
+      task: identity,
+      type: "task_attempt_started",
+    });
+    const retrySession = { id: "session-2" };
+    await journal.append({
+      attempt: 2,
+      runId: "run-1",
+      session: retrySession,
+      task: identity,
+      type: "task_session_started",
+    });
+    await journal.append({
+      runId: "run-1",
+      session: retrySession,
+      task: identity,
+      type: "task_completed",
+    });
+    const second = {
+      identity: { id: "tasks/02.md", revision: "revision-2" },
+      instructions: "Continue.",
+      title: "Continue",
+    };
+    await journal.append({
+      runId: "run-1",
+      task: second,
+      type: "task_selected",
+    });
+    await journal.append({
+      before: null,
+      runId: "run-1",
+      task: second.identity,
+      type: "task_baseline_recorded",
+    });
+    await journal.append({
+      attempt: 1,
+      runId: "run-1",
+      task: second.identity,
+      type: "task_attempt_started",
+    });
+
+    const firstLoad = await journal.load("plan-1");
+    const secondLoad = await journal.load("plan-1");
+    expect(secondLoad).toEqual(firstLoad);
+    expect(secondLoad).toMatchObject({
+      completedTasks: [identity],
+      snapshot: { attempt: 1, task: { identity: second.identity } },
+    });
   });
 });

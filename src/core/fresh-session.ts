@@ -3,7 +3,6 @@ import type {
   AgentTurn,
   DispatchRequest,
   DispatchResult,
-  GitState,
   ImplementationTask,
   RunJournal,
 } from "./contracts.js";
@@ -21,7 +20,6 @@ type FreshSessionResult =
 
 interface FreshSessionRequest {
   readonly attempt: number;
-  readonly before: GitState | undefined;
   readonly journal: RunJournal;
   readonly request: DispatchRequest;
   readonly runner: AgentRunner;
@@ -49,7 +47,6 @@ export async function runInFreshSession(
           input.journal,
           input.request,
           input.task,
-          input.before,
           input.attempt,
           session,
         );
@@ -61,7 +58,6 @@ export async function runInFreshSession(
       input.journal,
       input.request,
       input.task,
-      input.before,
       input.attempt,
       error,
     );

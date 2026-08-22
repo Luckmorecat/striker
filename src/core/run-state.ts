@@ -1,4 +1,8 @@
-import type { RunStatus, RunTransition } from "./contracts.js";
+import type {
+  RunJournalEvent,
+  RunStatus,
+  RunTransition,
+} from "./run-journal-contracts.js";
 
 const transitions: Readonly<
   Record<RunStatus, Readonly<Partial<Record<RunTransition, RunStatus>>>>
@@ -11,9 +15,15 @@ const transitions: Readonly<
     request_attention: "needs_attention",
     resume: "running",
   },
-  needs_attention: { answer: "running", resume: "running", retry: "running" },
-  failed: { retry: "running" },
+  needs_attention: {
+    answer: "running",
+    discard: "discarded",
+    resume: "running",
+    retry: "running",
+  },
+  failed: { discard: "discarded", retry: "running" },
   completed: {},
+  discarded: {},
 };
 
 export function transitionRun(
@@ -27,4 +37,12 @@ export function transitionRun(
   }
 
   return next;
+}
+
+export function terminalRunStatus(
+  event: RunJournalEvent,
+): "completed" | "discarded" | null {
+  if (event.type === "run_completed") return "completed";
+  if (event.type === "run_discarded") return "discarded";
+  return null;
 }

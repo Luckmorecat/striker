@@ -2,30 +2,23 @@ import type {
   AgentSession,
   DispatchRequest,
   DispatchResult,
-  GitState,
   ImplementationTask,
   RunAttention,
   RunJournal,
 } from "./contracts.js";
 import { transitionRun } from "./run-state.js";
 
-export function replaceRunningAttempt(
+export function recordAttemptStart(
   journal: RunJournal,
   request: DispatchRequest,
   task: ImplementationTask,
-  before: GitState | undefined,
   attempt: number,
-  session: AgentSession | null,
 ): Promise<void> {
-  return journal.replace({
+  return journal.append({
     attempt,
-    attention: null,
-    before: before ?? null,
-    request,
     runId: request.runId,
-    session,
-    status: "running",
-    task,
+    task: task.identity,
+    type: "task_attempt_started",
   });
 }
 
@@ -33,7 +26,6 @@ export async function recordAttemptSession(
   journal: RunJournal,
   request: DispatchRequest,
   task: ImplementationTask,
-  before: GitState | undefined,
   attempt: number,
   session: AgentSession,
 ): Promise<void> {
@@ -44,14 +36,12 @@ export async function recordAttemptSession(
     task: task.identity,
     type: "task_session_started",
   });
-  await replaceRunningAttempt(journal, request, task, before, attempt, session);
 }
 
 export async function recordInitializationInterruption(
   journal: RunJournal,
   request: DispatchRequest,
   task: ImplementationTask,
-  before: GitState | undefined,
   attempt: number,
   error: unknown,
 ): Promise<
@@ -74,16 +64,6 @@ export async function recordInitializationInterruption(
     session: null,
     task: task.identity,
     type: "run_needs_attention",
-  });
-  await journal.replace({
-    attempt,
-    attention,
-    before: before ?? null,
-    request,
-    runId: request.runId,
-    session: null,
-    status: "needs_attention",
-    task,
   });
   return {
     reason: attention.reason,

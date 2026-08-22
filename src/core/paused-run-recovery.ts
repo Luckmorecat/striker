@@ -4,6 +4,7 @@ import type {
   AgentSession,
   DispatchRequest,
   DispatchResult,
+  GitRepository,
   GitState,
   ImplementationTask,
   RunAttention,
@@ -12,12 +13,14 @@ import type {
   RunStatus,
   TaskSource,
 } from "./contracts.js";
-import { replaceRunningAttempt } from "./attempt-journal.js";
+import { recordAttemptStart } from "./attempt-journal.js";
+import { inspectBaseline } from "./dispatch-evidence.js";
 import { runInFreshSession } from "./fresh-session.js";
 import { transitionRun } from "./run-state.js";
 
 interface RecoveryDependencies {
   readonly adapters: AdapterRegistry;
+  readonly git?: GitRepository;
   readonly journal: RunJournal;
   readonly runner: AgentRunner;
 }
@@ -30,7 +33,6 @@ interface RecoveryHost {
     session: AgentSession,
     before: GitState | undefined,
     output: string,
-    attempt: number,
   ): Promise<DispatchResult>;
   continueRun(request: DispatchRequest): Promise<DispatchResult>;
   fail(
@@ -38,14 +40,13 @@ interface RecoveryHost {
     task: ImplementationTask,
     session: AgentSession,
     error: string,
-    before: GitState | undefined,
-    attempt: number,
   ): Promise<DispatchResult>;
 }
 
 interface RecoverableRun {
   readonly attempt: number;
   readonly attention: RunAttention | null;
+  readonly baselineRecorded: boolean;
   readonly before: GitState | undefined;
   readonly request: DispatchRequest;
   readonly session: AgentSession | null;
@@ -80,7 +81,11 @@ export class PausedRunRecovery {
 
   async resume(): Promise<DispatchResult> {
     const recovery = await this.requireActiveRecovery();
-    if (recovery.lastEvent.type === "task_completed") {
+    if (
+      recovery.lastEvent.type === "task_completed" ||
+      (recovery.snapshot?.status === "running" &&
+        recovery.snapshot.task === null)
+    ) {
       const request = recovery.snapshot?.request;
       if (request === undefined) {
         throw new Error("Completed Striker task is missing its run request");
@@ -126,6 +131,13 @@ export class PausedRunRecovery {
       throw new Error("Cannot retry a completed Striker task");
     }
     await this.dependencies.runner.preflight({ skills: run.request.skills });
+    const before = run.baselineRecorded
+      ? run.before
+      : await inspectBaseline(
+          this.dependencies,
+          run.task,
+          run.request.allowDirty ?? false,
+        );
     transitionRun(run.status, "retry");
     await this.dependencies.journal.append({
       attempt: run.attempt,
@@ -133,18 +145,23 @@ export class PausedRunRecovery {
       task: run.task.identity,
       type: "run_retried",
     });
+    if (!run.baselineRecorded) {
+      await this.dependencies.journal.append({
+        before: before ?? null,
+        runId: run.request.runId,
+        task: run.task.identity,
+        type: "task_baseline_recorded",
+      });
+    }
     const nextAttempt = run.attempt + 1;
-    await replaceRunningAttempt(
+    await recordAttemptStart(
       this.dependencies.journal,
       run.request,
       run.task,
-      run.before,
       nextAttempt,
-      null,
     );
     const turn = await runInFreshSession({
       attempt: nextAttempt,
-      before: run.before,
       journal: this.dependencies.journal,
       request: run.request,
       runner: this.dependencies.runner,
@@ -152,16 +169,9 @@ export class PausedRunRecovery {
     });
     if (turn.status === "needs_attention") return turn;
     if (turn.status === "failed") {
-      return this.host.fail(
-        run.request,
-        run.task,
-        turn.session,
-        turn.error,
-        run.before,
-        nextAttempt,
-      );
+      return this.host.fail(run.request, run.task, turn.session, turn.error);
     }
-    return this.checkCompletion(run, turn.session, turn.output, nextAttempt);
+    return this.checkCompletion({ ...run, before }, turn.session, turn.output);
   }
 
   private async continue(
@@ -172,7 +182,6 @@ export class PausedRunRecovery {
   ): Promise<DispatchResult> {
     transitionRun(paused.status, action);
     await this.appendContinuation(paused, answer);
-    await this.markRunning(paused);
     let turn;
     try {
       turn = await this.dependencies.runner.resumeSession(
@@ -197,23 +206,15 @@ export class PausedRunRecovery {
         paused.task,
         paused.session,
         turn.error,
-        paused.before,
-        paused.attempt,
       );
     }
-    return this.checkCompletion(
-      paused,
-      paused.session,
-      turn.output,
-      paused.attempt,
-    );
+    return this.checkCompletion(paused, paused.session, turn.output);
   }
 
   private async checkCompletion(
     paused: RecoverableRun,
     session: AgentSession,
     output: string,
-    attempt: number,
   ): Promise<DispatchResult> {
     const adapter = this.dependencies.adapters.get(
       paused.request.taskSource.type,
@@ -226,7 +227,6 @@ export class PausedRunRecovery {
       session,
       paused.before,
       output,
-      attempt,
     );
     if (result.status !== "completed") return result;
     const continued = await this.host.continueRun(paused.request);
@@ -255,19 +255,6 @@ export class PausedRunRecovery {
     });
   }
 
-  private markRunning(paused: ContinuedRun): Promise<void> {
-    return this.dependencies.journal.replace({
-      attempt: paused.attempt,
-      attention: null,
-      before: paused.before ?? null,
-      request: paused.request,
-      runId: paused.request.runId,
-      session: paused.session,
-      status: "running",
-      task: paused.task,
-    });
-  }
-
   private async pauseResumeFailure(
     paused: RecoverableRun,
     error: unknown,
@@ -288,16 +275,6 @@ export class PausedRunRecovery {
       session: paused.session,
       task: paused.task.identity,
       type: "run_needs_attention",
-    });
-    await this.dependencies.journal.replace({
-      attempt: paused.attempt,
-      attention,
-      before: paused.before ?? null,
-      request: paused.request,
-      runId: paused.request.runId,
-      session: paused.session,
-      status: "needs_attention",
-      task: paused.task,
     });
     return {
       reason: attention.reason,
@@ -328,12 +305,13 @@ export class PausedRunRecovery {
     if (snapshot === null || !statuses.includes(snapshot.status)) {
       throw new Error("No recoverable Striker run is active");
     }
-    if (snapshot.request === undefined || snapshot.task === null) {
+    if (snapshot.task === null) {
       throw new Error("Striker run is missing recovery context");
     }
     return {
-      attempt: snapshot.attempt ?? 1,
+      attempt: snapshot.attempt ?? 0,
       attention: snapshot.attention ?? null,
+      baselineRecorded: snapshot.baselineRecorded ?? false,
       before: snapshot.before ?? undefined,
       request: snapshot.request,
       session: snapshot.session,

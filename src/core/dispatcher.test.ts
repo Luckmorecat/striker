@@ -1,14 +1,9 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-
 import { describe, expect, it } from "vitest";
 
 import { AdapterRegistry, Dispatcher } from "../index.js";
-import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapter.js";
 import type {
-  AgentRequest,
   AgentRunner,
+  DispatchRequest,
   GitRepository,
   GitState,
   Verifier,
@@ -24,6 +19,55 @@ const task = {
   title: "Bootstrap the dispatch core",
   instructions: "Implement slice 01.",
 } as const;
+
+function recoveryRequest(runId: string): DispatchRequest {
+  return {
+    completedTasks: [],
+    planId: runId,
+    runId,
+    skills: [],
+    taskSource: { location: "memory://plan", type: "memory" },
+  };
+}
+
+async function seedCompletedTask(
+  journal: InMemoryRunJournal,
+  request: DispatchRequest,
+): Promise<void> {
+  const session = { id: "old-session" };
+  await journal.append({
+    planId: request.planId,
+    request,
+    runId: request.runId,
+    type: "run_started",
+  });
+  await journal.append({ runId: request.runId, task, type: "task_selected" });
+  await journal.append({
+    before: null,
+    runId: request.runId,
+    task: task.identity,
+    type: "task_baseline_recorded",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: request.runId,
+    task: task.identity,
+    type: "task_attempt_started",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: request.runId,
+    session,
+    task: task.identity,
+    type: "task_session_started",
+  });
+  await journal.append({
+    runId: request.runId,
+    session,
+    task: task.identity,
+    type: "task_completed",
+  });
+}
 
 function state(overrides: Partial<GitState> = {}): GitState {
   return {
@@ -99,6 +143,7 @@ describe("Dispatcher", () => {
 
     const result = await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: "run-1",
       runId: "run-1",
       skills: ["next-slice"],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -111,7 +156,7 @@ describe("Dispatcher", () => {
       status: "completed",
       task,
     });
-    expect(journal.deletedRunIds).toEqual(["run-1"]);
+    expect(journal.releasedRunIds).toEqual(["run-1"]);
   });
 
   it("needs attention when the source has no completion evidence", async () => {
@@ -128,6 +173,7 @@ describe("Dispatcher", () => {
 
     const result = await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: "run-2",
       runId: "run-2",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -135,7 +181,7 @@ describe("Dispatcher", () => {
 
     expect(result.status).toBe("needs_attention");
     expect(journal.snapshots.at(-1)?.status).toBe("needs_attention");
-    expect(journal.deletedRunIds).toEqual([]);
+    expect(journal.releasedRunIds).toEqual([]);
   });
 
   it("persists a failed agent turn without accepting completion evidence", async () => {
@@ -152,6 +198,7 @@ describe("Dispatcher", () => {
 
     const result = await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: "run-3",
       runId: "run-3",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -159,7 +206,7 @@ describe("Dispatcher", () => {
 
     expect(result.status).toBe("failed");
     expect(journal.snapshots.at(-1)?.status).toBe("failed");
-    expect(journal.deletedRunIds).toEqual([]);
+    expect(journal.releasedRunIds).toEqual([]);
   });
 });
 
@@ -194,6 +241,7 @@ describe("Dispatcher sequential execution", () => {
 
     const result = await dispatcher.dispatch({
       completedTasks: [],
+      planId: "run-all",
       runId: "run-all",
       skills: [],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -209,7 +257,7 @@ describe("Dispatcher sequential execution", () => {
     expect(
       journal.events.filter((event) => event.type === "run_started"),
     ).toHaveLength(1);
-    expect(journal.deletedRunIds).toEqual(["run-all"]);
+    expect(journal.releasedRunIds).toEqual(["run-all"]);
     expect(runner.preflightRequests).toEqual([{ skills: [] }]);
   });
 
@@ -233,6 +281,7 @@ describe("Dispatcher sequential execution", () => {
     await expect(
       dispatcher.dispatch({
         completedTasks: [],
+        planId: "run-preflight",
         runId: "run-preflight",
         skills: ["security"],
         taskSource: { location: "memory://plan", type: "memory" },
@@ -245,6 +294,7 @@ describe("Dispatcher sequential execution", () => {
 
 describe("Dispatcher journal recovery", () => {
   it("resumes at the first task absent from the durable journal", async () => {
+    const request = recoveryRequest("run-resume");
     const secondTask = {
       identity: { id: "slice-02", revision: "rev-2" },
       instructions: "Implement slice 02.",
@@ -257,13 +307,7 @@ describe("Dispatcher journal recovery", () => {
       }),
     );
     const journal = new InMemoryRunJournal();
-    await journal.append({ runId: "run-resume", type: "run_started" });
-    await journal.append({
-      runId: "run-resume",
-      session: { id: "old-session" },
-      task: task.identity,
-      type: "task_completed",
-    });
+    await seedCompletedTask(journal, request);
     const runner = new FakeAgentRunner({
       output: "second done",
       session: { id: "new-session" },
@@ -271,18 +315,14 @@ describe("Dispatcher journal recovery", () => {
     });
     const dispatcher = new Dispatcher({ adapters: registry, journal, runner });
 
-    const result = await dispatcher.dispatch({
-      completedTasks: [],
-      runId: "run-resume",
-      skills: [],
-      taskSource: { location: "memory://plan", type: "memory" },
-    });
+    const result = await dispatcher.dispatch(request);
 
     expect(result).toMatchObject({ status: "completed", task: secondTask });
     expect(runner.lastRequest?.instructions).toBe(secondTask.instructions);
   });
 
   it("needs attention when a completed task identity changed", async () => {
+    const request = recoveryRequest("run-changed");
     const changedTask = {
       ...task,
       identity: { id: task.identity.id, revision: "changed-revision" },
@@ -292,13 +332,7 @@ describe("Dispatcher journal recovery", () => {
       new InMemoryTaskSourceAdapter("memory", [changedTask], {}),
     );
     const journal = new InMemoryRunJournal();
-    await journal.append({ runId: "run-changed", type: "run_started" });
-    await journal.append({
-      runId: "run-changed",
-      session: { id: "old-session" },
-      task: task.identity,
-      type: "task_completed",
-    });
+    await seedCompletedTask(journal, request);
     const runner = new FakeAgentRunner({
       output: "unused",
       session: { id: "unused" },
@@ -306,12 +340,7 @@ describe("Dispatcher journal recovery", () => {
     });
     const dispatcher = new Dispatcher({ adapters: registry, journal, runner });
 
-    const result = await dispatcher.dispatch({
-      completedTasks: [],
-      runId: "run-changed",
-      skills: [],
-      taskSource: { location: "memory://plan", type: "memory" },
-    });
+    const result = await dispatcher.dispatch(request);
 
     expect(result).toEqual({
       completedTask: task.identity,
@@ -360,6 +389,7 @@ describe("Dispatcher execution evidence", () => {
 
     const result = await dispatcher.dispatchOne({
       completedTasks: [],
+      planId: "run-4",
       runId: "run-4",
       skills: ["security"],
       taskSource: { location: "memory://plan", type: "memory" },
@@ -374,7 +404,7 @@ describe("Dispatcher execution evidence", () => {
       skills: ["security"],
       workflowInstructions: "private workflow",
     });
-    expect(journal.deletedRunIds).toEqual([]);
+    expect(journal.releasedRunIds).toEqual([]);
   });
 });
 
@@ -410,119 +440,12 @@ describe("Dispatcher dirty baseline", () => {
       dispatcher.dispatchOne({
         allowDirty: true,
         completedTasks: [],
+        planId: "run-5",
         runId: "run-5",
         skills: [],
         taskSource: { location: "memory://plan", type: "memory" },
       }),
     ).rejects.toThrow("Task overlaps dirty path: src/cli.ts");
     expect(journal.events).toEqual([]);
-  });
-});
-
-function planTask(title: string, affectedPath: string): string {
-  return `# ${title}\n\n## Build\n\nImplement ${title}.\n\n## Paths\n\n- Modify \`${affectedPath}\`\n\n## Test contract\n\n- Test ${title}.\n\n## Verify\n\n\`\`\`sh\npnpm test\n\`\`\`\n`;
-}
-
-async function createOrderedPlan() {
-  const root = await mkdtemp(path.join(tmpdir(), "striker-sequence-"));
-  const planRoot = path.join(root, "plan");
-  const workflowRoot = path.join(root, "workflow");
-  await Promise.all([
-    mkdir(path.join(planRoot, "tasks"), { recursive: true }),
-    mkdir(path.join(workflowRoot, "references"), { recursive: true }),
-  ]);
-  const manifest = (tasks: readonly string[]) =>
-    JSON.stringify({
-      assumptions: {},
-      defaults: {},
-      taskSource: "striker-plan",
-      tasks,
-      version: 2,
-    });
-  await Promise.all([
-    writeFile(path.join(planRoot, "spine.md"), "# Spine\n"),
-    writeFile(path.join(planRoot, "map.md"), "# Map\n"),
-    writeFile(
-      path.join(planRoot, "tasks/01.md"),
-      planTask("First", "src/first.ts"),
-    ),
-    writeFile(
-      path.join(planRoot, "tasks/02.md"),
-      planTask("Second", "src/second.ts"),
-    ),
-    writeFile(
-      path.join(workflowRoot, "SKILL.md"),
-      "---\nname: striker-implementor\ndescription: Implement one task.\n---\n\nworkflow",
-    ),
-    writeFile(path.join(workflowRoot, "references/tdd.md"), "tdd"),
-    writeFile(path.join(workflowRoot, "references/review.md"), "review"),
-    writeFile(
-      path.join(planRoot, "plan.json"),
-      manifest(["tasks/01.md", "tasks/02.md"]),
-    ),
-  ]);
-  return { planRoot, root, workflowRoot };
-}
-
-class OrderedPlanRunner implements AgentRunner {
-  #active = 0;
-  maximumActive = 0;
-  readonly requests: AgentRequest[] = [];
-
-  preflight(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  resumeSession(): never {
-    throw new Error("Changing plan runner does not resume sessions");
-  }
-
-  runInNewSession(request: AgentRequest) {
-    this.#active += 1;
-    this.maximumActive = Math.max(this.maximumActive, this.#active);
-    this.requests.push(request);
-    this.#active -= 1;
-    return Promise.resolve({
-      output: 'done\nSTRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
-      session: { id: `session-${String(this.requests.length)}` },
-      status: "returned" as const,
-    });
-  }
-}
-
-describe("Dispatcher with an immutable Striker plan", () => {
-  it("runs declared task order without overlapping task sessions", async () => {
-    const { planRoot, root, workflowRoot } = await createOrderedPlan();
-    const runner = new OrderedPlanRunner();
-    const registry = new AdapterRegistry();
-    registry.register(
-      new StrikerPlanAdapter({ projectRoot: root, workflowRoot }),
-    );
-    const journal = new InMemoryRunJournal();
-    const gitStates = ["0", "1", "1", "2"].map((head) => state({ head, root }));
-    const result = await new Dispatcher({
-      adapters: registry,
-      git: new FakeGit(gitStates),
-      journal,
-      runner,
-      verifier: verifier(0),
-    }).dispatch({
-      completedTasks: [],
-      runId: "changing",
-      skills: [],
-      taskSource: { location: planRoot, type: "striker-plan" },
-    });
-
-    expect(result).toMatchObject({
-      status: "completed",
-      task: { identity: { id: "tasks/02.md" } },
-    });
-    expect(
-      runner.requests.map(
-        (request) => /^# ([^\n]+)/.exec(request.instructions)?.[1],
-      ),
-    ).toEqual(["First", "Second"]);
-    expect(runner.maximumActive).toBe(1);
-    expect(journal.deletedRunIds).toEqual(["changing"]);
   });
 });

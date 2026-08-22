@@ -5,7 +5,6 @@ import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
   ImplementationTask,
-  RunJournal,
   TaskCompletionResult,
   TaskIdentity,
   TaskSource,
@@ -19,6 +18,7 @@ const task: ImplementationTask = {
 };
 const request = {
   completedTasks: [],
+  planId: "run-initialization",
   runId: "run-initialization",
   skills: [],
   taskSource: { location: "memory://plan", type: "memory" },
@@ -55,7 +55,25 @@ function fixture(runner: AgentRunner) {
 
 async function seedFailedAttempt(journal: InMemoryRunJournal): Promise<void> {
   const session = { id: "runtime-old", resumeId: "provider-old" };
-  await journal.append({ runId: request.runId, type: "run_started" });
+  await journal.append({
+    planId: request.runId,
+    request: { ...request, planId: request.runId },
+    runId: request.runId,
+    type: "run_started",
+  });
+  await journal.append({ runId: request.runId, task, type: "task_selected" });
+  await journal.append({
+    before: null,
+    runId: request.runId,
+    task: task.identity,
+    type: "task_baseline_recorded",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: request.runId,
+    task: task.identity,
+    type: "task_attempt_started",
+  });
   await journal.append({
     attempt: 1,
     runId: request.runId,
@@ -69,16 +87,6 @@ async function seedFailedAttempt(journal: InMemoryRunJournal): Promise<void> {
     session,
     task: task.identity,
     type: "run_failed",
-  });
-  await journal.replace({
-    attempt: 1,
-    attention: null,
-    before: null,
-    request,
-    runId: request.runId,
-    session,
-    status: "failed",
-    task,
   });
 }
 
@@ -143,55 +151,6 @@ describe("Dispatcher session initialization", () => {
       task: task.identity,
     });
     expect(test.journal.events).not.toContainEqual(
-      expect.objectContaining({ type: "run_needs_attention" }),
-    );
-  });
-});
-
-describe("Dispatcher session callback failure", () => {
-  it("does not replace a partly recorded session with sessionless attention", async () => {
-    const backing = new InMemoryRunJournal();
-    let replacementCount = 0;
-    const journal: RunJournal = {
-      append: (event) => backing.append(event),
-      delete: (runId) => backing.delete(runId),
-      load: (runId) => backing.load(runId),
-      loadActive: () => backing.loadActive(),
-      replace: (snapshot) => {
-        replacementCount += 1;
-        return replacementCount === 2
-          ? Promise.reject(new Error("snapshot write failed"))
-          : backing.replace(snapshot);
-      },
-    };
-    const adapters = new AdapterRegistry();
-    adapters.register({
-      open: () => Promise.resolve(new CompletingSource()),
-      type: "memory",
-    });
-    const session = { id: "runtime-new", resumeId: "provider-new" };
-    const runner: AgentRunner = {
-      preflight: () => Promise.resolve(),
-      resumeSession: () => {
-        throw new Error("Unexpected resume");
-      },
-      runInNewSession: async (_agentRequest, sessionStarted) => {
-        await sessionStarted?.(session);
-        return { output: "done", session, status: "returned" };
-      },
-    };
-
-    await expect(
-      new Dispatcher({ adapters, journal, runner }).dispatchOne(request),
-    ).rejects.toThrow("snapshot write failed");
-    expect(backing.events).toContainEqual({
-      attempt: 1,
-      runId: request.runId,
-      session,
-      task: task.identity,
-      type: "task_session_started",
-    });
-    expect(backing.events).not.toContainEqual(
       expect.objectContaining({ type: "run_needs_attention" }),
     );
   });

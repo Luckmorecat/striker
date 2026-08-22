@@ -18,6 +18,7 @@ const task: ImplementationTask = {
 };
 const request = {
   completedTasks: [],
+  planId: "run-recovery",
   runId: "run-recovery",
   skills: [],
   taskSource: { location: "memory://plan", type: "memory" },
@@ -66,7 +67,25 @@ async function seedAttempt(
   status: "failed" | "needs_attention" | "running",
 ) {
   const session = { id: "runtime-old", resumeId: "provider-old" };
-  await journal.append({ runId: request.runId, type: "run_started" });
+  await journal.append({
+    planId: request.runId,
+    request: { ...request, planId: request.runId },
+    runId: request.runId,
+    type: "run_started",
+  });
+  await journal.append({ runId: request.runId, task, type: "task_selected" });
+  await journal.append({
+    before: null,
+    runId: request.runId,
+    task: task.identity,
+    type: "task_baseline_recorded",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: request.runId,
+    task: task.identity,
+    type: "task_attempt_started",
+  });
   await journal.append({
     attempt: 1,
     runId: request.runId,
@@ -92,19 +111,6 @@ async function seedAttempt(
       type: "run_failed",
     });
   }
-  await journal.replace({
-    attempt: 1,
-    attention:
-      status === "needs_attention"
-        ? { detail: "Needs repair.", reason: "verification_failed" }
-        : null,
-    before: null,
-    request,
-    runId: request.runId,
-    session,
-    status,
-    task,
-  });
 }
 
 async function expectFreshRetry(
@@ -224,8 +230,27 @@ describe("Dispatcher sessionless pause recovery", () => {
       reason: "run_initialization_interrupted" as const,
     };
     await test.journal.append({
+      planId: request.runId,
+      request: { ...request, planId: request.runId },
       runId: request.runId,
       type: "run_started",
+    });
+    await test.journal.append({
+      runId: request.runId,
+      task,
+      type: "task_selected",
+    });
+    await test.journal.append({
+      before: null,
+      runId: request.runId,
+      task: task.identity,
+      type: "task_baseline_recorded",
+    });
+    await test.journal.append({
+      attempt: 1,
+      runId: request.runId,
+      task: task.identity,
+      type: "task_attempt_started",
     });
     await test.journal.append({
       attention,
@@ -233,15 +258,6 @@ describe("Dispatcher sessionless pause recovery", () => {
       session: null,
       task: task.identity,
       type: "run_needs_attention",
-    });
-    await test.journal.replace({
-      attempt: 1,
-      attention,
-      request,
-      runId: request.runId,
-      session: null,
-      status: "needs_attention",
-      task,
     });
     const eventCount = test.journal.events.length;
 
@@ -294,7 +310,7 @@ describe("Dispatcher retry", () => {
     ).toEqual([1, 2]);
   });
 
-  it("never retries a task already recorded as completed", async () => {
+  it("does not expose a completed task as recoverable", async () => {
     const test = fixture(
       new FakeAgentRunner({
         output: "unused",
@@ -302,7 +318,7 @@ describe("Dispatcher retry", () => {
         status: "returned",
       }),
     );
-    await seedAttempt(test.journal, "failed");
+    await seedAttempt(test.journal, "running");
     await test.journal.append({
       runId: request.runId,
       session: { id: "runtime-old", resumeId: "provider-old" },
@@ -311,7 +327,7 @@ describe("Dispatcher retry", () => {
     });
 
     await expect(test.dispatcher.retry()).rejects.toThrow(
-      "Cannot retry a completed Striker task",
+      "No recoverable Striker run is active",
     );
   });
 });
@@ -337,7 +353,7 @@ describe("Dispatcher recovery status", () => {
       task: task.identity,
     });
     await expect(test.dispatcher.discard()).resolves.toBeUndefined();
-    expect(test.journal.deletedRunIds).toEqual([request.runId]);
+    expect(test.journal.releasedRunIds).toEqual([request.runId]);
   });
 
   it("reports a completed-task conflict as the attention reason", async () => {
@@ -349,6 +365,8 @@ describe("Dispatcher recovery status", () => {
       }),
     );
     await test.journal.append({
+      planId: request.runId,
+      request: { ...request, planId: request.runId },
       runId: request.runId,
       type: "run_started",
     });
@@ -357,12 +375,6 @@ describe("Dispatcher recovery status", () => {
       runId: request.runId,
       task: task.identity,
       type: "run_source_changed",
-    });
-    await test.journal.replace({
-      runId: request.runId,
-      session: null,
-      status: "needs_attention",
-      task: null,
     });
 
     await expect(test.dispatcher.status()).resolves.toMatchObject({
@@ -386,6 +398,6 @@ describe("Dispatcher recovery discard", () => {
     await expect(test.dispatcher.discard()).rejects.toThrow(
       "Only paused or failed Striker runs can be discarded",
     );
-    expect(test.journal.deletedRunIds).toEqual([]);
+    expect(test.journal.releasedRunIds).toEqual([]);
   });
 });
