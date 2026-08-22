@@ -3,6 +3,57 @@
   "type": "object",
   "properties": {
     "$schema": { "type": "string", "minLength": 1 },
+    "assumptions": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^A[1-9]\\d*$" },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "evidence": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))(?!.*(?:^|\\/)\\.(?:\\/|$))(?!.*\\/\\/).+$"
+                }
+              },
+              "required": ["line", "path"],
+              "additionalProperties": false
+            }
+          },
+          "statement": { "type": "string", "minLength": 1, "pattern": "\\S" }
+        },
+        "required": ["evidence", "statement"],
+        "additionalProperties": false
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "propertyNames": { "type": "string", "pattern": "^D[1-9]\\d*$" },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "reason": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "reversalCost": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "statement": { "type": "string", "minLength": 1, "pattern": "\\S" }
+        },
+        "required": ["reason", "reversalCost", "statement"],
+        "additionalProperties": false
+      }
+    },
     "taskSource": { "type": "string", "const": "striker-plan" },
     "tasks": {
       "minItems": 1,
@@ -14,9 +65,9 @@
       },
       "uniqueItems": true
     },
-    "version": { "type": "number", "const": 1 }
+    "version": { "type": "number", "const": 2 }
   },
-  "required": ["taskSource", "tasks", "version"],
+  "required": ["assumptions", "defaults", "taskSource", "tasks", "version"],
   "additionalProperties": false,
   "$id": "https://kisshot.dev/striker/plan.schema.json",
   "title": "Striker plan manifest"

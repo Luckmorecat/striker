@@ -1,4 +1,4 @@
-# Striker plan format version 1
+# Striker plan format version 2
 
 A Striker plan is the executable package for one approved specification.
 
@@ -15,7 +15,6 @@ A plan directory contains:
 plan.json
 spine.md
 map.md
-log.md
 <ordered task files declared by plan.json>
 ```
 
@@ -33,14 +32,14 @@ Write `spine.md` with:
 - the evidence state, classified as established, sparse, or blank;
 - the repository scopes inspected;
 - each user implementation decision and its reasoning;
-- code-backed assumptions in an `A<n>` ledger, with file and line citations;
-- local defaults in a `D<n>` ledger, with reasons and reversal costs;
+- the context behind each typed `A<n>` assumption in `plan.json`;
+- the context behind each typed `D<n>` default in `plan.json`;
 - the complete requirement-to-task mapping;
 - the use-case tree, including excluded branches and task coverage.
 
-The specification snapshot is immutable. Implementation may reconcile disproved
-`A<n>` and `D<n>` entries, but must not change approved intent. A change to
-approved intent requires a revised specification and a new plan hash.
+The specification snapshot and the rest of the plan package are immutable after
+validation. Plan execution records later ledger states outside this directory.
+A change to approved intent requires a revised specification and a new plan.
 
 Do not turn user decisions into assumptions or invent citations for a blank
 area.
@@ -56,9 +55,6 @@ Write `map.md` as a traversal guide containing:
 Use repository-relative paths. A planned path is not evidence of current
 behavior.
 
-Write `log.md` with only a short instruction to append one entry per completed
-task. It contains no implementation entries when the plan is created.
-
 ## Manifest
 
 Write `plan.json` in this shape and keep task paths in dispatch order:
@@ -66,15 +62,47 @@ Write `plan.json` in this shape and keep task paths in dispatch order:
 ```json
 {
   "$schema": "./node_modules/@kisshot/striker/plan.schema.json",
-  "version": 1,
+  "version": 2,
   "taskSource": "striker-plan",
+  "assumptions": {
+    "A1": {
+      "statement": "The CLI owns command registration.",
+      "evidence": [
+        { "path": "src/cli.ts", "line": 42 }
+      ]
+    }
+  },
+  "defaults": {
+    "D1": {
+      "statement": "Use the existing command naming pattern.",
+      "reason": "Adjacent commands use that pattern.",
+      "reversalCost": "Rename one internal option and its tests."
+    }
+  },
   "tasks": ["01-first-task.md", "02-second-task.md"]
 }
 ```
 
+`assumptions` and `defaults` are required objects and may be empty. Assumption
+property names match `A[1-9][0-9]*`; default property names match
+`D[1-9][0-9]*`. Object keys make IDs unique within each ledger. Every statement,
+reason, and reversal cost contains a non-whitespace character. Each assumption
+has at least one evidence location. An evidence path is a normalized,
+repository-relative POSIX path, and its line is a positive integer.
+
 Task paths are unique, normalized relative POSIX paths. Every Markdown file in
-the directory other than `spine.md`, `map.md`, and `log.md` must appear in the
-manifest.
+the directory other than `spine.md` and `map.md` must appear in the manifest.
+`log.md` is not part of a version 2 plan and fails validation as undeclared
+Markdown.
+
+## Plan identity
+
+Striker identifies the complete immutable package with SHA-256. It hashes files
+in this order: `plan.json`, `spine.md`, `map.md`, then task files in manifest
+order. For each file, it appends the UTF-8 byte length of the relative path as
+decimal ASCII, `:`, the path bytes, the file byte length as decimal ASCII, `:`,
+and the exact file bytes. Including paths and lengths keeps the framing
+unambiguous. The resulting lowercase hexadecimal digest is the plan identity.
 
 ## Task files
 

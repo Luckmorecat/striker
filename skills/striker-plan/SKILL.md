@@ -96,7 +96,8 @@ Before presenting the plan, check:
 Fix every gap found.
 
 Present the specification path and SHA-256, scope, exclusions, decisions,
-assumptions, defaults, requirement mapping, ordered tasks, and test contracts.
+typed assumptions and evidence, typed defaults, requirement mapping, ordered
+tasks, and test contracts.
 
 Obtain explicit approval of the task boundaries and test contracts. Apply
 requested changes and present the changed preview again. Write no plan artifacts
@@ -105,8 +106,9 @@ before approval.
 ## Write and validate the plan
 
 After unambiguous approval, read [PLAN-FORMAT.md](PLAN-FORMAT.md) and write the
-plan in its required location. Serialize requirement traceability as that format
-requires.
+immutable version 2 plan in its required location. Serialize the assumption and
+default ledgers plus requirement traceability as that format requires. Do not
+create `log.md` or any other mutable plan-local state.
 
 If the target directory exists, show it and obtain approval before replacing any
 file.

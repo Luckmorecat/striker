@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -423,7 +423,7 @@ function planTask(title: string, affectedPath: string): string {
   return `# ${title}\n\n## Build\n\nImplement ${title}.\n\n## Paths\n\n- Modify \`${affectedPath}\`\n\n## Test contract\n\n- Test ${title}.\n\n## Verify\n\n\`\`\`sh\npnpm test\n\`\`\`\n`;
 }
 
-async function createChangingPlan() {
+async function createOrderedPlan() {
   const root = await mkdtemp(path.join(tmpdir(), "striker-sequence-"));
   const planRoot = path.join(root, "plan");
   const workflowRoot = path.join(root, "workflow");
@@ -432,11 +432,16 @@ async function createChangingPlan() {
     mkdir(path.join(workflowRoot, "references"), { recursive: true }),
   ]);
   const manifest = (tasks: readonly string[]) =>
-    JSON.stringify({ taskSource: "striker-plan", tasks, version: 1 });
+    JSON.stringify({
+      assumptions: {},
+      defaults: {},
+      taskSource: "striker-plan",
+      tasks,
+      version: 2,
+    });
   await Promise.all([
     writeFile(path.join(planRoot, "spine.md"), "# Spine\n"),
     writeFile(path.join(planRoot, "map.md"), "# Map\n"),
-    writeFile(path.join(planRoot, "log.md"), "# Log\n"),
     writeFile(
       path.join(planRoot, "tasks/01.md"),
       planTask("First", "src/first.ts"),
@@ -456,18 +461,13 @@ async function createChangingPlan() {
       manifest(["tasks/01.md", "tasks/02.md"]),
     ),
   ]);
-  return { manifest, planRoot, root, workflowRoot };
+  return { planRoot, root, workflowRoot };
 }
 
-class ChangingPlanRunner implements AgentRunner {
+class OrderedPlanRunner implements AgentRunner {
   #active = 0;
   maximumActive = 0;
   readonly requests: AgentRequest[] = [];
-
-  constructor(
-    private readonly planRoot: string,
-    private readonly manifest: (tasks: readonly string[]) => string,
-  ) {}
 
   preflight(): Promise<void> {
     return Promise.resolve();
@@ -477,46 +477,29 @@ class ChangingPlanRunner implements AgentRunner {
     throw new Error("Changing plan runner does not resume sessions");
   }
 
-  async runInNewSession(request: AgentRequest) {
+  runInNewSession(request: AgentRequest) {
     this.#active += 1;
     this.maximumActive = Math.max(this.maximumActive, this.#active);
     this.requests.push(request);
-    await appendFile(
-      path.join(this.planRoot, "log.md"),
-      `\nHuman ${String(this.requests.length)}.\n`,
-    );
-    if (this.requests.length === 1) {
-      await writeFile(
-        path.join(this.planRoot, "tasks/03.md"),
-        planTask("Inserted", "src/inserted.ts"),
-      );
-      await writeFile(
-        path.join(this.planRoot, "plan.json"),
-        this.manifest(["tasks/01.md", "tasks/03.md", "tasks/02.md"]),
-      );
-    }
     this.#active -= 1;
-    return {
+    return Promise.resolve({
       output: 'done\nSTRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
       session: { id: `session-${String(this.requests.length)}` },
       status: "returned" as const,
-    };
+    });
   }
 }
 
-describe("Dispatcher with a changing Striker plan", () => {
-  it("rescans committed plan order without overlapping task sessions", async () => {
-    const { manifest, planRoot, root, workflowRoot } =
-      await createChangingPlan();
-    const runner = new ChangingPlanRunner(planRoot, manifest);
+describe("Dispatcher with an immutable Striker plan", () => {
+  it("runs declared task order without overlapping task sessions", async () => {
+    const { planRoot, root, workflowRoot } = await createOrderedPlan();
+    const runner = new OrderedPlanRunner();
     const registry = new AdapterRegistry();
     registry.register(
       new StrikerPlanAdapter({ projectRoot: root, workflowRoot }),
     );
     const journal = new InMemoryRunJournal();
-    const gitStates = ["0", "1", "1", "2", "2", "3"].map((head) =>
-      state({ head, root }),
-    );
+    const gitStates = ["0", "1", "1", "2"].map((head) => state({ head, root }));
     const result = await new Dispatcher({
       adapters: registry,
       git: new FakeGit(gitStates),
@@ -538,7 +521,7 @@ describe("Dispatcher with a changing Striker plan", () => {
       runner.requests.map(
         (request) => /^# ([^\n]+)/.exec(request.instructions)?.[1],
       ),
-    ).toEqual(["First", "Inserted", "Second"]);
+    ).toEqual(["First", "Second"]);
     expect(runner.maximumActive).toBe(1);
     expect(journal.deletedRunIds).toEqual(["changing"]);
   });

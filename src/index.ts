@@ -11,7 +11,16 @@ export {
   planManifestJsonSchema,
   planManifestSchema,
 } from "./adapters/striker-plan/plan-manifest.js";
-export type { PlanManifest } from "./adapters/striker-plan/plan-manifest.js";
+export type {
+  PlanAssumption,
+  PlanCodeEvidence,
+  PlanDefault,
+  PlanManifest,
+} from "./adapters/striker-plan/plan-manifest.js";
+export type {
+  StrikerPlan,
+  StrikerPlanTask,
+} from "./adapters/striker-plan/plan-parser.js";
 export type {
   AgentRequest,
   AgentHarness,

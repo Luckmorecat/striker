@@ -20,15 +20,12 @@ When implementation is green, run the standards review and then plan compliance
 review. Fix every blocking finding and rerun affected checks and task
 verification.
 
-Update the local plan files before completion. Reconcile the `A<n>` and `D<n>`
-ledgers in `spine.md` when code disproves them, but never alter the immutable
-intent snapshot. Reconcile `map.md` when paths or traversals change. Add one
-concise entry to `log.md` covering what landed, any deviation, and what the next
-task needs.
+Treat every supplied plan file as read-only. Keep implementation discoveries in
+the final report so Striker can review and record them outside the immutable
+plan.
 
-Create exactly one commit containing only the implementation and tests. Leave
-`.striker/` reconciliation local and uncommitted. Preserve any allowed
-pre-existing dirty baseline.
+Create exactly one commit containing only the implementation and tests. Preserve
+any allowed pre-existing dirty baseline.
 
 After reviews and checks pass, emit the machine-readable review evidence
 requested by Striker. Then report the commit and verification result.

@@ -1,12 +1,11 @@
 import { execFile } from "node:child_process";
-import { appendFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
-import { readCompletionMarkers } from "../adapters/striker-plan/completion-marker.js";
 import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapter.js";
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
@@ -45,7 +44,6 @@ true
 
 interface PlanFixtureOptions {
   readonly initializeGit?: boolean;
-  readonly log: string;
   readonly prefix: string;
   readonly projectFiles?: Readonly<Record<string, string>>;
   readonly tasks: readonly {
@@ -69,13 +67,14 @@ async function planFixture(options: PlanFixtureOptions) {
   await Promise.all([
     writeFile(path.join(planRoot, "spine.md"), "# Spine\n"),
     writeFile(path.join(planRoot, "map.md"), "# Map\n"),
-    writeFile(path.join(planRoot, "log.md"), options.log),
     writeFile(
       path.join(planRoot, "plan.json"),
       JSON.stringify({
+        assumptions: {},
+        defaults: {},
         taskSource: "striker-plan",
         tasks: options.tasks.map((task) => task.path),
-        version: 1,
+        version: 2,
       }),
     ),
     ...options.tasks.map((task) =>
@@ -104,7 +103,6 @@ async function planFixture(options: PlanFixtureOptions) {
 function twoTaskFixture() {
   return planFixture({
     initializeGit: true,
-    log: "# Log\n",
     prefix: "striker-two-task-",
     projectFiles: {
       "src/task-1.txt": "initial\n",
@@ -125,7 +123,6 @@ function twoTaskFixture() {
 
 async function recoveryFixture() {
   const { planRoot, root, workflowRoot } = await planFixture({
-    log: "# Log\n\nTask complete.\n",
     prefix: "striker-marker-recovery-",
     tasks: [
       {
@@ -143,7 +140,7 @@ async function recoveryFixture() {
 }
 
 describe("Dispatcher completed-event recovery", () => {
-  it("restores a missing plan marker before selecting another task", async () => {
+  it("uses the durable completion before selecting another task", async () => {
     const fixture = await recoveryFixture();
     const journal = new FileRunJournal(path.join(fixture.root, "state"));
     const session = { id: "runtime-session", resumeId: "provider-session" };
@@ -188,9 +185,6 @@ describe("Dispatcher completed-event recovery", () => {
       new Dispatcher({ adapters, journal, runner }).resume(),
     ).resolves.toMatchObject({ status: "source_exhausted" });
 
-    await expect(
-      readCompletionMarkers(path.join(fixture.planRoot, "log.md")),
-    ).resolves.toEqual([fixture.task.identity]);
     await expect(journal.loadActive()).resolves.toBeNull();
   });
 });
@@ -261,8 +255,8 @@ describe("Dispatcher finalization recovery", () => {
   });
 });
 
-describe("Dispatcher multi-task marker finalization", () => {
-  it("runs two Git tasks before finalizing their plan markers", async () => {
+describe("Dispatcher immutable multi-task plans", () => {
+  it("runs two Git tasks without modifying plan files", async () => {
     const fixture = await twoTaskFixture();
     const repository = new GitCliRepository();
     const journal = new FileRunJournal(
@@ -275,7 +269,18 @@ describe("Dispatcher multi-task marker finalization", () => {
         workflowRoot: fixture.workflowRoot,
       }),
     );
-    const markerCounts: number[] = [];
+    const immutablePaths = [
+      "plan.json",
+      "spine.md",
+      "map.md",
+      "tasks/01.md",
+      "tasks/02.md",
+    ];
+    const planBefore = await Promise.all(
+      immutablePaths.map((file) =>
+        readFile(path.join(fixture.planRoot, file), "utf8"),
+      ),
+    );
     let sessionCount = 0;
     const runner: AgentRunner = {
       preflight: () => Promise.resolve(),
@@ -286,14 +291,9 @@ describe("Dispatcher multi-task marker finalization", () => {
         sessionCount += 1;
         const session = { id: `session-${String(sessionCount)}` };
         await sessionStarted?.(session);
-        const logPath = path.join(fixture.planRoot, "log.md");
-        markerCounts.push((await readCompletionMarkers(logPath)).length);
         const target = `src/task-${String(sessionCount)}.txt`;
-        await Promise.all([
-          writeFile(path.join(fixture.root, target), "complete\n"),
-          appendFile(logPath, `\nTask ${String(sessionCount)} complete.\n`),
-        ]);
-        await git(fixture.root, "add", "--", target, "plan/log.md");
+        await writeFile(path.join(fixture.root, target), "complete\n");
+        await git(fixture.root, "add", "--", target);
         await git(
           fixture.root,
           "commit",
@@ -326,10 +326,13 @@ describe("Dispatcher multi-task marker finalization", () => {
 
     expect(result).toMatchObject({ status: "completed" });
     expect(sessionCount).toBe(2);
-    expect(markerCounts).toEqual([0, 0]);
     await expect(
-      readCompletionMarkers(path.join(fixture.planRoot, "log.md")),
-    ).resolves.toHaveLength(2);
+      Promise.all(
+        immutablePaths.map((file) =>
+          readFile(path.join(fixture.planRoot, file), "utf8"),
+        ),
+      ),
+    ).resolves.toEqual(planBefore);
     await expect(journal.loadActive()).resolves.toBeNull();
   });
 });

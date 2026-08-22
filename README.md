@@ -118,7 +118,6 @@ layout:
     plan.json
     spine.md
     map.md
-    log.md
     <ordered task files>
 ```
 
@@ -133,25 +132,46 @@ authorization.
 
 The plan directory uses the first 12 hexadecimal characters of the SHA-256 of
 the exact approved specification bytes. `spine.md` records the specification
-path and full hash and embeds an immutable copy of the specification. The
-manifest remains version 1 and declares strict task order:
+path and full hash and embeds an immutable copy of the specification. Version 2
+plans contain no mutable log. The manifest declares typed planning assumptions,
+local defaults, and strict task order:
 
 ```json
 {
   "$schema": "./node_modules/@kisshot/striker/plan.schema.json",
-  "version": 1,
+  "version": 2,
   "taskSource": "striker-plan",
+  "assumptions": {
+    "A1": {
+      "statement": "The CLI owns command registration.",
+      "evidence": [{ "path": "src/cli.ts", "line": 42 }]
+    }
+  },
+  "defaults": {
+    "D1": {
+      "statement": "Use the existing command naming pattern.",
+      "reason": "Adjacent commands use it.",
+      "reversalCost": "Rename one internal option and its tests."
+    }
+  },
   "tasks": ["01-first-task.md", "02-second-task.md"]
 }
 ```
 
-The complete plan is the executable package for one approved specification. A
-vertical task is one ordered, independently green implementation unit within
-that plan. Each task traces its requirements in `Build` and also has `Paths`,
-`Test contract`, and `Verify` sections. The `Verify` section contains one shell
-command, which Striker later runs once from the Git root through `/bin/sh -lc`.
-See [`skills/striker-plan/PLAN-FORMAT.md`](skills/striker-plan/PLAN-FORMAT.md)
-for the complete format.
+The ledger objects are required and may be empty. Assumptions use `A<n>`
+property names and one or more repository file and line citations. Defaults use
+`D<n>` property names and record a reason and reversal cost. Object keys make
+ledger IDs unique. Version 1 plans are rejected.
+
+The complete plan is the executable package for one approved specification.
+Striker derives its identity from the exact bytes and relative paths of
+`plan.json`, `spine.md`, `map.md`, and every declared task. A vertical task is
+one ordered, independently green implementation unit within that plan. Each task
+traces its requirements in `Build` and also has `Paths`, `Test contract`, and
+`Verify` sections. The `Verify` section contains one shell command, which
+Striker later runs once from the Git root through `/bin/sh -lc`. See
+[`skills/striker-plan/PLAN-FORMAT.md`](skills/striker-plan/PLAN-FORMAT.md) for
+the complete format.
 
 Validate a plan without running it:
 
@@ -180,12 +200,9 @@ pnpm exec striker run path/to/plan --allow-dirty
 ```
 
 After each task, Striker requires one descendant commit, an unchanged allowed
-dirty baseline, the exact verification result, the human plan log entry, and
-both implementor review results. It records completion in the Git-private run
-journal before selecting the next task. Once the source is exhausted, Striker
-appends every machine-readable completion marker to `log.md`, then deletes the
-run journal. If marker finalization fails, the journal remains available for
-`striker resume` to retry the batch.
+dirty baseline, the exact verification result, and both implementor review
+results. It records completion in the Git-private run journal before selecting
+the next task. Once the source is exhausted, Striker deletes the run journal.
 
 One nonterminal run may exist per checkout. Inspect or operate it with:
 

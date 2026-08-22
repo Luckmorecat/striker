@@ -5,9 +5,10 @@ import path from "node:path";
 import { fromMarkdown } from "mdast-util-from-markdown";
 
 import type { ImplementationTask } from "../../core/contracts.js";
+import { rejectDuplicateJsonKeys } from "./json-object-keys.js";
 import { parsePlanManifest, type PlanManifest } from "./plan-manifest.js";
 
-const supportFiles = ["spine.md", "map.md", "log.md"] as const;
+const supportFiles = ["spine.md", "map.md"] as const;
 const requiredSections = ["Build", "Paths", "Test contract", "Verify"] as const;
 type SectionName = (typeof requiredSections)[number];
 type MarkdownNode = ReturnType<typeof fromMarkdown>["children"][number];
@@ -68,6 +69,7 @@ function parseAffectedPaths(
 }
 
 export interface StrikerPlan {
+  readonly identity: string;
   readonly manifest: PlanManifest;
   readonly tasks: readonly StrikerPlanTask[];
 }
@@ -179,12 +181,14 @@ function parseTask(taskPath: string, content: string): StrikerPlanTask {
   };
 }
 
-async function readJson(filePath: string): Promise<unknown> {
+function parseJson(content: Buffer): unknown {
   try {
-    return JSON.parse(await readFile(filePath, "utf8")) as unknown;
+    const source = content.toString("utf8");
+    rejectDuplicateJsonKeys(source);
+    return JSON.parse(source) as unknown;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new PlanValidationError(`cannot read plan.json: ${message}`);
+    throw new PlanValidationError(`cannot parse plan.json: ${message}`);
   }
 }
 
@@ -252,24 +256,67 @@ async function rejectUndeclaredTasks(
   }
 }
 
-export async function parseStrikerPlan(root: string): Promise<StrikerPlan> {
-  const manifest = parsePlanManifest(
-    await readJson(path.join(root, "plan.json")),
+async function readImmutableFiles(
+  paths: readonly string[],
+  resolvedFiles: ReadonlyMap<string, string>,
+): Promise<ReadonlyMap<string, Buffer>> {
+  const files = new Map<string, Buffer>();
+  await Promise.all(
+    paths.map(async (filePath) => {
+      const resolved = resolvedFiles.get(filePath);
+      if (resolved === undefined) {
+        throw new PlanValidationError(`missing file: ${filePath}`);
+      }
+      files.set(filePath, await readFile(resolved));
+    }),
   );
+  return files;
+}
+
+function planIdentity(
+  paths: readonly string[],
+  files: ReadonlyMap<string, Buffer>,
+): string {
+  const hash = createHash("sha256");
+  for (const filePath of paths) {
+    const content = files.get(filePath);
+    if (content === undefined) {
+      throw new PlanValidationError(`missing file: ${filePath}`);
+    }
+    hash.update(`${String(Buffer.byteLength(filePath))}:`);
+    hash.update(filePath);
+    hash.update(`${String(content.byteLength)}:`);
+    hash.update(content);
+  }
+  return hash.digest("hex");
+}
+
+export async function parseStrikerPlan(root: string): Promise<StrikerPlan> {
   const realRoot = await realpath(root);
   const resolvedFiles = new Map<string, string>();
-  for (const filePath of [...supportFiles, ...manifest.tasks]) {
+  const manifestPath = await requireFile(root, realRoot, "plan.json");
+  const manifestBytes = await readFile(manifestPath);
+  resolvedFiles.set("plan.json", manifestPath);
+  const manifest = parsePlanManifest(parseJson(manifestBytes));
+  const immutablePaths = ["plan.json", ...supportFiles, ...manifest.tasks];
+  for (const filePath of immutablePaths.slice(1)) {
     resolvedFiles.set(filePath, await requireFile(root, realRoot, filePath));
   }
   await rejectUndeclaredTasks(root, manifest);
-  const tasks = await Promise.all(
-    manifest.tasks.map(async (taskPath) => {
-      const resolved = resolvedFiles.get(taskPath);
-      if (resolved === undefined) {
-        throw new PlanValidationError(`missing file: ${taskPath}`);
-      }
-      return parseTask(taskPath, await readFile(resolved, "utf8"));
-    }),
+  const files = new Map(
+    await readImmutableFiles(immutablePaths.slice(1), resolvedFiles),
   );
-  return { manifest, tasks };
+  files.set("plan.json", manifestBytes);
+  const tasks = manifest.tasks.map((taskPath) => {
+    const content = files.get(taskPath);
+    if (content === undefined) {
+      throw new PlanValidationError(`missing file: ${taskPath}`);
+    }
+    return parseTask(taskPath, content.toString("utf8"));
+  });
+  return {
+    identity: planIdentity(immutablePaths, files),
+    manifest,
+    tasks,
+  };
 }

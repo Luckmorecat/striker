@@ -1,4 +1,3 @@
-import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -9,10 +8,6 @@ import type {
   TaskSource,
   TaskSourceAdapter,
 } from "../../core/contracts.js";
-import {
-  appendCompletionMarker,
-  readCompletionMarkers,
-} from "./completion-marker.js";
 import {
   parseStrikerPlan,
   type StrikerPlan,
@@ -38,26 +33,7 @@ function includesIdentity(
   );
 }
 
-function inRepositorySupportPaths(
-  projectRoot: string,
-  planRoot: string,
-): string[] {
-  const relative = path.relative(projectRoot, planRoot);
-  if (
-    path.isAbsolute(relative) ||
-    relative === ".." ||
-    relative.startsWith(`..${path.sep}`)
-  ) {
-    return [];
-  }
-  const planPath = relative.split(path.sep).join("/");
-  return ["spine.md", "map.md", "log.md"].map((file) =>
-    path.posix.join(planPath, file),
-  );
-}
-
 class StrikerPlanSource implements TaskSource {
-  readonly #logPath: string;
   readonly #planRoot: string;
 
   constructor(
@@ -67,21 +43,16 @@ class StrikerPlanSource implements TaskSource {
     planRoot: string,
   ) {
     this.#planRoot = planRoot;
-    this.#logPath = path.join(planRoot, "log.md");
   }
 
-  async nextTask(
+  nextTask(
     completed: readonly TaskIdentity[],
   ): Promise<ImplementationTask | null> {
-    const markers = await readCompletionMarkers(this.#logPath);
     const task = this.plan.tasks.find(
-      (candidate) =>
-        !includesIdentity(completed, candidate.identity) &&
-        !includesIdentity(markers, candidate.identity),
+      (candidate) => !includesIdentity(completed, candidate.identity),
     );
-    if (task === undefined) return null;
-    const logSizeBefore = (await stat(this.#logPath)).size;
-    return this.withExecution(task, logSizeBefore);
+    if (task === undefined) return Promise.resolve(null);
+    return Promise.resolve(this.withExecution(task));
   }
 
   reconcileCompleted(
@@ -104,69 +75,44 @@ class StrikerPlanSource implements TaskSource {
     return Promise.resolve(null);
   }
 
-  async completionEvidence(
+  completionEvidence(
     task: ImplementationTask,
     execution?: TaskExecutionEvidence,
     agentOutput = "",
   ): Promise<TaskCompletionResult> {
     if (execution === undefined) {
-      return {
+      return Promise.resolve({
         attention: {
           detail: "The task has no execution evidence.",
           reason: "completion_evidence_missing",
         },
         status: "needs_attention",
-      };
-    }
-    const logSizeAfter = (await stat(this.#logPath)).size;
-    const logSizeBefore = Number(task.completionToken ?? "0");
-    if (logSizeAfter <= logSizeBefore) {
-      return {
-        attention: {
-          detail:
-            "The implementor did not append the required human plan log entry.",
-          reason: "human_log_missing",
-        },
-        status: "needs_attention",
-      };
+      });
     }
     if (!hasReviewEvidence(agentOutput)) {
-      return {
+      return Promise.resolve({
         attention: {
           detail: "The implementor did not report both required review passes.",
           reason: "review_evidence_missing",
         },
         status: "needs_attention",
-      };
+      });
     }
-    return {
+    return Promise.resolve({
       evidence: {
-        summary: `${task.title} passed Git, log, reviews, and verification evidence`,
+        summary: `${task.title} passed Git, reviews, and verification evidence`,
         verification: execution.verification,
       },
       status: "completed",
-    };
+    });
   }
 
-  async finalizeCompleted(completed: readonly TaskIdentity[]): Promise<void> {
-    for (const identity of completed) {
-      await appendCompletionMarker(this.#logPath, identity);
-    }
-  }
-
-  private withExecution(
-    task: StrikerPlanTask,
-    logSizeBefore: number,
-  ): ImplementationTask {
+  private withExecution(task: StrikerPlanTask): ImplementationTask {
     return {
       ...task,
-      completionToken: String(logSizeBefore),
-      instructions: `${task.instructions}\n\n## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\nLog: ${this.#logPath}\n`,
+      instructions: `${task.instructions}\n\n## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\n`,
       execution: {
-        affectedPaths: [
-          ...task.affectedPaths,
-          ...inRepositorySupportPaths(this.projectRoot, this.#planRoot),
-        ],
+        affectedPaths: task.affectedPaths,
         cwd: this.projectRoot,
         verifyCommand: task.verifyCommand,
         workflowInstructions: `${this.workflow}\n\n${reviewEvidenceInstructions}`,
