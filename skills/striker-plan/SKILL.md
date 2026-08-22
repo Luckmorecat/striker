@@ -1,119 +1,130 @@
 ---
 name: striker-plan
-description:
-  Use only when the developer explicitly invokes $striker-plan to create a
-  versioned Striker implementation plan.
+description: Create a validated Striker plan from an approved specification.
+disable-model-invocation: true
 metadata:
   opencode/autoinvoke: "false"
 ---
 
 # Striker plan
 
-Proceed only when the developer explicitly invoked `$striker-plan`.
+Create the executable implementation plan for one approved specification. Shape
+and Spec own product direction and observable behavior.
 
-Create a Striker plan from a concrete implementation goal or an approved product
-brief. This skill is the planning authority. Do not invoke or depend on another
-planning skill.
+## Verify the specification
 
-## Establish the goal
+Read
+[SPEC-FORMAT.md](../striker-preparation/SPEC-FORMAT.md)
+and verify the supplied specification in full.
 
-Before discovery, check that the goal identifies:
+Accept only an approved specification. A request, brief, existing plan, or old
+`spine.md` is not an intent source for Plan. When the specification is missing,
+stop and print:
 
-- an actor or caller;
-- an observable outcome;
-- at least one use case that can be demonstrated;
-- the first boundary that can be made green.
+```text
+Next: $striker-spec <approved-brief-or-shaped-request>
+```
 
-If any item is missing, ask for it. If the request is an open product idea whose
-behavior still needs shaping, stop and ask for a concrete implementation goal or
-an approved product brief. Do not invent product behavior to make it plannable.
+`$striker-spec` may use an old `spine.md` as unapproved recovery input.
 
-Treat the developer's concrete request, answers, and approved product brief as
-authoritative for desired behavior. Treat repository code as authoritative for
-current behavior. Documentation and reported behavior are evidence, not a
-substitute for either authority.
+The specification controls desired behavior. Repository code describes current
+behavior.
 
-## Discover the repository
+## Discover the implementation
 
-Classify the relevant area before planning:
+Classify the relevant area as established when nearby precedents answer most
+choices, sparse when important gaps remain, or blank when no relevant
+implementation, build configuration, or tests exist.
 
-- **Established** means nearby implementation, tests, and conventions provide
-  precedents for most decisions.
-- **Sparse** means some relevant precedents exist, but important local choices
-  remain unanswered.
-- **Blank** means there is no relevant implementation, build configuration, or
-  test setup to follow.
+Inspect the feature area, its parent, and then the wider repository. For each
+choice that can block implementation:
 
-For a blank project, read [BOOTSTRAP.md](BOOTSTRAP.md) and follow its branch in
-addition to this process. Do not read it for established or sparse areas.
+1. Search those scopes for the nearest precedent.
+2. Record a clear precedent as an `A<n>` assumption with a file and line
+   citation.
+3. Use a `D<n>` default only for a local choice reversible within one task.
+4. Ask about hard-to-reverse implementation choices that remain within the
+   approved specification.
 
-Inspect the feature folder first, then its parent, then the wider repository.
-For every choice the implementation depends on:
+Enumerate the choices before asking questions. Resolve blocking choices first
+and batch only independent questions.
 
-1. Name the decision and the work it can block.
-2. Search those scopes in order for the nearest precedent.
-3. Record an established choice as a code-backed `A<n>` assumption. Cite the
-   file and line and state what the evidence establishes.
-4. If there is no precedent, use a `D<n>` default only when the choice is local
-   and can be reversed within one task. Record the reason and reversal cost.
-5. Ask the developer when precedents split, the choice affects public behavior
-   or contracts, persistent data, security, deployment, multiple tasks, or is
-   expensive to reverse.
+If a choice can change an approved requirement, public contract, data or
+security decision, or compatibility or deployment constraint, stop and print:
 
-Enumerate the whole decision set before interviewing. Ask in dependency-frontier
-rounds: resolve decisions that block other decisions first, batch only
-independent questions, update the ledger after each answer, then advance to the
-next newly unblocked round. Do not ask about choices that a single clear
-precedent already answers.
+```text
+Next: $striker-spec <specification-path>
+```
 
-Surface contradictions as soon as they appear. Name the conflicting code,
-documentation, or reported behavior and ask which desired behavior should win.
-Never silently reconcile conflicting evidence.
+For a blank area, read [BOOTSTRAP.md](BOOTSTRAP.md).
 
-## Design the work
+Treat differences between the specification and code as implementation work.
+Ask for clarification only when repository evidence makes an approved
+requirement ambiguous, inconsistent, or infeasible.
 
-Build a full use-case tree before producing tasks. Start with each actor or
-caller goal, then include successful paths, meaningful variants, failures, and
-boundary conditions required by the approved behavior. Mark every branch that an
-emitted task covers. Leave excluded branches visible and label them out of
-scope.
+## Design vertical tasks
 
-Turn the marked branches into ordered vertical tasks. Each task must deliver an
-observable slice and leave the repository green. Put complete mechanical
-prerequisites before the first task that needs them. Do not scatter one
-prerequisite across later feature tasks or create horizontal implementation
-layers.
+Use the specification's successful, variant, failure, and boundary cases as the
+use-case tree. Preserve excluded branches and mark task coverage.
 
-Agree the test contract for every task with the developer. Each contract names:
+Map requirements to tasks in both directions. Build an ordered sequence of
+tracer-bullet tasks. Each task must deliver an observable, independently green
+result, fit one fresh agent context, and define:
 
-- the public seam under test;
-- the behavior the test proves;
-- the system boundary that may be faked, if any;
+- concrete repository-relative paths;
+- a public test seam and the behavior it proves;
+- the allowed system fake, if any;
 - one deterministic verification command.
 
-Prefer existing public seams. Do not test private implementation details or fake
-collaborators owned by the repository. Verification must not require an
-installed or authenticated agent harness unless the developer approved that
-check.
+Use a separate mechanical prerequisite only when it has its own complete green
+boundary.
 
-## Approve and write the plan
+For an unavoidable wide change, expand first, migrate callers in green batches,
+then contract by removing the old form. Keep Striker's strict dispatch order.
+Do not create an external tracker or separate dependency graph.
 
-Before writing any artifact, present one plan preview containing:
+## Review and approve
 
-- the goal and approved behavior;
-- scope and out-of-scope work;
-- user decisions and reasons;
-- code-backed assumptions and local defaults;
-- the full use-case tree with emitted tasks marked;
-- ordered tasks and their test seams.
+Before presenting the plan, check:
 
-Obtain explicit approval of that preview. Incorporate requested changes and
-present the changed preview again. Do not write plan files before approval.
+- requirement coverage in both directions;
+- task granularity and order;
+- paths and shared-file sequencing;
+- test seams and fake boundaries;
+- verification commands.
 
-After approval, read [PLAN-FORMAT.md](PLAN-FORMAT.md) and write its manifest,
-planning context, ordered tasks, and empty log. Resolve the target Git root and
-run its `node_modules/.bin/striker plan validate <source>`. Stop if the
-project-local binary is absent. Correct every validation failure and rerun the
-command until it passes.
+Fix every gap found.
 
-Finish by naming the plan directory and listing the agreed test seams.
+Present the specification path and SHA-256, scope, exclusions, decisions,
+assumptions, defaults, requirement mapping, ordered tasks, and test contracts.
+
+Obtain explicit approval of the task boundaries and test contracts. Apply
+requested changes and present the changed preview again. Write no plan artifacts
+before approval.
+
+## Write and validate the plan
+
+After unambiguous approval, read [PLAN-FORMAT.md](PLAN-FORMAT.md) and write the
+plan in its required location. Serialize requirement traceability as that format
+requires.
+
+If the target directory exists, show it and obtain approval before replacing any
+file.
+
+Validate the plan with:
+
+```sh
+node_modules/.bin/striker plan validate <plan-directory>
+```
+
+Stop if the project-local binary is absent. Correct every failure and rerun
+validation until it passes.
+
+Print:
+
+```text
+Validated plan: <plan-directory>
+Next: $striker run <plan-directory>
+```
+
+Stop without invoking Striker.

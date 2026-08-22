@@ -1,6 +1,15 @@
 # Striker plan format version 1
 
-A Striker plan is a directory with these files:
+A Striker plan is the executable package for one approved specification.
+
+Store it at:
+
+`.striker/plans/<slug>/<spec-hash-prefix>/`
+
+Use the specification slug and the first 12 hexadecimal characters of the
+SHA-256 of the exact approved specification bytes.
+
+A plan directory contains:
 
 ```text
 plan.json
@@ -10,41 +19,39 @@ log.md
 <ordered task files declared by plan.json>
 ```
 
-This file is the authority for generated plan artifacts. Do not duplicate or
-change its manifest and task syntax elsewhere.
+The source brief and specification remain outside the plan directory.
+
+This file is the authority for plan serialization. Do not duplicate its
+manifest or task syntax elsewhere.
 
 ## Planning context
 
-Write `spine.md` so an implementor can distinguish approved intent from current
-repository evidence. Record:
+Write `spine.md` with:
 
-- the goal and approved observable behavior;
-- the evidence state, classified as established, sparse, or blank, and the
-  repository scope inspected;
-- the intent source, either the concrete developer request or the approved
-  product brief;
-- each user decision and its reasoning;
-- code-backed assumptions in a numbered `A<n>` ledger, with file and line
-  citations and the fact each citation establishes;
-- local defaults in a numbered `D<n>` ledger, with their reasons and the cost of
-  reversing them;
-- quality constraints;
-- out-of-scope work;
-- the full use-case tree, including excluded branches, with branches covered by
-  emitted tasks clearly marked.
+- the approved specification path and full SHA-256;
+- a verbatim snapshot of the approved specification;
+- the evidence state, classified as established, sparse, or blank;
+- the repository scopes inspected;
+- each user implementation decision and its reasoning;
+- code-backed assumptions in an `A<n>` ledger, with file and line citations;
+- local defaults in a `D<n>` ledger, with reasons and reversal costs;
+- the complete requirement-to-task mapping;
+- the use-case tree, including excluded branches and task coverage.
 
-Do not turn user decisions into assumptions. Do not invent code citations for a
-blank area. Preserve uncertainty and contradictions that the implementor may
-need to reconcile.
+The specification snapshot is immutable. Implementation may reconcile disproved
+`A<n>` and `D<n>` entries, but must not change approved intent. A change to
+approved intent requires a revised specification and a new plan hash.
 
-Write `map.md` as a traversal guide. Record:
+Do not turn user decisions into assumptions or invent citations for a blank
+area.
 
-- existing traversal through relevant entry points, modules, ports, adapters,
+Write `map.md` as a traversal guide containing:
+
+- current traversal through relevant entry points, modules, ports, adapters,
   data, and tests;
-- planned traversal, clearly marked `unverified` wherever code does not exist
-  yet;
-- paths shared by multiple tasks;
-- paths considered and ruled out, with the evidence that eliminated each one.
+- planned traversal, marked `unverified` where code does not yet exist;
+- paths shared by several tasks;
+- paths considered and ruled out, with the evidence that ruled them out.
 
 Use repository-relative paths. A planned path is not evidence of current
 behavior.
@@ -71,14 +78,17 @@ manifest.
 
 ## Task files
 
-Each task is one vertical, committable change. Mechanical prerequisites may be a
-separate earlier task only when they form a complete green boundary. Use exactly
-this heading shape:
+Each task is one vertical, committable change. Every in-scope requirement maps
+to at least one task, and every task lists at least one approved requirement.
+
+Use exactly:
 
 ````markdown
 # Short task title
 
 ## Build
+
+Requirements: R1, R2
 
 State the observable behavior and boundaries.
 
@@ -88,7 +98,7 @@ State the observable behavior and boundaries.
 
 ## Test contract
 
-- Name the agreed public seams and behavior each test proves.
+- Name the public seams and behavior each test proves.
 - Name the allowed fake system boundary, or state that no fake is allowed.
 
 ## Verify
@@ -98,10 +108,10 @@ one deterministic shell command
 ```
 ````
 
-The `Verify` block runs later from the Git root. Make it strong enough to prove
-the task without requiring an installed or authenticated agent harness unless
-the developer explicitly approved a real-harness check.
+The `Verify` block runs from the Git root. It must prove the task without
+requiring an installed or authenticated agent runtime unless the developer
+approved a real-runtime check.
 
-Split tasks so each one leaves the repository green and gives the next task a
-stable public boundary. Keep deferred behavior out of earlier tasks even when
-nearby code makes it tempting to add.
+A mechanical prerequisite may be a separate earlier task only when it has its
+own complete green boundary. Each task leaves the repository green and gives
+the next task a stable public boundary.

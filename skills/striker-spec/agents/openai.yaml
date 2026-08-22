@@ -1,0 +1,6 @@
+interface:
+  display_name: "Striker Spec"
+  short_description: "Approve behavior and acceptance conditions"
+  default_prompt: "Use $striker-spec to write an approved behavioral specification."
+policy:
+  allow_implicit_invocation: false

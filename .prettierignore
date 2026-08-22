@@ -5,3 +5,11 @@ node_modules
 .agents
 .claude
 skills-lock.json
+skills/striker-plan/PLAN-FORMAT.md
+skills/striker-plan/SKILL.md
+skills/striker-plan/agents/openai.yaml
+skills/striker-preparation/BRIEF-FORMAT.md
+skills/striker-preparation/SPEC-FORMAT.md
+skills/striker-shape/SKILL.md
+skills/striker-spec/SKILL.md
+skills/striker-spec/agents/openai.yaml

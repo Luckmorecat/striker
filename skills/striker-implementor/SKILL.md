@@ -5,28 +5,30 @@ description: Internal workflow for implementing one supplied Striker task.
 
 # Striker implementor
 
-The supplied task is the whole work contract. Implement that task and stop. The
-plan's out-of-scope section remains binding. Work only from the supplied task;
-later tasks stay unopened.
+Implement only the supplied task. Use the plan context for shared intent and
+exclusions. Leave later tasks unopened.
 
-Before editing, read the repository rules and the supplied plan context. Read
+Before editing, read the repository rules and supplied plan context. Read
 [references/tdd.md](references/tdd.md) before writing tests and
 [references/review.md](references/review.md) before review.
 
-Work in vertical red-green cycles at the test boundaries named in the task. Keep
-production dependencies pointed toward core ports and keep current user changes
-intact. Run focused checks during the work.
+Work in vertical red-green cycles through the test boundaries named in the task.
+Follow the repository rules, preserve current user changes, and run focused
+checks during the work.
 
-When the implementation is green, run the standards review first and the plan
-compliance review second. Fix every blocking finding, then rerun the affected
-checks and the task's relevant verification.
+When implementation is green, run the standards review and then plan compliance
+review. Fix every blocking finding and rerun affected checks and task
+verification.
 
-Reconcile `spine.md` when code disproves a ledger fact or default. Reconcile
-`map.md` when paths or traversals changed. Add one concise human entry to
-`log.md` with what landed, any deviation, and what the next task needs.
+Update the local plan files before completion. Reconcile the `A<n>` and `D<n>`
+ledgers in `spine.md` when code disproves them, but never alter the immutable
+intent snapshot. Reconcile `map.md` when paths or traversals change. Add one
+concise entry to `log.md` covering what landed, any deviation, and what the next
+task needs.
 
-Create exactly one commit containing the task implementation, its tests, and the
-plan reconciliation. Leave the checkout with only the pre-existing dirty
-baseline, if Striker allowed one. Return the commit and verification result.
-After both review passes and all checks succeed, follow the machine-readable
-review-evidence instruction that Striker adds to the task session.
+Create exactly one commit containing only the implementation and tests. Leave
+`.striker/` reconciliation local and uncommitted. Preserve any allowed
+pre-existing dirty baseline.
+
+After reviews and checks pass, emit the machine-readable review evidence
+requested by Striker. Then report the commit and verification result.

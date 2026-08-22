@@ -18,7 +18,13 @@ import {
 export const supportedHarnesses = agentHarnesses;
 export type SupportedHarness = AgentHarness;
 
-const publicSkillNames = ["striker", "striker-plan"] as const;
+const publicSkillNames = [
+  "striker",
+  "striker-shape",
+  "striker-spec",
+  "striker-plan",
+  "striker-preparation",
+] as const;
 
 function isSupportedHarness(harness: string): harness is SupportedHarness {
   return supportedHarnesses.some((candidate) => candidate === harness);
