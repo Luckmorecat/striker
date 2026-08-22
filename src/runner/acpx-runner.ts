@@ -159,14 +159,16 @@ export class AcpxAgentRunner implements AgentRunner {
       mode: "persistent",
       sessionKey,
     });
-    const session = {
-      id: sessionKey,
-      ...(handle.backendSessionId === undefined
-        ? {}
-        : { resumeId: handle.backendSessionId }),
-    };
-    await sessionStarted?.(session);
-    return this.runTurn(handle, session, promptText(request));
+    return this.withTaskHandle(handle, async () => {
+      const session = {
+        id: sessionKey,
+        ...(handle.backendSessionId === undefined
+          ? {}
+          : { resumeId: handle.backendSessionId }),
+      };
+      await sessionStarted?.(session);
+      return this.runTurn(handle, session, promptText(request));
+    });
   }
 
   async resumeSession(
@@ -182,13 +184,15 @@ export class AcpxAgentRunner implements AgentRunner {
         ? {}
         : { resumeSessionId: session.resumeId }),
     });
-    if (
-      session.resumeId !== undefined &&
-      handle.backendSessionId !== session.resumeId
-    ) {
-      throw new Error("Agent runner replaced the preserved backend session");
-    }
-    return this.runTurn(handle, session, instructions);
+    return this.withTaskHandle(handle, () => {
+      if (
+        session.resumeId !== undefined &&
+        handle.backendSessionId !== session.resumeId
+      ) {
+        throw new Error("Agent runner replaced the preserved backend session");
+      }
+      return this.runTurn(handle, session, instructions);
+    });
   }
 
   private async runTurn(
@@ -213,6 +217,20 @@ export class AcpxAgentRunner implements AgentRunner {
         ? result.error.message
         : (result.stopReason ?? "Agent turn was cancelled");
     return { error, session, status: "failed" };
+  }
+
+  private async withTaskHandle<T>(
+    handle: AcpRuntimeHandle,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } finally {
+      await this.options.runtime.close({
+        handle,
+        reason: "Striker task turn complete",
+      });
+    }
   }
 
   private async probeHarness(runtime: AcpxRuntimeBoundary): Promise<void> {

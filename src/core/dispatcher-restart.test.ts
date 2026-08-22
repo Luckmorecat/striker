@@ -43,7 +43,66 @@ class RestartSource implements TaskSource {
   }
 }
 
-describe("Dispatcher process restart", () => {
+describe("Dispatcher initialization restart", () => {
+  it("retries initialization attention with a new dispatcher instance", async () => {
+    const root = await mkdtemp(`${tmpdir()}/striker-restart-initialization-`);
+    await execFileAsync("git", ["-C", root, "init"]);
+    const git = new GitCliRepository();
+    const stateRoot = await git.resolvePrivatePath(root, "striker");
+    const adapters = new AdapterRegistry();
+    adapters.register({
+      open: () => Promise.resolve(new RestartSource()),
+      type: "memory",
+    });
+    const request = {
+      completedTasks: [],
+      runId: "run-initialization-restart",
+      skills: [],
+      taskSource: { location: "memory://plan", type: "memory" },
+    } as const;
+    const firstJournal = new FileRunJournal(stateRoot);
+    await expect(
+      new Dispatcher({
+        adapters,
+        git,
+        journal: firstJournal,
+        runner: {
+          preflight: () => Promise.resolve(),
+          resumeSession: () => {
+            throw new Error("Unexpected resume");
+          },
+          runInNewSession: () =>
+            Promise.reject(new Error("provider session setup failed")),
+        },
+      }).dispatchOne(request),
+    ).resolves.toMatchObject({
+      reason: "run_initialization_interrupted",
+      session: null,
+      status: "needs_attention",
+    });
+
+    const retryRunner = new FakeAgentRunner({
+      output: "done",
+      session: { id: "runtime-second", resumeId: "provider-second" },
+      status: "returned",
+    });
+    const retryJournal = new FileRunJournal(stateRoot);
+    await expect(
+      new Dispatcher({
+        adapters,
+        git,
+        journal: retryJournal,
+        runner: retryRunner,
+      }).retry(),
+    ).resolves.toMatchObject({ status: "completed" });
+
+    expect(retryRunner.requests).toHaveLength(1);
+    expect(retryRunner.resumeRequests).toHaveLength(0);
+    await expect(retryJournal.loadActive()).resolves.toBeNull();
+  });
+});
+
+describe("Dispatcher failed-run restart", () => {
   it("retries failed Git-private state with a fresh runner instance", async () => {
     const root = await mkdtemp(`${tmpdir()}/striker-restart-git-`);
     await execFileAsync("git", ["-C", root, "init"]);

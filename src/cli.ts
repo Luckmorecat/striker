@@ -11,15 +11,11 @@ import type { AcpPermissionRequest } from "acpx/runtime";
 
 import { StrikerPlanAdapter } from "./adapters/striker-plan/striker-plan-adapter.js";
 import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
+import { commandResult } from "./cli/command-result.js";
 import { runCli } from "./cli/program.js";
 import { loadProjectConfig } from "./config/project-config.js";
 import { AdapterRegistry } from "./core/adapter-registry.js";
-import type {
-  ApprovalMode,
-  DispatchResult,
-  PermissionConfig,
-  RunCommandResult,
-} from "./core/contracts.js";
+import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
 import { Dispatcher } from "./core/dispatcher.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
 import { GitCliRepository } from "./infrastructure/git-cli.js";
@@ -110,35 +106,6 @@ async function dispatchRun(
       type: config.taskSource,
     },
   });
-}
-
-function commandResult(result: DispatchResult): RunCommandResult {
-  if (result.status === "source_exhausted") {
-    return {
-      message: "Striker plan has no remaining tasks.",
-      status: "completed",
-    };
-  }
-  if (result.status === "completed") {
-    return {
-      message: `Completed ${result.task.identity.id}.`,
-      status: "completed",
-    };
-  }
-  if (result.status === "needs_attention") {
-    const commands =
-      result.reason === "session_resume_failed"
-        ? "Run `striker retry` to start a fresh attempt."
-        : "Run `striker answer`, `striker resume`, or `striker retry`.";
-    return {
-      message: `Run needs attention: ${result.reason}. ${commands}`,
-      status: "needs_attention",
-    };
-  }
-  return {
-    message: `Run failed: ${result.error}. Run \`striker retry\` or \`striker discard --force\`.`,
-    status: "failed",
-  };
 }
 
 async function readAnswer(file: string | undefined): Promise<string> {

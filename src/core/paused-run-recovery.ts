@@ -12,10 +12,8 @@ import type {
   RunStatus,
   TaskSource,
 } from "./contracts.js";
-import {
-  recordAttemptSession,
-  replaceRunningAttempt,
-} from "./attempt-journal.js";
+import { replaceRunningAttempt } from "./attempt-journal.js";
+import { runInFreshSession } from "./fresh-session.js";
 import { transitionRun } from "./run-state.js";
 
 interface RecoveryDependencies {
@@ -144,26 +142,15 @@ export class PausedRunRecovery {
       nextAttempt,
       null,
     );
-    const turn = await this.dependencies.runner.runInNewSession(
-      {
-        instructions: run.task.instructions,
-        skills: run.request.skills,
-        ...(run.task.execution === undefined
-          ? {}
-          : {
-              workflowInstructions: run.task.execution.workflowInstructions,
-            }),
-      },
-      (session) =>
-        recordAttemptSession(
-          this.dependencies.journal,
-          run.request,
-          run.task,
-          run.before,
-          nextAttempt,
-          session,
-        ),
-    );
+    const turn = await runInFreshSession({
+      attempt: nextAttempt,
+      before: run.before,
+      journal: this.dependencies.journal,
+      request: run.request,
+      runner: this.dependencies.runner,
+      task: run.task,
+    });
+    if (turn.status === "needs_attention") return turn;
     if (turn.status === "failed") {
       return this.host.fail(
         run.request,

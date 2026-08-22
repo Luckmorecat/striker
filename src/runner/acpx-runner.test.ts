@@ -17,7 +17,11 @@ import {
 
 class FakeRuntime implements AcpxRuntimeBoundary {
   backendSessionId = "codex-session";
-  readonly closed: AcpRuntimeHandle[] = [];
+  readonly closed: {
+    readonly discardPersistentState?: boolean;
+    readonly handle: AcpRuntimeHandle;
+    readonly reason: string;
+  }[] = [];
   readonly ensureInputs: AcpRuntimeEnsureInput[] = [];
   doctorMessage = "ready";
   healthy = true;
@@ -46,8 +50,12 @@ class FakeRuntime implements AcpxRuntimeBoundary {
     return Promise.resolve();
   }
 
-  close(input: { readonly handle: AcpRuntimeHandle }): Promise<void> {
-    this.closed.push(input.handle);
+  close(input: {
+    readonly discardPersistentState?: boolean;
+    readonly handle: AcpRuntimeHandle;
+    readonly reason: string;
+  }): Promise<void> {
+    this.closed.push(input);
     return Promise.resolve();
   }
 
@@ -68,6 +76,42 @@ class FakeRuntime implements AcpxRuntimeBoundary {
     };
   }
 }
+
+describe("acpx task cleanup", () => {
+  it("releases a returned turn without discarding persistent state", async () => {
+    const runtime = new FakeRuntime();
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
+
+    await runner.runInNewSession({ instructions: "Build.", skills: [] });
+
+    expect(runtime.closed).toHaveLength(1);
+    expect(runtime.closed[0]).toMatchObject({
+      reason: "Striker task turn complete",
+    });
+    expect(runtime.closed[0]).not.toHaveProperty("discardPersistentState");
+  });
+
+  it("releases a session when its durable callback rejects", async () => {
+    const runtime = new FakeRuntime();
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
+
+    await expect(
+      runner.runInNewSession({ instructions: "Build.", skills: [] }, () =>
+        Promise.reject(new Error("journal unavailable")),
+      ),
+    ).rejects.toThrow("journal unavailable");
+    expect(runtime.closed).toHaveLength(1);
+    expect(runtime.turnText).toBe("");
+  });
+});
 
 describe("acpx task sessions", () => {
   it("injects private workflow instructions into a fresh persistent session", async () => {
@@ -171,6 +215,7 @@ describe("acpx recovered task sessions", () => {
       ),
     ).rejects.toThrow("replaced the preserved backend session");
     expect(runtime.turnText).toBe("");
+    expect(runtime.closed).toHaveLength(1);
   });
 });
 

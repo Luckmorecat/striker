@@ -221,7 +221,7 @@ describe("Dispatcher sessionless pause recovery", () => {
     );
     const attention = {
       detail: "Run `striker retry`.",
-      reason: "session_resume_failed" as const,
+      reason: "run_initialization_interrupted" as const,
     };
     await test.journal.append({
       runId: request.runId,
@@ -246,7 +246,7 @@ describe("Dispatcher sessionless pause recovery", () => {
     const eventCount = test.journal.events.length;
 
     await expect(test.dispatcher.resume()).resolves.toMatchObject({
-      reason: "session_resume_failed",
+      reason: "run_initialization_interrupted",
       session: null,
       status: "needs_attention",
     });

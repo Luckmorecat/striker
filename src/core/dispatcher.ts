@@ -19,10 +19,8 @@ import {
   executionAttention,
   inspectBaseline,
 } from "./dispatch-evidence.js";
-import {
-  recordAttemptSession,
-  replaceRunningAttempt,
-} from "./attempt-journal.js";
+import { replaceRunningAttempt } from "./attempt-journal.js";
+import { runInFreshSession } from "./fresh-session.js";
 import { PausedRunRecovery } from "./paused-run-recovery.js";
 import { transitionRun } from "./run-state.js";
 import { RunOperations } from "./run-operations.js";
@@ -127,24 +125,15 @@ export class Dispatcher {
       request.allowDirty ?? false,
     );
     await this.ensureRunning(request, task, before);
-    const turn = await this.dependencies.runner.runInNewSession(
-      {
-        instructions: task.instructions,
-        skills: request.skills,
-        ...(task.execution === undefined
-          ? {}
-          : { workflowInstructions: task.execution.workflowInstructions }),
-      },
-      (session) =>
-        recordAttemptSession(
-          this.dependencies.journal,
-          request,
-          task,
-          before,
-          1,
-          session,
-        ),
-    );
+    const turn = await runInFreshSession({
+      attempt: 1,
+      before,
+      journal: this.dependencies.journal,
+      request,
+      runner: this.dependencies.runner,
+      task,
+    });
+    if (turn.status === "needs_attention") return turn;
     if (turn.status === "failed") {
       return this.finishFailed(request, task, turn.session, turn.error, before);
     }
