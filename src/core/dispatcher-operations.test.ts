@@ -4,6 +4,8 @@ import { FakeAgentRunner, InMemoryRunJournal } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
+  GitRepository,
+  GitState,
   ImplementationTask,
   TaskCompletionResult,
   TaskIdentity,
@@ -12,6 +14,12 @@ import type {
 import { Dispatcher } from "./dispatcher.js";
 
 const task: ImplementationTask = {
+  execution: {
+    affectedPaths: ["src/task.ts"],
+    cwd: "/repo",
+    verifyCommand: "pnpm check",
+    workflowInstructions: "Implement the task.",
+  },
   identity: { id: "tasks/01.md", revision: "revision-1" },
   instructions: "Build the command.",
   title: "Build the command",
@@ -25,18 +33,11 @@ const request = {
 } as const;
 
 class CompletingSource implements TaskSource {
-  marked = false;
-
   completionEvidence(): Promise<TaskCompletionResult> {
     return Promise.resolve({
       evidence: { summary: "task complete" },
       status: "completed",
     });
-  }
-
-  markCompleted(): Promise<void> {
-    this.marked = true;
-    return Promise.resolve();
   }
 
   nextTask(
@@ -50,15 +51,39 @@ class CompletingSource implements TaskSource {
   }
 }
 
+const repositoryState: GitState = {
+  dirtyPaths: [],
+  head: "after",
+  root: "/repo",
+  trackedPatch: "",
+  untrackedHashes: {},
+};
+
+const git: GitRepository = {
+  changedPaths: () => Promise.resolve(["src/task.ts"]),
+  commitsBetween: () => Promise.resolve(["after"]),
+  inspect: () => Promise.resolve(repositoryState),
+  resolvePrivatePath: () => Promise.resolve("/repo/.git/striker"),
+  resolveRoot: () => Promise.resolve("/repo"),
+};
+
 function fixture(runner: AgentRunner) {
   const source = new CompletingSource();
   const adapters = new AdapterRegistry();
   adapters.register({ open: () => Promise.resolve(source), type: "memory" });
   const journal = new InMemoryRunJournal();
   return {
-    dispatcher: new Dispatcher({ adapters, journal, runner }),
+    dispatcher: new Dispatcher({
+      adapters,
+      git,
+      journal,
+      runner,
+      verifier: {
+        verify: ({ command }) =>
+          Promise.resolve({ command, exitCode: 0, output: "ok" }),
+      },
+    }),
     journal,
-    source,
   };
 }
 
@@ -75,7 +100,7 @@ async function seedAttempt(
   });
   await journal.append({ runId: request.runId, task, type: "task_selected" });
   await journal.append({
-    before: null,
+    before: repositoryState,
     runId: request.runId,
     task: task.identity,
     type: "task_baseline_recorded",
@@ -193,7 +218,6 @@ describe("Dispatcher interrupted-attempt recovery", () => {
     expect(runner.resumeRequests[0]?.instructions).toContain(
       "interrupted task",
     );
-    expect(test.source.marked).toBe(true);
   });
 
   it("pauses with a retry choice when an interrupted session cannot load", async () => {
@@ -320,10 +344,16 @@ describe("Dispatcher retry", () => {
     );
     await seedAttempt(test.journal, "running");
     await test.journal.append({
+      attempt: 1,
+      changedPaths: ["src/task.ts"],
+      completedAt: "2026-08-22T12:00:00.000Z",
+      resultCommit: "after",
       runId: request.runId,
       session: { id: "runtime-old", resumeId: "provider-old" },
+      startCommit: "before",
       task: task.identity,
       type: "task_completed",
+      verification: { command: "pnpm check", exitCode: 0, output: "ok" },
     });
 
     await expect(test.dispatcher.retry()).rejects.toThrow(

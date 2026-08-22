@@ -4,6 +4,8 @@ import { InMemoryRunJournal } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
+  GitRepository,
+  GitState,
   ImplementationTask,
   TaskCompletionResult,
   TaskIdentity,
@@ -12,9 +14,31 @@ import type {
 import { Dispatcher } from "./dispatcher.js";
 
 const task: ImplementationTask = {
+  execution: {
+    affectedPaths: ["src/task.ts"],
+    cwd: "/repo",
+    verifyCommand: "pnpm check",
+    workflowInstructions: "Implement the task.",
+  },
   identity: { id: "tasks/01.md", revision: "revision-1" },
   instructions: "Build the command.",
   title: "Build the command",
+};
+
+const repositoryState: GitState = {
+  dirtyPaths: [],
+  head: "after",
+  root: "/repo",
+  trackedPatch: "",
+  untrackedHashes: {},
+};
+
+const git: GitRepository = {
+  changedPaths: () => Promise.resolve(["src/task.ts"]),
+  commitsBetween: () => Promise.resolve(["after"]),
+  inspect: () => Promise.resolve(repositoryState),
+  resolvePrivatePath: () => Promise.resolve("/repo/.git/striker"),
+  resolveRoot: () => Promise.resolve("/repo"),
 };
 const request = {
   completedTasks: [],
@@ -50,7 +74,19 @@ function fixture(runner: AgentRunner) {
     type: "memory",
   });
   const journal = new InMemoryRunJournal();
-  return { dispatcher: new Dispatcher({ adapters, journal, runner }), journal };
+  return {
+    dispatcher: new Dispatcher({
+      adapters,
+      git,
+      journal,
+      runner,
+      verifier: {
+        verify: ({ command }) =>
+          Promise.resolve({ command, exitCode: 0, output: "ok" }),
+      },
+    }),
+    journal,
+  };
 }
 
 async function seedFailedAttempt(journal: InMemoryRunJournal): Promise<void> {
@@ -63,7 +99,7 @@ async function seedFailedAttempt(journal: InMemoryRunJournal): Promise<void> {
   });
   await journal.append({ runId: request.runId, task, type: "task_selected" });
   await journal.append({
-    before: null,
+    before: repositoryState,
     runId: request.runId,
     task: task.identity,
     type: "task_baseline_recorded",

@@ -37,6 +37,10 @@ const before: GitState = {
 class RestartGit implements GitRepository {
   readonly #states = [before, { ...before, head: "after" }];
 
+  changedPaths(): Promise<readonly string[]> {
+    return Promise.resolve(["src/task.ts"]);
+  }
+
   commitsBetween(): Promise<readonly string[]> {
     return Promise.resolve(["after"]);
   }

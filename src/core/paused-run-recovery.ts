@@ -33,6 +33,7 @@ interface RecoveryHost {
     session: AgentSession,
     before: GitState | undefined,
     output: string,
+    attempt: number,
   ): Promise<DispatchResult>;
   continueRun(request: DispatchRequest): Promise<DispatchResult>;
   fail(
@@ -171,7 +172,11 @@ export class PausedRunRecovery {
     if (turn.status === "failed") {
       return this.host.fail(run.request, run.task, turn.session, turn.error);
     }
-    return this.checkCompletion({ ...run, before }, turn.session, turn.output);
+    return this.checkCompletion(
+      { ...run, attempt: nextAttempt, before },
+      turn.session,
+      turn.output,
+    );
   }
 
   private async continue(
@@ -227,6 +232,7 @@ export class PausedRunRecovery {
       session,
       paused.before,
       output,
+      paused.attempt,
     );
     if (result.status !== "completed") return result;
     const continued = await this.host.continueRun(paused.request);

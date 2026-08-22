@@ -1,4 +1,4 @@
-import { chmod, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
+import { chmod, mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
@@ -19,6 +19,7 @@ import {
   runJournalSchemaId,
   snapshotEnvelopeSchema,
 } from "./run-journal-schema.js";
+import { writePlanProjections } from "./plan-projections.js";
 
 interface ActiveClaim {
   readonly ownerPid: number;
@@ -141,7 +142,12 @@ export class FileRunJournal implements RunJournal {
       const recovery = replayPlanJournal(events, claim.planId);
       if (!duplicate) await this.appendEvent(planRoot, normalized);
       appended = true;
-      await this.writeSnapshot(claim.planId, recovery.snapshot, events.length);
+      await writePlanProjections(
+        planRoot,
+        claim.planId,
+        recovery.snapshot,
+        events,
+      );
       if (terminalRunStatus(normalized) !== null) await this.releaseRun(claim);
     } catch (error) {
       if (claimed.created && !appended) await this.releaseRun(claim);
@@ -153,10 +159,13 @@ export class FileRunJournal implements RunJournal {
     const events = await this.readEvents(planId, true);
     if (events === null) return null;
     const recovery = replayPlanJournal(events, planId);
-    const projection = await this.readSnapshot(planId, events);
-    if (projection === null || projection.eventCount < events.length) {
-      await this.writeSnapshot(planId, recovery.snapshot, events.length);
-    }
+    await this.readSnapshot(planId, events);
+    await writePlanProjections(
+      this.planRoot(planId),
+      planId,
+      recovery.snapshot,
+      events,
+    );
     return recovery;
   }
 
@@ -197,35 +206,6 @@ export class FileRunJournal implements RunJournal {
       await handle.close();
     }
     await chmod(eventsPath, 0o600);
-    await syncDirectory(planRoot);
-  }
-
-  private async writeSnapshot(
-    planId: string,
-    snapshot: RunSnapshot,
-    eventCount: number,
-  ): Promise<void> {
-    const planRoot = this.planRoot(planId);
-    const target = path.join(planRoot, "snapshot.json");
-    const temporary = path.join(
-      planRoot,
-      `snapshot.${String(process.pid)}.tmp`,
-    );
-    const handle = await open(temporary, "w", 0o600);
-    try {
-      await handle.writeFile(
-        `${JSON.stringify(
-          { eventCount, schema: runJournalSchemaId, snapshot },
-          null,
-          2,
-        )}\n`,
-      );
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await rename(temporary, target);
-    await chmod(target, 0o600);
     await syncDirectory(planRoot);
   }
 

@@ -1,19 +1,21 @@
 import { execFile } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
 import { AdapterRegistry } from "../core/adapter-registry.js";
+import type {
+  AgentRunner,
+  GitState,
+  ImplementationTask,
+} from "../core/contracts.js";
 import { Dispatcher } from "../core/dispatcher.js";
 import { RunOperations } from "../core/run-operations.js";
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
-import {
-  FakeAgentRunner,
-  InMemoryTaskSourceAdapter,
-} from "../testing/fakes.js";
+import { InMemoryTaskSourceAdapter } from "../testing/fakes.js";
 import { runCli } from "./program.js";
 
 const execFileAsync = promisify(execFile);
@@ -30,7 +32,11 @@ const fileRequest = {
   taskSource: { location: "memory://plan", type: "memory" },
 } as const;
 
-async function seedFailedJournal(journal: FileRunJournal): Promise<void> {
+async function seedFailedJournal(
+  journal: FileRunJournal,
+  task: ImplementationTask,
+  before: GitState,
+): Promise<void> {
   const session = { id: "runtime-old", resumeId: "provider-old" };
   await journal.append({
     planId: fileRequest.planId,
@@ -40,57 +46,115 @@ async function seedFailedJournal(journal: FileRunJournal): Promise<void> {
   });
   await journal.append({
     runId: fileRequest.runId,
-    task: fileTask,
+    task,
     type: "task_selected",
   });
   await journal.append({
-    before: null,
+    before,
     runId: fileRequest.runId,
-    task: fileTask.identity,
+    task: task.identity,
     type: "task_baseline_recorded",
   });
   await journal.append({
     attempt: 1,
     runId: fileRequest.runId,
-    task: fileTask.identity,
+    task: task.identity,
     type: "task_attempt_started",
   });
   await journal.append({
     attempt: 1,
     runId: fileRequest.runId,
     session,
-    task: fileTask.identity,
+    task: task.identity,
     type: "task_session_started",
   });
   await journal.append({
     error: "provider disconnected",
     runId: fileRequest.runId,
     session,
-    task: fileTask.identity,
+    task: task.identity,
     type: "run_failed",
   });
 }
 
-async function fileRetryFixture() {
+async function gitFixture(): Promise<string> {
   const root = await mkdtemp(`${tmpdir()}/striker-cli-retry-`);
-  await execFileAsync("git", ["-C", root, "init"]);
+  await execFileAsync("git", ["-C", root, "init", "-q"]);
+  await execFileAsync("git", [
+    "-C",
+    root,
+    "config",
+    "user.name",
+    "Striker Test",
+  ]);
+  await execFileAsync("git", [
+    "-C",
+    root,
+    "config",
+    "user.email",
+    "striker@example.test",
+  ]);
+  await writeFile(`${root}/task.txt`, "initial\n");
+  await execFileAsync("git", ["-C", root, "add", "task.txt"]);
+  await execFileAsync("git", ["-C", root, "commit", "-qm", "initial"]);
+  return root;
+}
+
+function retryRunner(
+  root: string,
+): AgentRunner & { readonly resumeRequests: readonly unknown[] } {
+  const resumeRequests: unknown[] = [];
+  return {
+    preflight: () => Promise.resolve(),
+    resumeRequests,
+    resumeSession: (session, instructions) => {
+      resumeRequests.push({ instructions, session });
+      throw new Error("Retry must start a fresh session");
+    },
+    runInNewSession: async (_request, sessionStarted) => {
+      const session = { id: "runtime-new", resumeId: "provider-new" };
+      await sessionStarted?.(session);
+      await writeFile(`${root}/task.txt`, "complete\n");
+      await execFileAsync("git", ["-C", root, "add", "task.txt"]);
+      await execFileAsync("git", ["-C", root, "commit", "-qm", "complete"]);
+      return { output: "done", session, status: "returned" };
+    },
+  };
+}
+
+async function fileRetryFixture() {
+  const root = await gitFixture();
   const git = new GitCliRepository();
+  const task: ImplementationTask = {
+    ...fileTask,
+    execution: {
+      affectedPaths: ["task.txt"],
+      cwd: root,
+      verifyCommand: "pnpm check",
+      workflowInstructions: "Implement the task.",
+    },
+  };
   const journal = new FileRunJournal(
     await git.resolvePrivatePath(root, "striker"),
   );
-  await seedFailedJournal(journal);
+  await seedFailedJournal(journal, task, await git.inspect(root));
   const adapters = new AdapterRegistry();
   adapters.register(
-    new InMemoryTaskSourceAdapter("memory", [fileTask], {
-      [fileTask.identity.id]: { summary: "task complete" },
+    new InMemoryTaskSourceAdapter("memory", [task], {
+      [task.identity.id]: { summary: "task complete" },
     }),
   );
-  const runner = new FakeAgentRunner({
-    output: "done",
-    session: { id: "runtime-new", resumeId: "provider-new" },
-    status: "returned",
+  const runner = retryRunner(root);
+  const dispatcher = new Dispatcher({
+    adapters,
+    git,
+    journal,
+    runner,
+    verifier: {
+      verify: ({ command }) =>
+        Promise.resolve({ command, exitCode: 0, output: "ok" }),
+    },
   });
-  const dispatcher = new Dispatcher({ adapters, git, journal, runner });
   const operations = new RunOperations(journal);
   let stdout = "";
   return {

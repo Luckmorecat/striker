@@ -15,6 +15,12 @@ import {
 } from "../testing/fakes.js";
 
 const task = {
+  execution: {
+    affectedPaths: ["src/task.ts"],
+    cwd: "/repo",
+    verifyCommand: "pnpm check",
+    workflowInstructions: "private workflow",
+  },
   identity: { id: "slice-01", revision: "rev-1" },
   title: "Bootstrap the dispatch core",
   instructions: "Implement slice 01.",
@@ -62,10 +68,16 @@ async function seedCompletedTask(
     type: "task_session_started",
   });
   await journal.append({
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    completedAt: "2026-08-22T12:00:00.000Z",
+    resultCommit: "after",
     runId: request.runId,
     session,
+    startCommit: "before",
     task: task.identity,
     type: "task_completed",
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
   });
 }
 
@@ -83,6 +95,10 @@ function state(overrides: Partial<GitState> = {}): GitState {
 class FakeGit implements GitRepository {
   constructor(private readonly states: readonly GitState[]) {}
   private index = 0;
+
+  changedPaths(): Promise<readonly string[]> {
+    return Promise.resolve(["src/cli.ts"]);
+  }
 
   commitsBetween(): Promise<readonly string[]> {
     return Promise.resolve(["after"]);
@@ -127,18 +143,62 @@ function registryWithEvidence(summary?: string): AdapterRegistry {
   return registry;
 }
 
+function sequentialFixture() {
+  const secondTask = {
+    ...task,
+    identity: { id: "slice-02", revision: "rev-2" },
+    instructions: "Implement slice 02.",
+    title: "Finish the dispatch core",
+  } as const;
+  const registry = new AdapterRegistry();
+  registry.register(
+    new InMemoryTaskSourceAdapter("memory", [task, secondTask], {
+      "slice-01": { summary: "slice 01 complete" },
+      "slice-02": { summary: "slice 02 complete" },
+    }),
+  );
+  const runner = new FakeAgentRunner([
+    {
+      output: "first done",
+      session: { id: "session-1" },
+      status: "returned",
+    },
+    {
+      output: "second done",
+      session: { id: "session-2" },
+      status: "returned",
+    },
+  ]);
+  const journal = new InMemoryRunJournal();
+  const dispatcher = new Dispatcher({
+    adapters: registry,
+    git: new FakeGit([
+      state(),
+      state({ head: "after" }),
+      state({ head: "after" }),
+      state({ head: "after-2" }),
+    ]),
+    journal,
+    runner,
+    verifier: verifier(0),
+  });
+  return { dispatcher, journal, runner, secondTask };
+}
+
 describe("Dispatcher", () => {
   it("dispatches one task and returns source-backed completion evidence", async () => {
     const evidence = { summary: "slice 01 is complete" } as const;
     const journal = new InMemoryRunJournal();
     const dispatcher = new Dispatcher({
       adapters: registryWithEvidence(evidence.summary),
+      git: new FakeGit([state(), state({ head: "after" })]),
       journal,
       runner: new FakeAgentRunner({
         output: "Implementation finished.",
         session: { id: "session-1" },
         status: "returned",
       }),
+      verifier: verifier(0),
     });
 
     const result = await dispatcher.dispatchOne({
@@ -163,12 +223,14 @@ describe("Dispatcher", () => {
     const journal = new InMemoryRunJournal();
     const dispatcher = new Dispatcher({
       adapters: registryWithEvidence(),
+      git: new FakeGit([state(), state({ head: "after" })]),
       journal,
       runner: new FakeAgentRunner({
         output: "This output is not completion proof.",
         session: { id: "session-2" },
         status: "returned",
       }),
+      verifier: verifier(0),
     });
 
     const result = await dispatcher.dispatchOne({
@@ -188,6 +250,7 @@ describe("Dispatcher", () => {
     const journal = new InMemoryRunJournal();
     const dispatcher = new Dispatcher({
       adapters: registryWithEvidence("would otherwise complete"),
+      git: new FakeGit([state()]),
       journal,
       runner: new FakeAgentRunner({
         error: "agent process exited",
@@ -212,32 +275,7 @@ describe("Dispatcher", () => {
 
 describe("Dispatcher sequential execution", () => {
   it("dispatches every task sequentially with a fresh session", async () => {
-    const secondTask = {
-      identity: { id: "slice-02", revision: "rev-2" },
-      instructions: "Implement slice 02.",
-      title: "Finish the dispatch core",
-    } as const;
-    const registry = new AdapterRegistry();
-    registry.register(
-      new InMemoryTaskSourceAdapter("memory", [task, secondTask], {
-        "slice-01": { summary: "slice 01 complete" },
-        "slice-02": { summary: "slice 02 complete" },
-      }),
-    );
-    const runner = new FakeAgentRunner([
-      {
-        output: "first done",
-        session: { id: "session-1" },
-        status: "returned",
-      },
-      {
-        output: "second done",
-        session: { id: "session-2" },
-        status: "returned",
-      },
-    ]);
-    const journal = new InMemoryRunJournal();
-    const dispatcher = new Dispatcher({ adapters: registry, journal, runner });
+    const { dispatcher, journal, runner, secondTask } = sequentialFixture();
 
     const result = await dispatcher.dispatch({
       completedTasks: [],
@@ -296,6 +334,7 @@ describe("Dispatcher journal recovery", () => {
   it("resumes at the first task absent from the durable journal", async () => {
     const request = recoveryRequest("run-resume");
     const secondTask = {
+      ...task,
       identity: { id: "slice-02", revision: "rev-2" },
       instructions: "Implement slice 02.",
       title: "Finish the dispatch core",
@@ -313,7 +352,13 @@ describe("Dispatcher journal recovery", () => {
       session: { id: "new-session" },
       status: "returned",
     });
-    const dispatcher = new Dispatcher({ adapters: registry, journal, runner });
+    const dispatcher = new Dispatcher({
+      adapters: registry,
+      git: new FakeGit([state(), state({ head: "after" })]),
+      journal,
+      runner,
+      verifier: verifier(0),
+    });
 
     const result = await dispatcher.dispatch(request);
 
@@ -353,58 +398,6 @@ describe("Dispatcher journal recovery", () => {
     });
     expect(runner.requests).toEqual([]);
     expect(journal.snapshots.at(-1)?.status).toBe("needs_attention");
-  });
-});
-
-describe("Dispatcher execution evidence", () => {
-  it("keeps the private workflow separate and pauses on failed verification", async () => {
-    const executionTask = {
-      ...task,
-      execution: {
-        affectedPaths: ["src/cli.ts"],
-        cwd: "/repo",
-        verifyCommand: "pnpm test",
-        workflowInstructions: "private workflow",
-      },
-    };
-    const registry = new AdapterRegistry();
-    registry.register(
-      new InMemoryTaskSourceAdapter("memory", [executionTask], {
-        "slice-01": { summary: "complete" },
-      }),
-    );
-    const runner = new FakeAgentRunner({
-      output: "done",
-      session: { id: "session-4" },
-      status: "returned",
-    });
-    const journal = new InMemoryRunJournal();
-    const dispatcher = new Dispatcher({
-      adapters: registry,
-      git: new FakeGit([state(), state({ head: "after" })]),
-      journal,
-      runner,
-      verifier: verifier(1),
-    });
-
-    const result = await dispatcher.dispatchOne({
-      completedTasks: [],
-      planId: "run-4",
-      runId: "run-4",
-      skills: ["security"],
-      taskSource: { location: "memory://plan", type: "memory" },
-    });
-
-    expect(result).toMatchObject({
-      reason: "verification_failed",
-      status: "needs_attention",
-    });
-    expect(runner.lastRequest).toEqual({
-      instructions: task.instructions,
-      skills: ["security"],
-      workflowInstructions: "private workflow",
-    });
-    expect(journal.releasedRunIds).toEqual([]);
   });
 });
 

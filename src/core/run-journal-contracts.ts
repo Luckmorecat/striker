@@ -2,10 +2,9 @@ import type {
   AgentSession,
   GitState,
   ImplementationTask,
-  TaskCompletionEvidence,
-  TaskExecutionEvidence,
   TaskIdentity,
   TaskSourceReference,
+  VerificationResult,
 } from "./execution-contracts.js";
 
 export type RunStatus =
@@ -20,7 +19,6 @@ export type AttentionReason =
   | "completion_evidence_missing"
   | "commit_evidence_missing"
   | "dirty_final_state"
-  | "human_log_missing"
   | "review_evidence_missing"
   | "run_initialization_interrupted"
   | "session_resume_failed"
@@ -102,12 +100,16 @@ export type RunJournalEvent =
       readonly task: TaskIdentity;
     }
   | {
+      readonly attempt: number;
+      readonly changedPaths: readonly string[];
+      readonly completedAt: string;
+      readonly resultCommit: string;
+      readonly startCommit: string;
       readonly type: "task_completed";
-      readonly evidence?: TaskCompletionEvidence;
-      readonly execution?: TaskExecutionEvidence;
       readonly runId: string;
       readonly session: AgentSession;
       readonly task: TaskIdentity;
+      readonly verification: VerificationResult;
     }
   | {
       readonly type: "run_needs_attention";

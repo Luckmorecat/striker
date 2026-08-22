@@ -47,10 +47,16 @@ it("retains completed plan history and rebuilds a missing projection", async () 
     type: "task_session_started",
   });
   await journal.append({
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    completedAt: "2026-08-22T12:00:00.000Z",
+    resultCommit: "after",
     runId: request.runId,
     session,
+    startCommit: "before",
     task: identity,
     type: "task_completed",
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
   });
   await journal.append({ runId: request.runId, type: "run_completed" });
 

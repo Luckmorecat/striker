@@ -60,4 +60,19 @@ describe("Git CLI repository", () => {
       await realpath(root),
     );
   });
+
+  it("lists paths changed between exact commits", async () => {
+    const root = await repository();
+    const repositoryAdapter = new GitCliRepository();
+    const before = await repositoryAdapter.inspect(root);
+    await writeFile(path.join(root, "tracked.txt"), "committed\n");
+    await writeFile(path.join(root, "added.txt"), "added\n");
+    await git(root, "add", "tracked.txt", "added.txt");
+    await git(root, "commit", "-m", "change two files");
+    const after = await repositoryAdapter.inspect(root);
+
+    await expect(
+      repositoryAdapter.changedPaths(root, before.head, after.head),
+    ).resolves.toEqual(["added.txt", "tracked.txt"]);
+  });
 });

@@ -307,10 +307,16 @@ describe("file plan journal transition validation", () => {
 
     await expect(
       journal.append({
+        attempt: 1,
+        changedPaths: ["src/task.ts"],
+        completedAt: "2026-08-22T12:00:00.000Z",
+        resultCommit: "after",
         runId: "run-1",
         session,
+        startCommit: "before",
         task: identity,
         type: "task_completed",
+        verification: { command: "pnpm check", exitCode: 0, output: "ok" },
       }),
     ).rejects.toThrow("Illegal run transition: failed -> complete_task");
   });
@@ -386,17 +392,25 @@ describe("file plan journal recovery", () => {
       await readFile(path.join(root, "plans/plan-1/events.ndjson"), "utf8"),
     ).toContain("Use the schema.");
   });
+});
 
+describe("file plan journal retained history", () => {
   it("retains completed tasks across a discarded later run", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-history-"));
     const journal = new FileRunJournal(root);
     const session = { id: "session-1" };
     await startAttempt(journal, request(), session);
     await journal.append({
+      attempt: 1,
+      changedPaths: ["src/task.ts"],
+      completedAt: "2026-08-22T12:00:00.000Z",
+      resultCommit: "after",
       runId: "run-1",
       session,
+      startCommit: "before",
       task: identity,
       type: "task_completed",
+      verification: { command: "pnpm check", exitCode: 0, output: "ok" },
     });
     await journal.append({ runId: "run-1", type: "run_completed" });
     await start(journal, request("plan-1", "run-2"));
@@ -450,10 +464,16 @@ describe("file plan journal attempt replay", () => {
       type: "task_session_started",
     });
     await journal.append({
+      attempt: 2,
+      changedPaths: ["src/task.ts"],
+      completedAt: "2026-08-22T12:00:00.000Z",
+      resultCommit: "after",
       runId: "run-1",
       session: retrySession,
+      startCommit: "before",
       task: identity,
       type: "task_completed",
+      verification: { command: "pnpm check", exitCode: 0, output: "ok" },
     });
     const second = {
       identity: { id: "tasks/02.md", revision: "revision-2" },

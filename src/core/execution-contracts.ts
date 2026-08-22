@@ -15,7 +15,6 @@ export interface ImplementationTask {
   readonly title: string;
   readonly instructions: string;
   readonly execution?: TaskExecution;
-  readonly completionToken?: string;
 }
 
 export interface AgentSession {
@@ -45,6 +44,7 @@ export interface TaskCompletionEvidence {
 export interface TaskExecutionEvidence {
   readonly after: GitState;
   readonly before: GitState;
+  readonly changedPaths: readonly string[];
   readonly commits: readonly string[];
   readonly verification: VerificationResult;
 }

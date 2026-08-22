@@ -42,6 +42,23 @@ async function untrackedHashes(
 }
 
 export class GitCliRepository implements GitRepository {
+  async changedPaths(
+    root: string,
+    ancestor: string,
+    descendant: string,
+  ): Promise<readonly string[]> {
+    return splitNull(
+      await git(root, [
+        "diff",
+        "--name-only",
+        "-z",
+        ancestor,
+        descendant,
+        "--",
+      ]),
+    ).sort();
+  }
+
   async inspect(location: string): Promise<GitState> {
     const root = await this.resolveRoot(location);
     const [head, patch, trackedOutput, untrackedOutput] = await Promise.all([

@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 
@@ -10,6 +10,7 @@ import { GitCliRepository } from "../infrastructure/git-cli.js";
 import { FakeAgentRunner } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
+  AgentRunner,
   ImplementationTask,
   TaskCompletionResult,
   TaskIdentity,
@@ -18,13 +19,81 @@ import type {
 import { Dispatcher } from "./dispatcher.js";
 
 const execFileAsync = promisify(execFile);
-const task: ImplementationTask = {
-  identity: { id: "tasks/01.md", revision: "revision-1" },
-  instructions: "Finish the task.",
-  title: "Finish the task",
+
+async function repository(prefix: string): Promise<string> {
+  const root = await mkdtemp(`${tmpdir()}/${prefix}`);
+  await execFileAsync("git", ["-C", root, "init", "-q"]);
+  await execFileAsync("git", [
+    "-C",
+    root,
+    "config",
+    "user.name",
+    "Striker Test",
+  ]);
+  await execFileAsync("git", [
+    "-C",
+    root,
+    "config",
+    "user.email",
+    "striker@example.test",
+  ]);
+  await writeFile(`${root}/task.txt`, "initial\n");
+  await execFileAsync("git", ["-C", root, "add", "task.txt"]);
+  await execFileAsync("git", ["-C", root, "commit", "-qm", "initial"]);
+  return root;
+}
+
+function taskFor(root: string): ImplementationTask {
+  return {
+    execution: {
+      affectedPaths: ["task.txt"],
+      cwd: root,
+      verifyCommand: "pnpm check",
+      workflowInstructions: "Implement the task.",
+    },
+    identity: { id: "tasks/01.md", revision: "revision-1" },
+    instructions: "Finish the task.",
+    title: "Finish the task",
+  };
+}
+
+function completionRunner(
+  root: string,
+  id: string,
+): AgentRunner & {
+  readonly requests: readonly unknown[];
+  readonly resumeRequests: readonly unknown[];
+} {
+  const requests: unknown[] = [];
+  const resumeRequests: unknown[] = [];
+  return {
+    preflight: () => Promise.resolve(),
+    requests,
+    resumeRequests,
+    resumeSession: (session, instructions) => {
+      resumeRequests.push({ instructions, session });
+      throw new Error("Unexpected resume");
+    },
+    runInNewSession: async (request, sessionStarted) => {
+      requests.push(request);
+      const session = { id };
+      await sessionStarted?.(session);
+      await writeFile(`${root}/task.txt`, "complete\n");
+      await execFileAsync("git", ["-C", root, "add", "task.txt"]);
+      await execFileAsync("git", ["-C", root, "commit", "-qm", "complete"]);
+      return { output: "done", session, status: "returned" };
+    },
+  };
+}
+
+const verifier = {
+  verify: ({ command }: { readonly command: string }) =>
+    Promise.resolve({ command, exitCode: 0, output: "ok" }),
 };
 
 class RestartSource implements TaskSource {
+  constructor(private readonly task: ImplementationTask) {}
+
   completionEvidence(): Promise<TaskCompletionResult> {
     return Promise.resolve({
       evidence: { summary: "task complete" },
@@ -35,7 +104,7 @@ class RestartSource implements TaskSource {
   nextTask(
     completed: readonly TaskIdentity[],
   ): Promise<ImplementationTask | null> {
-    return Promise.resolve(completed.length === 0 ? task : null);
+    return Promise.resolve(completed.length === 0 ? this.task : null);
   }
 
   reconcileCompleted(): Promise<null> {
@@ -45,14 +114,14 @@ class RestartSource implements TaskSource {
 
 describe("Dispatcher initialization restart", () => {
   it("continues a run interrupted immediately after its start event", async () => {
-    const root = await mkdtemp(`${tmpdir()}/striker-restart-start-`);
-    await execFileAsync("git", ["-C", root, "init"]);
+    const root = await repository("striker-restart-start-");
+    const task = taskFor(root);
     const git = new GitCliRepository();
     const stateRoot = await git.resolvePrivatePath(root, "striker");
     const journal = new FileRunJournal(stateRoot);
     const adapters = new AdapterRegistry();
     adapters.register({
-      open: () => Promise.resolve(new RestartSource()),
+      open: () => Promise.resolve(new RestartSource(task)),
       type: "memory",
     });
     const request = {
@@ -68,14 +137,10 @@ describe("Dispatcher initialization restart", () => {
       runId: request.runId,
       type: "run_started",
     });
-    const runner = new FakeAgentRunner({
-      output: "done",
-      session: { id: "runtime-after-restart" },
-      status: "returned",
-    });
+    const runner = completionRunner(root, "runtime-after-restart");
 
     await expect(
-      new Dispatcher({ adapters, git, journal, runner }).resume(),
+      new Dispatcher({ adapters, git, journal, runner, verifier }).resume(),
     ).resolves.toMatchObject({ status: "completed" });
     await expect(journal.loadActive()).resolves.toBeNull();
   });
@@ -83,14 +148,14 @@ describe("Dispatcher initialization restart", () => {
 
 describe("Dispatcher pre-attempt restart", () => {
   it("retries attempt one after interruption before attempt start", async () => {
-    const root = await mkdtemp(`${tmpdir()}/striker-restart-selection-`);
-    await execFileAsync("git", ["-C", root, "init"]);
+    const root = await repository("striker-restart-selection-");
+    const task = taskFor(root);
     const git = new GitCliRepository();
     const stateRoot = await git.resolvePrivatePath(root, "striker");
     const journal = new FileRunJournal(stateRoot);
     const adapters = new AdapterRegistry();
     adapters.register({
-      open: () => Promise.resolve(new RestartSource()),
+      open: () => Promise.resolve(new RestartSource(task)),
       type: "memory",
     });
     const request = {
@@ -108,7 +173,7 @@ describe("Dispatcher pre-attempt restart", () => {
     });
     await journal.append({ runId: request.runId, task, type: "task_selected" });
     await journal.append({
-      before: null,
+      before: await git.inspect(root),
       runId: request.runId,
       task: task.identity,
       type: "task_baseline_recorded",
@@ -117,11 +182,8 @@ describe("Dispatcher pre-attempt restart", () => {
       adapters,
       git,
       journal,
-      runner: new FakeAgentRunner({
-        output: "done",
-        session: { id: "runtime-after-selection" },
-        status: "returned",
-      }),
+      runner: completionRunner(root, "runtime-after-selection"),
+      verifier,
     });
 
     await expect(dispatcher.resume()).resolves.toMatchObject({
@@ -153,13 +215,13 @@ describe("Dispatcher pre-attempt restart", () => {
 
 describe("Dispatcher interrupted initialization", () => {
   it("retries initialization attention with a new dispatcher instance", async () => {
-    const root = await mkdtemp(`${tmpdir()}/striker-restart-initialization-`);
-    await execFileAsync("git", ["-C", root, "init"]);
+    const root = await repository("striker-restart-initialization-");
+    const task = taskFor(root);
     const git = new GitCliRepository();
     const stateRoot = await git.resolvePrivatePath(root, "striker");
     const adapters = new AdapterRegistry();
     adapters.register({
-      open: () => Promise.resolve(new RestartSource()),
+      open: () => Promise.resolve(new RestartSource(task)),
       type: "memory",
     });
     const request = {
@@ -190,11 +252,7 @@ describe("Dispatcher interrupted initialization", () => {
       status: "needs_attention",
     });
 
-    const retryRunner = new FakeAgentRunner({
-      output: "done",
-      session: { id: "runtime-second", resumeId: "provider-second" },
-      status: "returned",
-    });
+    const retryRunner = completionRunner(root, "runtime-second");
     const retryJournal = new FileRunJournal(stateRoot);
     await expect(
       new Dispatcher({
@@ -202,6 +260,7 @@ describe("Dispatcher interrupted initialization", () => {
         git,
         journal: retryJournal,
         runner: retryRunner,
+        verifier,
       }).retry(),
     ).resolves.toMatchObject({ status: "completed" });
 
@@ -213,14 +272,14 @@ describe("Dispatcher interrupted initialization", () => {
 
 describe("Dispatcher failed-run restart", () => {
   it("retries failed Git-private state with a fresh runner instance", async () => {
-    const root = await mkdtemp(`${tmpdir()}/striker-restart-git-`);
-    await execFileAsync("git", ["-C", root, "init"]);
+    const root = await repository("striker-restart-git-");
+    const task = taskFor(root);
     const git = new GitCliRepository();
     const stateRoot = await git.resolvePrivatePath(root, "striker");
     const journal = new FileRunJournal(stateRoot);
     const adapters = new AdapterRegistry();
     adapters.register({
-      open: () => Promise.resolve(new RestartSource()),
+      open: () => Promise.resolve(new RestartSource(task)),
       type: "memory",
     });
     const request = {
@@ -244,13 +303,15 @@ describe("Dispatcher failed-run restart", () => {
       }).dispatchOne(request),
     ).resolves.toMatchObject({ status: "failed" });
 
-    const retryRunner = new FakeAgentRunner({
-      output: "done",
-      session: { id: "runtime-second", resumeId: "provider-second" },
-      status: "returned",
-    });
+    const retryRunner = completionRunner(root, "runtime-second");
     await expect(
-      new Dispatcher({ adapters, git, journal, runner: retryRunner }).retry(),
+      new Dispatcher({
+        adapters,
+        git,
+        journal,
+        runner: retryRunner,
+        verifier,
+      }).retry(),
     ).resolves.toMatchObject({ status: "completed" });
 
     expect(firstRunner.requests).toHaveLength(1);

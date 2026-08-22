@@ -5,16 +5,16 @@ description: Internal workflow for implementing one supplied Striker task.
 
 # Striker implementor
 
-Implement only the supplied task. Use the plan context for shared intent and
-exclusions. Leave later tasks unopened.
+Implement only the supplied task. Use the immutable plan context for shared
+intent and exclusions. Leave later tasks unopened.
 
 Before editing, read the repository rules and supplied plan context. Read
 [references/tdd.md](references/tdd.md) before writing tests and
 [references/review.md](references/review.md) before review.
 
 Work in vertical red-green cycles through the test boundaries named in the task.
-Follow the repository rules, preserve current user changes, and run focused
-checks during the work.
+Change only task-authorized project paths. Follow the repository rules, preserve
+current user changes, and run focused checks during the work.
 
 When implementation is green, run the standards review and then plan compliance
 review. Fix every blocking finding and rerun affected checks and task

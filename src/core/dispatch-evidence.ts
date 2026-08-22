@@ -73,7 +73,12 @@ export async function collectExecutionEvidence(
     before.head,
     after.head,
   );
-  return { after, before, commits, verification };
+  const changedPaths = await git.changedPaths(
+    task.execution.cwd,
+    before.head,
+    after.head,
+  );
+  return { after, before, changedPaths, commits, verification };
 }
 
 export function executionAttention(

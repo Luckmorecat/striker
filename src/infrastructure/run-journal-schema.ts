@@ -33,23 +33,11 @@ const taskExecutionSchema = z
   })
   .strict();
 const implementationTaskSchema = z.object({
-  completionToken: z.string().optional(),
   execution: taskExecutionSchema.optional(),
   identity: taskIdentitySchema,
   instructions: z.string(),
   title: z.string(),
 });
-const taskCompletionEvidenceSchema = z
-  .object({ summary: z.string(), verification: verificationSchema.optional() })
-  .strict();
-const executionEvidenceSchema = z
-  .object({
-    after: gitStateSchema,
-    before: gitStateSchema,
-    commits: z.array(z.string()),
-    verification: verificationSchema,
-  })
-  .strict();
 const dispatchRequestSchema = z
   .object({
     allowDirty: z.boolean().optional(),
@@ -66,7 +54,6 @@ const attentionReasonSchema = z.enum([
   "completion_evidence_missing",
   "commit_evidence_missing",
   "dirty_final_state",
-  "human_log_missing",
   "review_evidence_missing",
   "run_initialization_interrupted",
   "session_resume_failed",
@@ -148,12 +135,16 @@ const runRetriedSchema = z
   .strict();
 const taskCompletedSchema = z
   .object({
-    evidence: taskCompletionEvidenceSchema.optional(),
-    execution: executionEvidenceSchema.optional(),
+    attempt: z.number().int().positive(),
+    changedPaths: z.array(z.string()),
+    completedAt: z.iso.datetime(),
+    resultCommit: z.string().min(1),
     runId: z.string().min(1),
     session: agentSessionSchema,
+    startCommit: z.string().min(1),
     task: taskIdentitySchema,
     type: z.literal("task_completed"),
+    verification: verificationSchema,
   })
   .strict();
 const runNeedsAttentionSchema = z

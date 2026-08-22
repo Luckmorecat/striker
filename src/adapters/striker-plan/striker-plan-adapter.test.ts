@@ -113,6 +113,7 @@ describe("Striker plan completion evidence", () => {
     const execution: TaskExecutionEvidence = {
       after,
       before,
+      changedPaths: ["src/cli.ts"],
       commits: ["after"],
       verification: { command: "pnpm test", exitCode: 0, output: "ok" },
     };

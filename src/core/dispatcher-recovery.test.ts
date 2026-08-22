@@ -15,17 +15,21 @@ import type {
 import { Dispatcher } from "./dispatcher.js";
 
 const task: ImplementationTask = {
+  execution: {
+    affectedPaths: ["src/command.ts"],
+    cwd: "/repo",
+    verifyCommand: "pnpm test",
+    workflowInstructions: "implement",
+  },
   identity: { id: "tasks/01.md", revision: "revision-1" },
   instructions: "Build the command.",
   title: "Build the command",
 };
 
 class OutputBackedSource implements TaskSource {
-  marked = false;
-
   completionEvidence(
     _task: ImplementationTask,
-    _execution: undefined,
+    _execution?: TaskExecutionEvidence,
     agentOutput = "",
   ): Promise<TaskCompletionResult> {
     return Promise.resolve(
@@ -44,11 +48,6 @@ class OutputBackedSource implements TaskSource {
     );
   }
 
-  markCompleted(): Promise<void> {
-    this.marked = true;
-    return Promise.resolve();
-  }
-
   nextTask(
     completed: readonly TaskIdentity[],
   ): Promise<ImplementationTask | null> {
@@ -61,8 +60,6 @@ class OutputBackedSource implements TaskSource {
 }
 
 class CompletedSource implements TaskSource {
-  marked = false;
-
   constructor(private readonly implementationTask: ImplementationTask) {}
 
   completionEvidence(
@@ -91,11 +88,6 @@ class CompletedSource implements TaskSource {
   reconcileCompleted(): Promise<null> {
     return Promise.resolve(null);
   }
-
-  markCompleted(): Promise<void> {
-    this.marked = true;
-    return Promise.resolve();
-  }
 }
 
 class SequenceGit implements GitRepository {
@@ -105,6 +97,10 @@ class SequenceGit implements GitRepository {
     private readonly states: readonly GitState[],
     private readonly commits: readonly string[] = ["after"],
   ) {}
+
+  changedPaths(): Promise<readonly string[]> {
+    return Promise.resolve(["src/task.ts"]);
+  }
 
   commitsBetween(): Promise<readonly string[]> {
     return Promise.resolve(this.commits);
@@ -193,7 +189,7 @@ function recoveryExecutionFixture(
       },
     },
   });
-  return { dispatcher, journal, runner, source };
+  return { dispatcher, journal, runner };
 }
 
 function dispatcherFixture() {
@@ -216,8 +212,21 @@ function dispatcherFixture() {
       status: "returned",
     },
   ]);
-  const dispatcher = new Dispatcher({ adapters: registry, journal, runner });
-  return { dispatcher, journal, runner, source };
+  const dispatcher = new Dispatcher({
+    adapters: registry,
+    git: new SequenceGit([
+      gitState("before"),
+      gitState("after"),
+      gitState("after"),
+    ]),
+    journal,
+    runner,
+    verifier: {
+      verify: ({ command }) =>
+        Promise.resolve({ command, exitCode: 0, output: "ok" }),
+    },
+  });
+  return { dispatcher, journal, runner };
 }
 
 function sourceAttentionFixture(reason: AttentionReason) {
@@ -236,19 +245,24 @@ function sourceAttentionFixture(reason: AttentionReason) {
   const journal = new InMemoryRunJournal();
   const dispatcher = new Dispatcher({
     adapters: registry,
+    git: new SequenceGit([gitState("before"), gitState("after")]),
     journal,
     runner: new FakeAgentRunner({
       output: "done",
       session: { id: `session-${reason}` },
       status: "returned",
     }),
+    verifier: {
+      verify: ({ command }) =>
+        Promise.resolve({ command, exitCode: 0, output: "ok" }),
+    },
   });
   return { dispatcher, journal };
 }
 
 describe("Dispatcher paused-session recovery", () => {
   it("appends a developer answer and continues the preserved session", async () => {
-    const { dispatcher, journal, runner, source } = dispatcherFixture();
+    const { dispatcher, journal, runner } = dispatcherFixture();
     const request = {
       completedTasks: [],
       planId: "run-answer",
@@ -278,13 +292,10 @@ describe("Dispatcher paused-session recovery", () => {
       journal.events.filter((event) => event.type === "run_answered"),
     ).toHaveLength(1);
     expect(journal.releasedRunIds).toEqual(["run-answer"]);
-    expect(source.marked).toBe(true);
   });
 
   it("sends a stored verification failure back for one explicit repair", async () => {
-    const { dispatcher, journal, runner, source } = recoveryExecutionFixture([
-      1, 0,
-    ]);
+    const { dispatcher, journal, runner } = recoveryExecutionFixture([1, 0]);
     const request = {
       completedTasks: [],
       planId: "run-resume",
@@ -293,7 +304,6 @@ describe("Dispatcher paused-session recovery", () => {
       taskSource: { location: "memory://plan", type: "memory" },
     } as const;
     await dispatcher.dispatchOne(request);
-    expect(source.marked).toBe(false);
 
     await expect(dispatcher.resume()).resolves.toMatchObject({
       status: "completed",
@@ -306,15 +316,12 @@ describe("Dispatcher paused-session recovery", () => {
     expect(
       journal.events.filter((event) => event.type === "run_resumed"),
     ).toHaveLength(1);
-    expect(source.marked).toBe(true);
   });
 });
 
 describe("Dispatcher recovery failures", () => {
   it("pauses again after a second evidence failure without another turn", async () => {
-    const { dispatcher, journal, runner, source } = recoveryExecutionFixture([
-      1, 1,
-    ]);
+    const { dispatcher, journal, runner } = recoveryExecutionFixture([1, 1]);
     const request = {
       completedTasks: [],
       planId: "run-resume-twice",
@@ -323,7 +330,6 @@ describe("Dispatcher recovery failures", () => {
       taskSource: { location: "memory://plan", type: "memory" },
     } as const;
     await dispatcher.dispatchOne(request);
-    expect(source.marked).toBe(false);
 
     await expect(dispatcher.resume()).resolves.toMatchObject({
       reason: "verification_failed",
@@ -332,7 +338,6 @@ describe("Dispatcher recovery failures", () => {
 
     expect(runner.resumeRequests).toHaveLength(1);
     expect(journal.snapshots.at(-1)?.status).toBe("needs_attention");
-    expect(source.marked).toBe(false);
   });
 
   it("stays paused when the preserved session cannot be resumed", async () => {
@@ -342,6 +347,7 @@ describe("Dispatcher recovery failures", () => {
     const journal = new InMemoryRunJournal();
     const dispatcher = new Dispatcher({
       adapters: registry,
+      git: new SequenceGit([gitState("before"), gitState("after")]),
       journal,
       runner: {
         preflight: () => Promise.resolve(),
@@ -360,6 +366,10 @@ describe("Dispatcher recovery failures", () => {
           };
         },
       },
+      verifier: {
+        verify: ({ command }) =>
+          Promise.resolve({ command, exitCode: 0, output: "ok" }),
+      },
     });
     await dispatcher.dispatchOne({
       completedTasks: [],
@@ -377,7 +387,6 @@ describe("Dispatcher recovery failures", () => {
       attention: { reason: "session_resume_failed" },
       status: "needs_attention",
     });
-    expect(source.marked).toBe(false);
   });
 });
 
@@ -399,7 +408,16 @@ describe("Dispatcher replacement-session recovery", () => {
         status: "returned",
       },
     ]);
-    const dispatcher = new Dispatcher({ adapters: registry, journal, runner });
+    const dispatcher = new Dispatcher({
+      adapters: registry,
+      git: new SequenceGit([gitState("before"), gitState("after")]),
+      journal,
+      runner,
+      verifier: {
+        verify: ({ command }) =>
+          Promise.resolve({ command, exitCode: 0, output: "ok" }),
+      },
+    });
     await dispatcher.dispatchOne({
       completedTasks: [],
       planId: "run-replacement-session",
@@ -413,29 +431,27 @@ describe("Dispatcher replacement-session recovery", () => {
       status: "needs_attention",
     });
     expect(journal.snapshots.at(-1)?.status).toBe("needs_attention");
-    expect(source.marked).toBe(false);
   });
 });
 
 describe("Dispatcher attention evidence", () => {
-  it.each([
-    "completion_evidence_missing",
-    "human_log_missing",
-    "review_evidence_missing",
-  ] as const)("persists the %s task-source reason", async (reason) => {
-    const { dispatcher, journal } = sourceAttentionFixture(reason);
+  it.each(["completion_evidence_missing", "review_evidence_missing"] as const)(
+    "persists the %s task-source reason",
+    async (reason) => {
+      const { dispatcher, journal } = sourceAttentionFixture(reason);
 
-    await dispatcher.dispatchOne({
-      completedTasks: [],
-      planId: `run-${reason}`,
-      runId: `run-${reason}`,
-      skills: [],
-      taskSource: { location: "memory://plan", type: "memory" },
-    });
+      await dispatcher.dispatchOne({
+        completedTasks: [],
+        planId: `run-${reason}`,
+        runId: `run-${reason}`,
+        skills: [],
+        taskSource: { location: "memory://plan", type: "memory" },
+      });
 
-    expect(journal.snapshots.at(-1)?.attention?.reason).toBe(reason);
-    expect(journal.events.at(-1)).toMatchObject({ attention: { reason } });
-  });
+      expect(journal.snapshots.at(-1)?.attention?.reason).toBe(reason);
+      expect(journal.events.at(-1)).toMatchObject({ attention: { reason } });
+    },
+  );
 
   it.each([
     ["commit_evidence_missing", { commits: [] }],

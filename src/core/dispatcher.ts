@@ -71,12 +71,7 @@ export class Dispatcher {
     if ("conflict" in next)
       return this.finishSourceConflict(request.runId, next.conflict);
     if (next.task === null) {
-      await finalizeExhaustedSource(
-        this.dependencies.journal,
-        request.runId,
-        next.source,
-        completed,
-      );
+      await finalizeExhaustedSource(this.dependencies.journal, request.runId);
     }
     return result;
   }
@@ -122,12 +117,7 @@ export class Dispatcher {
     const { source, task } = selection;
     if (task === null) {
       await ensureRunStarted(this.dependencies.journal, request);
-      await finalizeExhaustedSource(
-        this.dependencies.journal,
-        request.runId,
-        source,
-        completed,
-      );
+      await finalizeExhaustedSource(this.dependencies.journal, request.runId);
       return { runId: request.runId, status: "source_exhausted" };
     }
     if (preflight)
@@ -168,6 +158,7 @@ export class Dispatcher {
       turn.session,
       before,
       turn.output,
+      1,
     );
   }
 
@@ -192,6 +183,7 @@ export class Dispatcher {
     session: AgentSession,
     before: GitState | undefined,
     agentOutput: string,
+    attempt: number,
   ): Promise<DispatchResult> {
     const execution = await collectExecutionEvidence(
       this.dependencies,
@@ -216,17 +208,26 @@ export class Dispatcher {
       );
     }
     const { evidence } = completion;
+    if (execution === undefined) {
+      return this.finishNeedsAttention(request, task, session, {
+        detail: "The task has no execution evidence.",
+        reason: "completion_evidence_missing",
+      });
+    }
 
     transitionRun("running", "complete_task");
     await this.dependencies.journal.append({
+      attempt,
+      changedPaths: execution.changedPaths,
+      completedAt: new Date().toISOString(),
+      resultCommit: execution.after.head,
       runId: request.runId,
       session,
+      startCommit: execution.before.head,
       task: task.identity,
       type: "task_completed",
-      evidence,
-      ...(execution === undefined ? {} : { execution }),
+      verification: execution.verification,
     });
-    await source.markCompleted?.(task, evidence);
 
     return {
       evidence,

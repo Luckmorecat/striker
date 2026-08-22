@@ -11,7 +11,14 @@ import { parseStrikerPlan } from "../adapters/striker-plan/plan-parser.js";
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
 import { AdapterRegistry } from "./adapter-registry.js";
-import type { AgentRunner, TaskIdentity, TaskSource } from "./contracts.js";
+import type {
+  AgentRunner,
+  AgentSession,
+  DispatchRequest,
+  ImplementationTask,
+  RunJournalEvent,
+  TaskSource,
+} from "./contracts.js";
 import { Dispatcher } from "./dispatcher.js";
 
 const execFileAsync = promisify(execFile);
@@ -155,6 +162,60 @@ async function recoveryFixture() {
   return { adapter, planRoot, root, task };
 }
 
+async function appendCompletedAttempt(
+  journal: FileRunJournal,
+  request: DispatchRequest,
+  task: ImplementationTask,
+  session: AgentSession,
+  changedPaths: readonly string[],
+): Promise<void> {
+  const events: readonly RunJournalEvent[] = [
+    {
+      planId: request.planId,
+      request,
+      runId: request.runId,
+      type: "run_started",
+    },
+    { runId: request.runId, task, type: "task_selected" },
+    {
+      before: null,
+      runId: request.runId,
+      task: task.identity,
+      type: "task_baseline_recorded",
+    },
+    {
+      attempt: 1,
+      runId: request.runId,
+      task: task.identity,
+      type: "task_attempt_started",
+    },
+    {
+      attempt: 1,
+      runId: request.runId,
+      session,
+      task: task.identity,
+      type: "task_session_started",
+    },
+    {
+      attempt: 1,
+      changedPaths,
+      completedAt: "2026-08-22T12:00:00.000Z",
+      resultCommit: "after",
+      runId: request.runId,
+      session,
+      startCommit: "before",
+      task: task.identity,
+      type: "task_completed",
+      verification: {
+        command: task.execution?.verifyCommand ?? "pnpm check",
+        exitCode: 0,
+        output: "ok",
+      },
+    },
+  ];
+  for (const event of events) await journal.append(event);
+}
+
 describe("Dispatcher completed-event recovery", () => {
   it("uses the durable completion before selecting another task", async () => {
     const fixture = await recoveryFixture();
@@ -168,43 +229,9 @@ describe("Dispatcher completed-event recovery", () => {
       skills: [],
       taskSource: { location: fixture.planRoot, type: "striker-plan" },
     } as const;
-    await journal.append({
-      planId: request.planId,
-      request,
-      runId: request.runId,
-      type: "run_started",
-    });
-    await journal.append({
-      runId: request.runId,
-      task: fixture.task,
-      type: "task_selected",
-    });
-    await journal.append({
-      before: null,
-      runId: request.runId,
-      task: fixture.task.identity,
-      type: "task_baseline_recorded",
-    });
-    await journal.append({
-      attempt: 1,
-      runId: request.runId,
-      task: fixture.task.identity,
-      type: "task_attempt_started",
-    });
-    await journal.append({
-      attempt: 1,
-      runId: request.runId,
-      session,
-      task: fixture.task.identity,
-      type: "task_session_started",
-    });
-    await journal.append({
-      evidence: { summary: "task complete" },
-      runId: request.runId,
-      session,
-      task: fixture.task.identity,
-      type: "task_completed",
-    });
+    await appendCompletedAttempt(journal, request, fixture.task, session, [
+      "src/recover.ts",
+    ]);
     const adapters = new AdapterRegistry();
     adapters.register(fixture.adapter);
     const runner: AgentRunner = {
@@ -228,7 +255,7 @@ describe("Dispatcher completed-event recovery", () => {
 });
 
 describe("Dispatcher finalization recovery", () => {
-  it("retains dispatchOne state and retries failed finalization on resume", async () => {
+  it("does not delegate terminal writes to the task source", async () => {
     const stateRoot = await mkdtemp(
       path.join(tmpdir(), "striker-finalization-retry-"),
     );
@@ -238,19 +265,16 @@ describe("Dispatcher finalization recovery", () => {
       instructions: "Complete the task.",
       title: "Complete the task",
     };
-    let attempts = 0;
-    let finalized: readonly TaskIdentity[] = [];
-    const source: TaskSource = {
+    let finalized = false;
+    const source: TaskSource & { finalizeCompleted(): Promise<void> } = {
       completionEvidence: () =>
         Promise.resolve({
           evidence: { summary: "task complete" },
           status: "completed",
         }),
-      finalizeCompleted: (completed) => {
-        attempts += 1;
-        if (attempts === 1) return Promise.reject(new Error("disk full"));
-        finalized = completed;
-        return Promise.resolve();
+      finalizeCompleted: () => {
+        finalized = true;
+        return Promise.reject(new Error("task source must stay read-only"));
       },
       nextTask: (completed) =>
         Promise.resolve(completed.length === 0 ? task : null),
@@ -263,13 +287,14 @@ describe("Dispatcher finalization recovery", () => {
     });
     const session = { id: "session-1" };
     const runner: AgentRunner = {
-      preflight: () => Promise.resolve(),
+      preflight: () => {
+        throw new Error("Completed recovery must not preflight");
+      },
       resumeSession: () => {
         throw new Error("Completed recovery must not resume a session");
       },
-      runInNewSession: async (_request, sessionStarted) => {
-        await sessionStarted?.(session);
-        return { output: "done", session, status: "returned" };
+      runInNewSession: () => {
+        throw new Error("Completed recovery must not start a session");
       },
     };
     const dispatcher = new Dispatcher({ adapters, journal, runner });
@@ -281,15 +306,14 @@ describe("Dispatcher finalization recovery", () => {
       taskSource: { location: "memory://plan", type: "memory" },
     } as const;
 
-    await expect(dispatcher.dispatchOne(request)).rejects.toThrow("disk full");
-    await expect(journal.loadActive()).resolves.toMatchObject({
-      completedTasks: [task.identity],
-    });
+    await appendCompletedAttempt(journal, request, task, session, [
+      "src/task.ts",
+    ]);
+
     await expect(dispatcher.resume()).resolves.toMatchObject({
       status: "source_exhausted",
     });
-    expect(attempts).toBe(2);
-    expect(finalized).toEqual([task.identity]);
+    expect(finalized).toBe(false);
     await expect(journal.loadActive()).resolves.toBeNull();
   });
 });

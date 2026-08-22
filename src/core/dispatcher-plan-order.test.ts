@@ -31,6 +31,10 @@ class FakeGit implements GitRepository {
   constructor(private readonly states: readonly GitState[]) {}
   private index = 0;
 
+  changedPaths(): Promise<readonly string[]> {
+    return Promise.resolve(["src/task.ts"]);
+  }
+
   commitsBetween(): Promise<readonly string[]> {
     return Promise.resolve(["after"]);
   }

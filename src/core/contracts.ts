@@ -43,11 +43,6 @@ export interface TaskSource {
     execution?: TaskExecutionEvidence,
     agentOutput?: string,
   ): Promise<TaskCompletionResult>;
-  markCompleted?(
-    task: ImplementationTask,
-    evidence: TaskCompletionEvidence,
-  ): Promise<void>;
-  finalizeCompleted?(completed: readonly TaskIdentity[]): Promise<void>;
 }
 
 export interface TaskSourceConflict {
@@ -115,6 +110,11 @@ export interface Verifier {
 }
 
 export interface GitRepository {
+  changedPaths(
+    root: string,
+    ancestor: string,
+    descendant: string,
+  ): Promise<readonly string[]>;
   commitsBetween(
     root: string,
     ancestor: string,
