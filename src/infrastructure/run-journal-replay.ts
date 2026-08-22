@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import type {
   AgentSession,
   GitState,
@@ -6,6 +8,11 @@ import type {
   TaskIdentity,
 } from "../core/contracts.js";
 import { transitionRun } from "../core/run-state.js";
+import {
+  isReviewEvent,
+  replayReviewEvent,
+  type ReviewEvent,
+} from "./run-journal-review-replay.js";
 
 type ReplayEvent = Exclude<RunJournalEvent, { type: "run_started" }>;
 type ProgressEvent = Extract<
@@ -87,6 +94,7 @@ export function replayEvent(
   if (event.runId !== snapshot.runId) {
     throw new Error("Striker plan journal contains a mismatched run id");
   }
+  if (isReviewEvent(event)) return replayReviewEvent(snapshot, event);
   if (isProgressEvent(event)) return replayProgress(snapshot, event);
   if (isResultEvent(event)) return replayResult(snapshot, event);
   return replayTerminal(snapshot, event);
@@ -134,6 +142,7 @@ function replayProgress(
         ...snapshot,
         attention: null,
         session: null,
+        standardsReview: reviewAfterRetry(snapshot),
         status: transitionRun(snapshot.status, "retry"),
       };
   }
@@ -144,7 +153,7 @@ function replayResult(snapshot: RunSnapshot, event: ResultEvent): RunSnapshot {
   switch (event.type) {
     case "task_completed":
       requireSession(snapshot.session, event.session);
-      return completeTask(snapshot);
+      return completeTask(snapshot, event);
     case "run_needs_attention":
       if (snapshot.session !== null || event.session !== null) {
         requireSession(snapshot.session, event.session);
@@ -153,6 +162,7 @@ function replayResult(snapshot: RunSnapshot, event: ResultEvent): RunSnapshot {
         ...snapshot,
         attention: event.attention,
         session: event.session,
+        standardsReview: reviewAfterAttention(snapshot),
         status: transitionRun(snapshot.status, "request_attention"),
       };
     case "run_failed":
@@ -176,9 +186,27 @@ function replayResult(snapshot: RunSnapshot, event: ResultEvent): RunSnapshot {
   }
 }
 
+function reviewAfterAttention(
+  snapshot: RunSnapshot,
+): Exclude<RunSnapshot["standardsReview"], undefined> {
+  const review = snapshot.standardsReview;
+  return review?.stage === "repaired" || review?.stage === "repair_attention"
+    ? { ...review, stage: "repair_attention" }
+    : null;
+}
+
+function reviewAfterRetry(
+  snapshot: RunSnapshot,
+): Exclude<RunSnapshot["standardsReview"], undefined> {
+  const review = snapshot.standardsReview;
+  return review?.result?.verdict === "changes_required"
+    ? { ...review, repairOutput: null, stage: "repair_attention" }
+    : null;
+}
+
 function replayTerminal(
   snapshot: RunSnapshot,
-  event: Exclude<ReplayEvent, ProgressEvent | ResultEvent>,
+  event: Exclude<ReplayEvent, ProgressEvent | ResultEvent | ReviewEvent>,
 ): RunSnapshot {
   switch (event.type) {
     case "run_source_changed":
@@ -216,7 +244,13 @@ function selectTask(
   ) {
     throw new Error("Striker task selection has an invalid run state");
   }
-  return { ...snapshot, baselineRecorded: false, before: null, task };
+  return {
+    ...snapshot,
+    baselineRecorded: false,
+    before: null,
+    standardsReview: null,
+    task,
+  };
 }
 
 function startAttempt(
@@ -272,8 +306,25 @@ function startSession(
   return { ...snapshot, session };
 }
 
-function completeTask(snapshot: RunSnapshot): RunSnapshot {
+function completeTask(
+  snapshot: RunSnapshot,
+  event: Extract<RunJournalEvent, { type: "task_completed" }>,
+): RunSnapshot {
   const status = transitionRun(snapshot.status, "complete_task");
+  const review = snapshot.standardsReview;
+  if (
+    event.certification === "standards_review" &&
+    (review?.stage !== "passed" ||
+      review.attempt !== event.attempt ||
+      review.startCommit !== event.startCommit ||
+      review.resultCommit !== event.resultCommit ||
+      !isDeepStrictEqual(review.changedPaths, event.changedPaths) ||
+      !isDeepStrictEqual(review.verification, event.verification))
+  ) {
+    throw new Error(
+      "Task completion requires matching passed standards review",
+    );
+  }
   const completed = { ...snapshot };
   delete completed.attempt;
   return {
@@ -282,6 +333,7 @@ function completeTask(snapshot: RunSnapshot): RunSnapshot {
     baselineRecorded: false,
     before: null,
     session: null,
+    standardsReview: null,
     status,
     task: null,
   };

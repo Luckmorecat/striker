@@ -9,11 +9,18 @@ import type {
   ImplementationTask,
   RunJournalEvent,
 } from "../core/contracts.js";
+import { appendPassedStandardsReview } from "../testing/fakes.js";
 import { FileRunJournal } from "./file-run-journal.js";
 import { runJournalSchemaId } from "./run-journal-schema.js";
 
 const identity = { id: "tasks/01.md", revision: "revision-1" };
 const task: ImplementationTask = {
+  execution: {
+    affectedPaths: ["src/task.ts"],
+    cwd: "/repo",
+    verifyCommand: "pnpm check",
+    workflowInstructions: "implement",
+  },
   identity,
   instructions: "Build.",
   title: "Build",
@@ -49,7 +56,13 @@ async function startAttempt(
   await start(journal, value);
   await journal.append({ runId: value.runId, task, type: "task_selected" });
   await journal.append({
-    before: null,
+    before: {
+      dirtyPaths: [],
+      head: "before",
+      root: "/repo",
+      trackedPatch: "",
+      untrackedHashes: {},
+    },
     runId: value.runId,
     task: identity,
     type: "task_baseline_recorded",
@@ -66,6 +79,36 @@ async function startAttempt(
     session,
     task: identity,
     type: "task_session_started",
+  });
+}
+
+async function completeAttempt(
+  journal: FileRunJournal,
+  attempt: number,
+  session: { readonly id: string },
+): Promise<void> {
+  const verification = { command: "pnpm check", exitCode: 0, output: "ok" };
+  await appendPassedStandardsReview(journal, {
+    attempt,
+    changedPaths: ["src/task.ts"],
+    resultCommit: "after",
+    runId: "run-1",
+    startCommit: "before",
+    task: identity,
+    verification,
+  });
+  await journal.append({
+    attempt,
+    certification: "standards_review",
+    changedPaths: ["src/task.ts"],
+    completedAt: "2026-08-22T12:00:00.000Z",
+    resultCommit: "after",
+    runId: "run-1",
+    session,
+    startCommit: "before",
+    task: identity,
+    type: "task_completed",
+    verification,
   });
 }
 
@@ -177,11 +220,11 @@ describe("file plan journal validation and replay", () => {
     const journal = new FileRunJournal(root);
     await start(journal);
     const eventsPath = path.join(root, "plans/plan-1/events.ndjson");
-    const unsupported = `${JSON.stringify({ event: { runId: "run-1", type: "run_completed" }, schema: "striker.plan-journal.v3" })}\n`;
+    const unsupported = `${JSON.stringify({ event: { runId: "run-1", type: "run_completed" }, schema: "striker.plan-journal.v4" })}\n`;
     await writeFile(eventsPath, unsupported);
 
     await expect(journal.load("plan-1")).rejects.toThrow(
-      "Unsupported Striker plan journal schema: striker.plan-journal.v3",
+      "Unsupported Striker plan journal schema: striker.plan-journal.v4",
     );
     expect(await readFile(eventsPath, "utf8")).toBe(unsupported);
   });
@@ -308,6 +351,7 @@ describe("file plan journal transition validation", () => {
     await expect(
       journal.append({
         attempt: 1,
+        certification: "standards_review",
         changedPaths: ["src/task.ts"],
         completedAt: "2026-08-22T12:00:00.000Z",
         resultCommit: "after",
@@ -400,18 +444,7 @@ describe("file plan journal retained history", () => {
     const journal = new FileRunJournal(root);
     const session = { id: "session-1" };
     await startAttempt(journal, request(), session);
-    await journal.append({
-      attempt: 1,
-      changedPaths: ["src/task.ts"],
-      completedAt: "2026-08-22T12:00:00.000Z",
-      resultCommit: "after",
-      runId: "run-1",
-      session,
-      startCommit: "before",
-      task: identity,
-      type: "task_completed",
-      verification: { command: "pnpm check", exitCode: 0, output: "ok" },
-    });
+    await completeAttempt(journal, 1, session);
     await journal.append({ runId: "run-1", type: "run_completed" });
     await start(journal, request("plan-1", "run-2"));
     await journal.append({
@@ -463,18 +496,7 @@ describe("file plan journal attempt replay", () => {
       task: identity,
       type: "task_session_started",
     });
-    await journal.append({
-      attempt: 2,
-      changedPaths: ["src/task.ts"],
-      completedAt: "2026-08-22T12:00:00.000Z",
-      resultCommit: "after",
-      runId: "run-1",
-      session: retrySession,
-      startCommit: "before",
-      task: identity,
-      type: "task_completed",
-      verification: { command: "pnpm check", exitCode: 0, output: "ok" },
-    });
+    await completeAttempt(journal, 2, retrySession);
     const second = {
       identity: { id: "tasks/02.md", revision: "revision-2" },
       instructions: "Continue.",

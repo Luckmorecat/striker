@@ -12,6 +12,7 @@ import type {
   TaskIdentity,
   VerificationResult,
 } from "./execution-contracts.js";
+import type { ReviewRequest, ReviewTurn } from "./review-contracts.js";
 
 export type {
   AgentSession,
@@ -102,6 +103,10 @@ export interface AgentRunner {
     session: AgentSession,
     instructions: string,
   ): Promise<AgentTurn>;
+  runReviewInNewSession?(
+    request: ReviewRequest,
+    sessionStarted?: (session: AgentSession) => Promise<void>,
+  ): Promise<ReviewTurn>;
 }
 
 export interface VerificationRequest {
@@ -237,7 +242,14 @@ export type {
   RunSnapshot,
   RunStatus,
   RunTransition,
+  StandardsReviewState,
 } from "./run-journal-contracts.js";
+export type {
+  ReviewFinding,
+  ReviewRequest,
+  ReviewResult,
+  ReviewTurn,
+} from "./review-contracts.js";
 
 export type DispatchResult =
   | {

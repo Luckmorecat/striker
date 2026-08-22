@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
-import { FakeAgentRunner } from "../testing/fakes.js";
+import {
+  FakeAgentRunner,
+  runPassingStandardsReview,
+} from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
@@ -74,6 +77,7 @@ function completionRunner(
       resumeRequests.push({ instructions, session });
       throw new Error("Unexpected resume");
     },
+    runReviewInNewSession: runPassingStandardsReview,
     runInNewSession: async (request, sessionStarted) => {
       requests.push(request);
       const session = { id };

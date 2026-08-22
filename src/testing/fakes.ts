@@ -9,11 +9,14 @@ import type {
   RunJournalEvent,
   RunRecoveryState,
   RunSnapshot,
+  ReviewRequest,
+  ReviewTurn,
   TaskCompletionEvidence,
   TaskCompletionResult,
   TaskIdentity,
   TaskSource,
   TaskSourceAdapter,
+  VerificationResult,
 } from "../core/contracts.js";
 import { terminalRunStatus } from "../core/run-state.js";
 import { replayPlanJournal } from "../infrastructure/run-journal-sequence.js";
@@ -96,14 +99,25 @@ export class FakeAgentRunner implements AgentRunner {
   lastRequest: AgentRequest | null = null;
   readonly preflightRequests: HarnessPreflightRequest[] = [];
   readonly requests: AgentRequest[] = [];
+  readonly reviewRequests: ReviewRequest[] = [];
   readonly resumeRequests: {
     readonly instructions: string;
     readonly session: AgentSession;
   }[] = [];
   readonly #turns: AgentTurn[];
+  readonly #reviewTurns: ReviewTurn[];
 
-  constructor(turn: AgentTurn | readonly AgentTurn[]) {
+  constructor(
+    turn: AgentTurn | readonly AgentTurn[],
+    reviewTurns: ReviewTurn | readonly ReviewTurn[] | null = null,
+  ) {
     this.#turns = "status" in turn ? [turn] : [...turn];
+    this.#reviewTurns =
+      reviewTurns === null
+        ? []
+        : "status" in reviewTurns
+          ? [reviewTurns]
+          : [...reviewTurns];
   }
 
   preflight(request: HarnessPreflightRequest): Promise<void> {
@@ -131,6 +145,103 @@ export class FakeAgentRunner implements AgentRunner {
     const turn = this.#turns.shift();
     if (turn === undefined) throw new Error("Missing fake agent turn");
     return Promise.resolve(turn);
+  }
+
+  async runReviewInNewSession(
+    request: ReviewRequest,
+    sessionStarted?: (session: AgentSession) => Promise<void>,
+  ): Promise<ReviewTurn> {
+    this.reviewRequests.push(request);
+    const turn = this.#reviewTurns.shift() ?? passedStandardsReview(request);
+    await sessionStarted?.(turn.session);
+    return turn;
+  }
+}
+
+export function passedStandardsReview(request: ReviewRequest): ReviewTurn {
+  const startCommit = /"startCommit": "([^"]+)"/u.exec(
+    request.instructions,
+  )?.[1];
+  const resultCommit = /"resultCommit": "([^"]+)"/u.exec(
+    request.instructions,
+  )?.[1];
+  if (startCommit === undefined || resultCommit === undefined) {
+    throw new Error("Fake review request is missing candidate commits");
+  }
+  return {
+    result: {
+      findings: [],
+      kind: "standards",
+      resultCommit,
+      startCommit,
+      verdict: "passed",
+    },
+    session: { id: "standards-review" },
+    status: "returned",
+  };
+}
+
+export async function runPassingStandardsReview(
+  request: ReviewRequest,
+  sessionStarted?: (session: AgentSession) => Promise<void>,
+): Promise<ReviewTurn> {
+  const turn = passedStandardsReview(request);
+  await sessionStarted?.(turn.session);
+  return turn;
+}
+
+interface PassedReviewEvidence {
+  readonly attempt: number;
+  readonly changedPaths: readonly string[];
+  readonly completion?: TaskCompletionEvidence;
+  readonly resultCommit: string;
+  readonly runId: string;
+  readonly startCommit: string;
+  readonly task: TaskIdentity;
+  readonly verification: VerificationResult;
+}
+
+export function passedStandardsReviewEvents(
+  evidence: PassedReviewEvidence,
+): readonly RunJournalEvent[] {
+  const session = { id: "standards-review" };
+  const completion = evidence.completion ?? { summary: "task complete" };
+  const result = {
+    findings: [],
+    kind: "standards" as const,
+    resultCommit: evidence.resultCommit,
+    startCommit: evidence.startCommit,
+    verdict: "passed" as const,
+  };
+  return [
+    {
+      attempt: evidence.attempt,
+      changedPaths: evidence.changedPaths,
+      completion,
+      resultCommit: evidence.resultCommit,
+      runId: evidence.runId,
+      session,
+      startCommit: evidence.startCommit,
+      task: evidence.task,
+      type: "standards_review_started",
+      verification: evidence.verification,
+    },
+    {
+      result,
+      runId: evidence.runId,
+      session,
+      task: evidence.task,
+      type: "standards_review_completed",
+    },
+  ];
+}
+
+export async function appendPassedStandardsReview(
+  journal: RunJournal,
+  evidence: PassedReviewEvidence,
+): Promise<void> {
+  for (const event of passedStandardsReviewEvents(evidence)) {
+    await journal.append(event);
   }
 }
 

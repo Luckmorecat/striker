@@ -22,6 +22,8 @@ import type {
   AgentTurn,
   ApprovalMode,
   HarnessPreflightRequest,
+  ReviewRequest,
+  ReviewTurn,
 } from "../core/contracts.js";
 import {
   assertPermissionCapability,
@@ -29,6 +31,7 @@ import {
   harnessPreflightPrompt,
 } from "../preflight/harness-preflight.js";
 import { permissionPolicyFor } from "../permissions/permission-policy.js";
+import { runReviewSession } from "./review-session.js";
 
 export interface AcpxRuntimeBoundary {
   close(input: {
@@ -56,6 +59,7 @@ interface RunnerOptions {
   readonly cwd: string;
   readonly harness: AgentHarness;
   readonly preflightRuntime?: AcpxRuntimeBoundary;
+  readonly reviewRuntime?: AcpxRuntimeBoundary;
   readonly runtime: AcpxRuntimeBoundary;
 }
 
@@ -192,6 +196,25 @@ export class AcpxAgentRunner implements AgentRunner {
         throw new Error("Agent runner replaced the preserved backend session");
       }
       return this.runTurn(handle, session, instructions);
+    });
+  }
+
+  async runReviewInNewSession(
+    request: ReviewRequest,
+    sessionStarted?: (session: AgentSession) => Promise<void>,
+  ): Promise<ReviewTurn> {
+    const runtime = this.options.reviewRuntime;
+    if (runtime === undefined) {
+      throw new Error(
+        "Agent runner requires an explicit read-only review runtime",
+      );
+    }
+    return runReviewSession({
+      agent: harnessCapabilities[this.options.harness].agent,
+      cwd: this.options.cwd,
+      request,
+      runtime,
+      ...(sessionStarted === undefined ? {} : { sessionStarted }),
     });
   }
 
@@ -342,6 +365,7 @@ export function createAcpxAgentRunner(options: {
     cwd: options.cwd,
     harness: options.harness,
     preflightRuntime,
+    reviewRuntime: preflightRuntime,
     runtime,
   });
 }

@@ -12,10 +12,17 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { DispatchRequest, RunJournalEvent } from "../core/contracts.js";
+import { appendPassedStandardsReview } from "../testing/fakes.js";
 import { FileRunJournal } from "./file-run-journal.js";
 import { FilePlanLogReader } from "./plan-projections.js";
 
 const task = {
+  execution: {
+    affectedPaths: ["src/task.ts", "src/task.test.ts"],
+    cwd: "/repo",
+    verifyCommand: "pnpm check",
+    workflowInstructions: "implement",
+  },
   identity: { id: "tasks/01.md", revision: "revision-1" },
   instructions: "Build it.",
   title: "Build task state",
@@ -28,8 +35,9 @@ const request: DispatchRequest = {
   skills: [],
   taskSource: { location: "/repo/plan", type: "striker-plan" },
 };
-const completion: RunJournalEvent = {
+const completion = {
   attempt: 1,
+  certification: "standards_review",
   changedPaths: ["src/task.ts", "src/task.test.ts"],
   completedAt: "2026-08-22T12:00:00.000Z",
   resultCommit: "result-commit",
@@ -39,7 +47,7 @@ const completion: RunJournalEvent = {
   task: task.identity,
   type: "task_completed",
   verification: { command: "pnpm check", exitCode: 0, output: "all green" },
-};
+} satisfies Extract<RunJournalEvent, { type: "task_completed" }>;
 
 async function appendAttempt(journal: FileRunJournal): Promise<void> {
   await journal.append({
@@ -50,7 +58,13 @@ async function appendAttempt(journal: FileRunJournal): Promise<void> {
   });
   await journal.append({ runId: request.runId, task, type: "task_selected" });
   await journal.append({
-    before: null,
+    before: {
+      dirtyPaths: [],
+      head: completion.startCommit,
+      root: "/repo",
+      trackedPatch: "",
+      untrackedHashes: {},
+    },
     runId: request.runId,
     task: task.identity,
     type: "task_baseline_recorded",
@@ -68,6 +82,7 @@ async function appendAttempt(journal: FileRunJournal): Promise<void> {
     task: task.identity,
     type: "task_session_started",
   });
+  await appendPassedStandardsReview(journal, completion);
 }
 
 describe("plan projections", () => {
@@ -134,7 +149,7 @@ describe("plan projections", () => {
       (await readFile(path.join(planRoot, "events.ndjson"), "utf8"))
         .trim()
         .split("\n"),
-    ).toHaveLength(6);
+    ).toHaveLength(8);
   });
 
   it("replaces a stale log before a query reads it", async () => {

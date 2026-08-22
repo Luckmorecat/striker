@@ -12,6 +12,12 @@ interface EvidenceDependencies {
   readonly verifier?: Verifier;
 }
 
+interface ReviewedCandidateEvidence {
+  readonly changedPaths: readonly string[];
+  readonly resultCommit: string;
+  readonly startCommit: string;
+}
+
 function pathsOverlap(left: string, right: string): boolean {
   return (
     left === right ||
@@ -103,6 +109,49 @@ export function executionAttention(
   if (!sameBaseline(evidence.before, evidence.after)) {
     return {
       detail: "The final worktree differs from the preserved dirty baseline.",
+      reason: "dirty_final_state",
+    };
+  }
+  return null;
+}
+
+export async function reviewedCandidateAttention(
+  dependencies: EvidenceDependencies,
+  task: ImplementationTask,
+  before: GitState,
+  review: ReviewedCandidateEvidence,
+): Promise<RunAttention | null> {
+  const execution = task.execution;
+  const git = dependencies.git;
+  if (execution === undefined || git === undefined) {
+    throw new Error("Git execution context is required for reviewed candidate");
+  }
+  const after = await git.inspect(execution.cwd);
+  const commits = await git.commitsBetween(
+    execution.cwd,
+    before.head,
+    after.head,
+  );
+  const changedPaths = await git.changedPaths(
+    execution.cwd,
+    before.head,
+    after.head,
+  );
+  if (
+    before.head !== review.startCommit ||
+    after.head !== review.resultCommit ||
+    commits.length !== 1 ||
+    commits[0] !== review.resultCommit ||
+    JSON.stringify(changedPaths) !== JSON.stringify(review.changedPaths)
+  ) {
+    return {
+      detail: "The checkout no longer matches the reviewed commit evidence.",
+      reason: "commit_evidence_missing",
+    };
+  }
+  if (before.root !== after.root || !sameBaseline(before, after)) {
+    return {
+      detail: "The checkout no longer matches the reviewed dirty baseline.",
       reason: "dirty_final_state",
     };
   }

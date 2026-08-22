@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { FakeAgentRunner, InMemoryRunJournal } from "../testing/fakes.js";
+import {
+  appendPassedStandardsReview,
+  FakeAgentRunner,
+  InMemoryRunJournal,
+} from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
@@ -343,14 +347,24 @@ describe("Dispatcher retry", () => {
       }),
     );
     await seedAttempt(test.journal, "running");
+    await appendPassedStandardsReview(test.journal, {
+      attempt: 1,
+      changedPaths: ["src/task.ts"],
+      resultCommit: "after",
+      runId: request.runId,
+      startCommit: "after",
+      task: task.identity,
+      verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+    });
     await test.journal.append({
       attempt: 1,
+      certification: "standards_review",
       changedPaths: ["src/task.ts"],
       completedAt: "2026-08-22T12:00:00.000Z",
       resultCommit: "after",
       runId: request.runId,
       session: { id: "runtime-old", resumeId: "provider-old" },
-      startCommit: "before",
+      startCommit: "after",
       task: task.identity,
       type: "task_completed",
       verification: { command: "pnpm check", exitCode: 0, output: "ok" },

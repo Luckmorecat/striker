@@ -200,11 +200,19 @@ pnpm exec striker run path/to/plan --allow-dirty
 ```
 
 After each task, Striker requires one descendant commit, an unchanged allowed
-dirty baseline, the exact verification result, and both implementor review
-results. It derives changed paths between the exact start and result commits,
-then records the attempt, implementation session, commits, paths, verification,
-and completion time in the Git-private run journal before selecting the next
-task. The implementation session reads plan context but never updates the plan
+dirty baseline, the exact verification result, and the implementor's existing
+review evidence. It then starts a fresh read-only standards reviewer for the
+exact start and candidate commits. The reviewer returns one strict JSON object
+with its verdict and file locations. Striker accepts findings only for the
+Git-derived changed paths.
+
+A blocking standards finding resumes the preserved implementation session with
+the typed findings. The implementor amends its one task commit, Striker reruns
+verification, and a new read-only reviewer checks the amended commit. Only a
+passed result can precede `task_completed`. The journal records the attempt,
+implementation and review sessions, candidate evidence, review results, repair
+starts, interruptions, and final completion before Striker selects another task.
+The implementation session reads plan context but never updates the plan
 directory.
 
 Striker keys one persistent event journal by the immutable plan identity under
@@ -244,12 +252,13 @@ the assumption and default states. A plan without events reports `not_started`.
 creates authoritative events. `striker status` remains limited to the active
 checkout run.
 
-`resume` continues an interrupted session or sends a repair request back to a
-paused session. `answer` continues that same session with developer input.
-`retry` records the failed attempt and starts the incomplete task in a fresh
-session. `discard --force` records a terminal discard only for a paused or
-failed run, then releases the active claim. All plan events remain Git-private
-after completion or discard.
+`resume` continues an interrupted implementation or repair session. An
+interrupted reviewer is replaced with a fresh read-only review pinned to the
+same candidate. `answer` continues a paused implementation session with
+developer input. `retry` records the failed attempt and starts the incomplete
+task in a fresh session. `discard --force` records a terminal discard only for a
+paused or failed run, then releases the active claim. All plan events remain
+Git-private after completion or discard.
 
 ## Permission modes
 

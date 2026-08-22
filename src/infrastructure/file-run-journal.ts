@@ -15,6 +15,9 @@ import {
 } from "./run-journal-sequence.js";
 import {
   eventEnvelopeSchema,
+  legacyEventEnvelopeSchema,
+  legacyRunJournalSchemaId,
+  legacySnapshotEnvelopeSchema,
   runJournalEventSchema,
   runJournalSchemaId,
   snapshotEnvelopeSchema,
@@ -66,7 +69,11 @@ function schemaValue(value: unknown): unknown {
 
 function rejectUnsupportedSchema(value: unknown): void {
   const schema = schemaValue(value);
-  if (schema !== undefined && schema !== runJournalSchemaId) {
+  if (
+    schema !== undefined &&
+    schema !== runJournalSchemaId &&
+    schema !== legacyRunJournalSchemaId
+  ) {
     const label = typeof schema === "string" ? schema : JSON.stringify(schema);
     throw new Error(`Unsupported Striker plan journal schema: ${label}`);
   }
@@ -75,7 +82,11 @@ function rejectUnsupportedSchema(value: unknown): void {
 function parseEvent(line: string): RunJournalEvent {
   const value = parseJson(line, "Invalid Striker plan journal event");
   rejectUnsupportedSchema(value);
-  const parsed = eventEnvelopeSchema.safeParse(value);
+  const schema = schemaValue(value);
+  const parsed =
+    schema === legacyRunJournalSchemaId
+      ? legacyEventEnvelopeSchema.safeParse(value)
+      : eventEnvelopeSchema.safeParse(value);
   if (!parsed.success) {
     throw new Error("Invalid Striker plan journal event", {
       cause: parsed.error,
@@ -240,7 +251,10 @@ export class FileRunJournal implements RunJournal {
     }
     const value = parseJson(content, "Invalid Striker run snapshot");
     rejectUnsupportedSchema(value);
-    const parsed = snapshotEnvelopeSchema.safeParse(value);
+    const legacy = schemaValue(value) === legacyRunJournalSchemaId;
+    const parsed = legacy
+      ? legacySnapshotEnvelopeSchema.safeParse(value)
+      : snapshotEnvelopeSchema.safeParse(value);
     if (!parsed.success) {
       throw new Error("Invalid Striker run snapshot", { cause: parsed.error });
     }
@@ -248,11 +262,13 @@ export class FileRunJournal implements RunJournal {
     if (count > events.length) {
       throw new Error("Striker run snapshot is ahead of its plan journal");
     }
-    assertSnapshotPrefix(
-      parsed.data.snapshot as RunSnapshot,
-      events.slice(0, count),
-      planId,
-    );
+    if (!legacy) {
+      assertSnapshotPrefix(
+        parsed.data.snapshot as RunSnapshot,
+        events.slice(0, count),
+        planId,
+      );
+    }
     return { eventCount: count };
   }
 

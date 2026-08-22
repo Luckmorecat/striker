@@ -29,6 +29,7 @@ import { PausedRunRecovery } from "./paused-run-recovery.js";
 import { transitionRun } from "./run-state.js";
 import { RunOperations } from "./run-operations.js";
 import { finalizeExhaustedSource } from "./source-finalization.js";
+import { certifyTask, completeReviewedTask } from "./task-certification.js";
 
 export interface DispatcherDependencies {
   readonly adapters: AdapterRegistry;
@@ -99,6 +100,14 @@ export class Dispatcher {
   private recovery(): PausedRunRecovery {
     return new PausedRunRecovery(this.dependencies, {
       complete: (...arguments_) => this.completeReturnedTurn(...arguments_),
+      completeReviewed: (request, task, session, review) =>
+        completeReviewedTask(
+          this.dependencies.journal,
+          request,
+          task,
+          session,
+          review,
+        ),
       continueRun: (request) => this.dispatch(request),
       fail: (...arguments_) => this.finishFailed(...arguments_),
     });
@@ -184,6 +193,7 @@ export class Dispatcher {
     before: GitState | undefined,
     agentOutput: string,
     attempt: number,
+    rejectedCommit?: string,
   ): Promise<DispatchResult> {
     const execution = await collectExecutionEvidence(
       this.dependencies,
@@ -191,6 +201,12 @@ export class Dispatcher {
       before,
     );
     const attention = executionAttention(execution);
+    if (execution?.after.head === rejectedCommit) {
+      return this.finishNeedsAttention(request, task, session, {
+        detail: "The standards repair did not amend the rejected candidate.",
+        reason: "commit_evidence_missing",
+      });
+    }
     if (attention !== null) {
       return this.finishNeedsAttention(request, task, session, attention);
     }
@@ -207,7 +223,6 @@ export class Dispatcher {
         completion.attention,
       );
     }
-    const { evidence } = completion;
     if (execution === undefined) {
       return this.finishNeedsAttention(request, task, session, {
         detail: "The task has no execution evidence.",
@@ -215,27 +230,25 @@ export class Dispatcher {
       });
     }
 
-    transitionRun("running", "complete_task");
-    await this.dependencies.journal.append({
+    return certifyTask(this.dependencies, {
       attempt,
-      changedPaths: execution.changedPaths,
-      completedAt: new Date().toISOString(),
-      resultCommit: execution.after.head,
-      runId: request.runId,
+      completion: completion.evidence,
+      execution,
+      recheck: (output, rejected) =>
+        this.completeReturnedTurn(
+          request,
+          source,
+          task,
+          session,
+          before,
+          output,
+          attempt,
+          rejected,
+        ),
+      request,
       session,
-      startCommit: execution.before.head,
-      task: task.identity,
-      type: "task_completed",
-      verification: execution.verification,
-    });
-
-    return {
-      evidence,
-      runId: request.runId,
-      session,
-      status: "completed",
       task,
-    };
+    });
   }
 
   private async finishNeedsAttention(

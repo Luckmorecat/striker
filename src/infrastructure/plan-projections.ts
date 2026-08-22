@@ -64,7 +64,7 @@ async function replaceFile(
 
 function completionRecord(
   event: CompletionEvent,
-): Omit<CompletionEvent, "type"> {
+): Omit<CompletionEvent, "certification" | "type"> {
   return {
     attempt: event.attempt,
     changedPaths: event.changedPaths,

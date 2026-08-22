@@ -9,6 +9,7 @@ import type {
   Verifier,
 } from "./contracts.js";
 import {
+  appendPassedStandardsReview,
   FakeAgentRunner,
   InMemoryRunJournal,
   InMemoryTaskSourceAdapter,
@@ -49,7 +50,7 @@ async function seedCompletedTask(
   });
   await journal.append({ runId: request.runId, task, type: "task_selected" });
   await journal.append({
-    before: null,
+    before: state(),
     runId: request.runId,
     task: task.identity,
     type: "task_baseline_recorded",
@@ -67,8 +68,18 @@ async function seedCompletedTask(
     task: task.identity,
     type: "task_session_started",
   });
+  await appendPassedStandardsReview(journal, {
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    resultCommit: "after",
+    runId: request.runId,
+    startCommit: "before",
+    task: task.identity,
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  });
   await journal.append({
     attempt: 1,
+    certification: "standards_review",
     changedPaths: ["src/task.ts"],
     completedAt: "2026-08-22T12:00:00.000Z",
     resultCommit: "after",
@@ -100,8 +111,12 @@ class FakeGit implements GitRepository {
     return Promise.resolve(["src/cli.ts"]);
   }
 
-  commitsBetween(): Promise<readonly string[]> {
-    return Promise.resolve(["after"]);
+  commitsBetween(
+    _root: string,
+    _ancestor: string,
+    descendant: string,
+  ): Promise<readonly string[]> {
+    return Promise.resolve([descendant]);
   }
 
   inspect(): Promise<GitState> {
@@ -176,6 +191,8 @@ function sequentialFixture() {
       state(),
       state({ head: "after" }),
       state({ head: "after" }),
+      state({ head: "after" }),
+      state({ head: "after-2" }),
       state({ head: "after-2" }),
     ]),
     journal,
@@ -216,9 +233,22 @@ describe("Dispatcher", () => {
       status: "completed",
       task,
     });
+    expect(journal.events.map((event) => event.type)).toContain(
+      "standards_review_completed",
+    );
+    expect(
+      journal.events.findIndex(
+        (event) => event.type === "standards_review_completed",
+      ),
+    ).toBeLessThan(
+      journal.events.findIndex((event) => event.type === "task_completed"),
+    );
+    expect(journal.snapshots.at(-1)?.standardsReview).toBeNull();
     expect(journal.releasedRunIds).toEqual(["run-1"]);
   });
+});
 
+describe("Dispatcher task failures", () => {
   it("needs attention when the source has no completion evidence", async () => {
     const journal = new InMemoryRunJournal();
     const dispatcher = new Dispatcher({

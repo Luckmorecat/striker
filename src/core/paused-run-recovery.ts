@@ -10,13 +10,23 @@ import type {
   RunAttention,
   RunJournal,
   RunRecoveryState,
-  RunStatus,
+  RunSnapshot,
   TaskSource,
 } from "./contracts.js";
 import { recordAttemptStart } from "./attempt-journal.js";
-import { inspectBaseline } from "./dispatch-evidence.js";
+import {
+  inspectBaseline,
+  reviewedCandidateAttention,
+} from "./dispatch-evidence.js";
 import { runInFreshSession } from "./fresh-session.js";
 import { transitionRun } from "./run-state.js";
+import { recoverStandardsReview } from "./standards-review-recovery.js";
+import {
+  recoverableRun,
+  recoverableSnapshot,
+  reviewOwnsRecovery,
+  type RecoverableRun,
+} from "./recovery-context.js";
 
 interface RecoveryDependencies {
   readonly adapters: AdapterRegistry;
@@ -34,6 +44,13 @@ interface RecoveryHost {
     before: GitState | undefined,
     output: string,
     attempt: number,
+    rejectedCommit?: string,
+  ): Promise<DispatchResult>;
+  completeReviewed(
+    request: DispatchRequest,
+    task: ImplementationTask,
+    session: AgentSession,
+    review: NonNullable<RunSnapshot["standardsReview"]>,
   ): Promise<DispatchResult>;
   continueRun(request: DispatchRequest): Promise<DispatchResult>;
   fail(
@@ -44,19 +61,22 @@ interface RecoveryHost {
   ): Promise<DispatchResult>;
 }
 
-interface RecoverableRun {
-  readonly attempt: number;
-  readonly attention: RunAttention | null;
-  readonly baselineRecorded: boolean;
-  readonly before: GitState | undefined;
-  readonly request: DispatchRequest;
-  readonly session: AgentSession | null;
-  readonly status: "failed" | "needs_attention" | "running";
-  readonly task: ImplementationTask;
-}
-
 interface ContinuedRun extends RecoverableRun {
   readonly session: AgentSession;
+}
+
+function pausedSessionlessRun(run: RecoverableRun): DispatchResult | null {
+  if (run.session !== null || run.status !== "needs_attention") return null;
+  if (run.attention === null) {
+    throw new Error("Paused Striker run is missing attention evidence");
+  }
+  return {
+    reason: run.attention.reason,
+    runId: run.request.runId,
+    session: null,
+    status: "needs_attention",
+    task: run.task,
+  };
 }
 
 export class PausedRunRecovery {
@@ -68,7 +88,13 @@ export class PausedRunRecovery {
   async answer(answer: string): Promise<DispatchResult> {
     if (answer.length === 0)
       throw new Error("Developer answer cannot be empty");
-    const run = await this.requireRun(["needs_attention"]);
+    const recovery = await this.requireActiveRecovery();
+    if (reviewOwnsRecovery(recovery.snapshot)) {
+      throw new Error(
+        "Standards review recovery does not accept developer answers",
+      );
+    }
+    const run = recoverableRun(recovery, ["needs_attention"]);
     if (run.session === null) {
       throw new Error("Paused Striker run has no session to answer");
     }
@@ -93,20 +119,13 @@ export class PausedRunRecovery {
       }
       return this.host.continueRun(request);
     }
-    const run = this.recoverableRun(recovery, ["needs_attention", "running"]);
+    if (reviewOwnsRecovery(recovery.snapshot)) {
+      return this.resumeStandardsReview(recovery.snapshot);
+    }
+    const run = recoverableRun(recovery, ["needs_attention", "running"]);
+    const paused = pausedSessionlessRun(run);
+    if (paused !== null) return paused;
     if (run.session === null) {
-      if (run.status === "needs_attention") {
-        if (run.attention === null) {
-          throw new Error("Paused Striker run is missing attention evidence");
-        }
-        return {
-          reason: run.attention.reason,
-          runId: run.request.runId,
-          session: null,
-          status: "needs_attention",
-          task: run.task,
-        };
-      }
       return this.pauseResumeFailure(
         run,
         new Error("the interrupted attempt did not record a session"),
@@ -119,9 +138,42 @@ export class PausedRunRecovery {
     return this.continue(run as ContinuedRun, "resume", instructions);
   }
 
+  private resumeStandardsReview(
+    snapshot: RunSnapshot,
+  ): Promise<DispatchResult> {
+    const { standardsReview: review, task, session, before } = snapshot;
+    if (review == null || task === null || session === null || before == null) {
+      throw new Error("Standards review is missing recovery context");
+    }
+    const run = recoverableSnapshot(snapshot, ["needs_attention", "running"]);
+    return recoverStandardsReview({
+      before,
+      completeCandidate: async (candidate) => {
+        const result = await this.host.completeReviewed(
+          snapshot.request,
+          task,
+          session,
+          candidate,
+        );
+        const continued = await this.host.continueRun(snapshot.request);
+        return continued.status === "source_exhausted" ? result : continued;
+      },
+      completeRepair: (output, rejectedCommit) =>
+        this.checkCompletion(run, session, output, rejectedCommit),
+      journal: this.dependencies.journal,
+      request: snapshot.request,
+      review,
+      runner: this.dependencies.runner,
+      session,
+      task,
+      validateCandidate: (candidate) =>
+        reviewedCandidateAttention(this.dependencies, task, before, candidate),
+    });
+  }
+
   async retry(): Promise<DispatchResult> {
     const recovery = await this.requireActiveRecovery();
-    const run = this.recoverableRun(recovery, ["failed", "needs_attention"]);
+    const run = recoverableRun(recovery, ["failed", "needs_attention"]);
     if (
       recovery.completedTasks.some(
         (identity) =>
@@ -220,6 +272,7 @@ export class PausedRunRecovery {
     paused: RecoverableRun,
     session: AgentSession,
     output: string,
+    rejectedCommit?: string,
   ): Promise<DispatchResult> {
     const adapter = this.dependencies.adapters.get(
       paused.request.taskSource.type,
@@ -233,6 +286,10 @@ export class PausedRunRecovery {
       paused.before,
       output,
       paused.attempt,
+      rejectedCommit ??
+        (paused.standardsReview?.result?.verdict === "changes_required"
+          ? paused.standardsReview.resultCommit
+          : undefined),
     );
     if (result.status !== "completed") return result;
     const continued = await this.host.continueRun(paused.request);
@@ -295,35 +352,6 @@ export class PausedRunRecovery {
     const recovery = await this.dependencies.journal.loadActive();
     if (recovery === null) throw new Error("No Striker run is active");
     return recovery;
-  }
-
-  private async requireRun(
-    statuses: readonly RunStatus[],
-  ): Promise<RecoverableRun> {
-    return this.recoverableRun(await this.requireActiveRecovery(), statuses);
-  }
-
-  private recoverableRun(
-    recovery: RunRecoveryState,
-    statuses: readonly RunStatus[],
-  ): RecoverableRun {
-    const snapshot = recovery.snapshot;
-    if (snapshot === null || !statuses.includes(snapshot.status)) {
-      throw new Error("No recoverable Striker run is active");
-    }
-    if (snapshot.task === null) {
-      throw new Error("Striker run is missing recovery context");
-    }
-    return {
-      attempt: snapshot.attempt ?? 0,
-      attention: snapshot.attention ?? null,
-      baselineRecorded: snapshot.baselineRecorded ?? false,
-      before: snapshot.before ?? undefined,
-      request: snapshot.request,
-      session: snapshot.session,
-      status: snapshot.status as RecoverableRun["status"],
-      task: snapshot.task,
-    };
   }
 
   private repairInstructions(attention: RunAttention | null): string {

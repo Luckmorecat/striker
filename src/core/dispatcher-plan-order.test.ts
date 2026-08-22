@@ -5,7 +5,10 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapter.js";
-import { InMemoryRunJournal } from "../testing/fakes.js";
+import {
+  InMemoryRunJournal,
+  runPassingStandardsReview,
+} from "../testing/fakes.js";
 import { AdapterRegistry, Dispatcher } from "../index.js";
 import type {
   AgentRequest,
@@ -35,8 +38,12 @@ class FakeGit implements GitRepository {
     return Promise.resolve(["src/task.ts"]);
   }
 
-  commitsBetween(): Promise<readonly string[]> {
-    return Promise.resolve(["after"]);
+  commitsBetween(
+    _root: string,
+    _ancestor: string,
+    descendant: string,
+  ): Promise<readonly string[]> {
+    return Promise.resolve([descendant]);
   }
 
   inspect(): Promise<GitState> {
@@ -120,6 +127,8 @@ class OrderedPlanRunner implements AgentRunner {
     throw new Error("Changing plan runner does not resume sessions");
   }
 
+  runReviewInNewSession = runPassingStandardsReview;
+
   async runInNewSession(
     request: AgentRequest,
     sessionStarted?: (session: AgentSession) => Promise<void>,
@@ -147,7 +156,9 @@ describe("Dispatcher with an immutable Striker plan", () => {
       new StrikerPlanAdapter({ projectRoot: root, workflowRoot }),
     );
     const journal = new InMemoryRunJournal();
-    const gitStates = ["0", "1", "1", "2"].map((head) => state({ head, root }));
+    const gitStates = ["0", "1", "1", "1", "2", "2"].map((head) =>
+      state({ head, root }),
+    );
     const result = await new Dispatcher({
       adapters: registry,
       git: new FakeGit(gitStates),

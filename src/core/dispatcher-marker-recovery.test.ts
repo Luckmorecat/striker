@@ -10,6 +10,10 @@ import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapte
 import { parseStrikerPlan } from "../adapters/striker-plan/plan-parser.js";
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
+import {
+  passedStandardsReviewEvents,
+  runPassingStandardsReview,
+} from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
@@ -169,6 +173,11 @@ async function appendCompletedAttempt(
   session: AgentSession,
   changedPaths: readonly string[],
 ): Promise<void> {
+  const verification = {
+    command: task.execution?.verifyCommand ?? "pnpm check",
+    exitCode: 0,
+    output: "ok",
+  };
   const events: readonly RunJournalEvent[] = [
     {
       planId: request.planId,
@@ -178,7 +187,13 @@ async function appendCompletedAttempt(
     },
     { runId: request.runId, task, type: "task_selected" },
     {
-      before: null,
+      before: {
+        dirtyPaths: [],
+        head: "before",
+        root: task.execution?.cwd ?? "/repo",
+        trackedPatch: "",
+        untrackedHashes: {},
+      },
       runId: request.runId,
       task: task.identity,
       type: "task_baseline_recorded",
@@ -196,8 +211,18 @@ async function appendCompletedAttempt(
       task: task.identity,
       type: "task_session_started",
     },
+    ...passedStandardsReviewEvents({
+      attempt: 1,
+      changedPaths,
+      resultCommit: "after",
+      runId: request.runId,
+      startCommit: "before",
+      task: task.identity,
+      verification,
+    }),
     {
       attempt: 1,
+      certification: "standards_review",
       changedPaths,
       completedAt: "2026-08-22T12:00:00.000Z",
       resultCommit: "after",
@@ -206,11 +231,7 @@ async function appendCompletedAttempt(
       startCommit: "before",
       task: task.identity,
       type: "task_completed",
-      verification: {
-        command: task.execution?.verifyCommand ?? "pnpm check",
-        exitCode: 0,
-        output: "ok",
-      },
+      verification,
     },
   ];
   for (const event of events) await journal.append(event);
@@ -340,6 +361,7 @@ describe("Dispatcher immutable multi-task plans", () => {
       resumeSession: () => {
         throw new Error("Two-task dispatch must not resume a session");
       },
+      runReviewInNewSession: runPassingStandardsReview,
       runInNewSession: async (_request, sessionStarted) => {
         sessionCount += 1;
         const session = { id: `session-${String(sessionCount)}` };

@@ -33,7 +33,10 @@ function state(head: string): GitState {
 
 class FakeGit implements GitRepository {
   private index = 0;
-  readonly #states = [state("before"), state("after")];
+
+  constructor(
+    readonly states: readonly GitState[] = [state("before"), state("after")],
+  ) {}
 
   changedPaths(): Promise<readonly string[]> {
     return Promise.resolve(["src/cli.ts"]);
@@ -44,7 +47,7 @@ class FakeGit implements GitRepository {
   }
 
   inspect(): Promise<GitState> {
-    const value = this.#states[this.index] ?? this.#states.at(-1);
+    const value = this.states[this.index] ?? this.states.at(-1);
     this.index += 1;
     if (value === undefined) throw new Error("Missing fake Git state");
     return Promise.resolve(value);
@@ -152,4 +155,35 @@ it("keeps workflow instructions separate and pauses on verification", async () =
     workflowInstructions: "private workflow",
   });
   expect(journal.releasedRunIds).toEqual([]);
+});
+
+it("rejects a checkout that changes while its review is running", async () => {
+  const journal = new InMemoryRunJournal();
+  const dispatcher = new Dispatcher({
+    adapters: registry(),
+    git: new FakeGit([state("before"), state("after"), state("replacement")]),
+    journal,
+    runner: new FakeAgentRunner({
+      output: "done",
+      session: { id: "session-4" },
+      status: "returned",
+    }),
+    verifier: verifier(0),
+  });
+
+  await expect(
+    dispatcher.dispatchOne({
+      completedTasks: [],
+      planId: "plan-live-review",
+      runId: "run-live-review",
+      skills: [],
+      taskSource: { location: "memory://plan", type: "memory" },
+    }),
+  ).resolves.toMatchObject({
+    reason: "commit_evidence_missing",
+    status: "needs_attention",
+  });
+  expect(journal.events.some((event) => event.type === "task_completed")).toBe(
+    false,
+  );
 });

@@ -198,6 +198,71 @@ describe("acpx task sessions", () => {
   });
 });
 
+describe("acpx review sessions", () => {
+  it("refuses to review without an explicit read-only runtime", async () => {
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime: new FakeRuntime(),
+    });
+
+    await expect(
+      runner.runReviewInNewSession({ instructions: "Review." }),
+    ).rejects.toThrow("read-only review runtime");
+  });
+
+  it("returns a parsed result from a disposable read-only runtime", async () => {
+    const taskRuntime = new FakeRuntime();
+    const reviewRuntime = new FakeRuntime();
+    reviewRuntime.output = JSON.stringify({
+      findings: [],
+      kind: "standards",
+      resultCommit: "after",
+      startCommit: "before",
+      verdict: "passed",
+    });
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      reviewRuntime,
+      runtime: taskRuntime,
+    });
+
+    const result = await runner.runReviewInNewSession({
+      instructions: "Review the candidate.",
+    });
+
+    expect(result).toMatchObject({
+      result: { kind: "standards", verdict: "passed" },
+      status: "returned",
+    });
+    expect(taskRuntime.ensureInputs).toEqual([]);
+    expect(reviewRuntime.turnText).toBe("Review the candidate.");
+    expect(reviewRuntime.closed[0]).toMatchObject({
+      discardPersistentState: true,
+      reason: "Striker review turn complete",
+    });
+  });
+
+  it("rejects reviewer output that is not one strict result", async () => {
+    const reviewRuntime = new FakeRuntime();
+    reviewRuntime.output = "Passed.";
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      reviewRuntime,
+      runtime: new FakeRuntime(),
+    });
+
+    await expect(
+      runner.runReviewInNewSession({ instructions: "Review." }),
+    ).rejects.toThrow("strict JSON object");
+    expect(reviewRuntime.closed[0]).toMatchObject({
+      discardPersistentState: true,
+    });
+  });
+});
+
 describe("acpx recovered task sessions", () => {
   it("rejects a replacement backend session before starting its turn", async () => {
     const runtime = new FakeRuntime();

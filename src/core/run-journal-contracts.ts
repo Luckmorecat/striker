@@ -2,10 +2,12 @@ import type {
   AgentSession,
   GitState,
   ImplementationTask,
+  TaskCompletionEvidence,
   TaskIdentity,
   TaskSourceReference,
   VerificationResult,
 } from "./execution-contracts.js";
+import type { ReviewResult } from "./review-contracts.js";
 
 export type RunStatus =
   | "created"
@@ -22,6 +24,8 @@ export type AttentionReason =
   | "review_evidence_missing"
   | "run_initialization_interrupted"
   | "session_resume_failed"
+  | "standards_repair_interrupted"
+  | "standards_review_interrupted"
   | "verification_failed";
 
 export interface RunAttention {
@@ -59,7 +63,29 @@ export interface RunSnapshot {
   readonly runId: string;
   readonly session: AgentSession | null;
   readonly status: RunStatus;
+  readonly standardsReview?: StandardsReviewState | null;
   readonly task: ImplementationTask | null;
+}
+
+export interface StandardsReviewState {
+  readonly attempt: number;
+  readonly changedPaths: readonly string[];
+  readonly completion: TaskCompletionEvidence;
+  readonly result: ReviewResult | null;
+  readonly resultCommit: string;
+  readonly repairOutput: string | null;
+  readonly reviewSession: AgentSession | null;
+  readonly stage:
+    | "changes_required"
+    | "interrupted"
+    | "passed"
+    | "repaired"
+    | "repair_attention"
+    | "repair_interrupted"
+    | "repairing"
+    | "reviewing";
+  readonly startCommit: string;
+  readonly verification: VerificationResult;
 }
 
 export type RunJournalEvent =
@@ -101,6 +127,7 @@ export type RunJournalEvent =
     }
   | {
       readonly attempt: number;
+      readonly certification: "legacy" | "standards_review";
       readonly changedPaths: readonly string[];
       readonly completedAt: string;
       readonly resultCommit: string;
@@ -110,6 +137,61 @@ export type RunJournalEvent =
       readonly session: AgentSession;
       readonly task: TaskIdentity;
       readonly verification: VerificationResult;
+    }
+  | {
+      readonly attempt: number;
+      readonly changedPaths: readonly string[];
+      readonly completion: TaskCompletionEvidence;
+      readonly resultCommit: string;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly startCommit: string;
+      readonly task: TaskIdentity;
+      readonly type: "standards_review_started";
+      readonly verification: VerificationResult;
+    }
+  | {
+      readonly result: ReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "standards_review_completed";
+    }
+  | {
+      readonly attempt: number;
+      readonly attention: RunAttention;
+      readonly changedPaths: readonly string[];
+      readonly completion: TaskCompletionEvidence;
+      readonly resultCommit: string;
+      readonly runId: string;
+      readonly session: AgentSession | null;
+      readonly startCommit: string;
+      readonly task: TaskIdentity;
+      readonly type: "standards_review_interrupted";
+      readonly verification: VerificationResult;
+    }
+  | {
+      readonly result: ReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "standards_repair_started";
+    }
+  | {
+      readonly attention: RunAttention;
+      readonly result: ReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "standards_repair_interrupted";
+    }
+  | {
+      readonly output: string;
+      readonly result: ReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "standards_repair_completed";
     }
   | {
       readonly type: "run_needs_attention";
