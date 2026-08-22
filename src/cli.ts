@@ -17,8 +17,10 @@ import { loadProjectConfig } from "./config/project-config.js";
 import { AdapterRegistry } from "./core/adapter-registry.js";
 import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
 import { Dispatcher } from "./core/dispatcher.js";
+import { PlanQueries } from "./core/plan-queries.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
 import { GitCliRepository } from "./infrastructure/git-cli.js";
+import { FilePlanLogReader } from "./infrastructure/plan-projections.js";
 import { ShellVerifier } from "./infrastructure/shell-verifier.js";
 import { LocalPermissionConfig } from "./permissions/local-permission-config.js";
 import { createAcpxAgentRunner } from "./runner/acpx-runner.js";
@@ -111,6 +113,30 @@ async function dispatchRun(
   });
 }
 
+async function openPlanQueries(source: string) {
+  const root = await git.resolveRoot(cwd);
+  const stateRoot = await git.resolvePrivatePath(root, "striker");
+  const plan = await parseStrikerPlan(path.resolve(cwd, source));
+  const definition = {
+    assumptions: Object.entries(plan.manifest.assumptions).map(
+      ([id, value]) => ({ id, statement: value.statement }),
+    ),
+    defaults: Object.entries(plan.manifest.defaults).map(([id, value]) => ({
+      id,
+      statement: value.statement,
+    })),
+    planId: plan.identity,
+    tasks: plan.tasks.map((task) => task.identity),
+  };
+  return {
+    definition,
+    queries: new PlanQueries(
+      new FileRunJournal(stateRoot),
+      new FilePlanLogReader(stateRoot),
+    ),
+  };
+}
+
 async function readAnswer(file: string | undefined): Promise<string> {
   if (file !== undefined) return readFile(path.resolve(cwd, file), "utf8");
   let answer = "";
@@ -122,6 +148,16 @@ process.exitCode = await runCli(process.argv.slice(2), {
   answerReader: { read: readAnswer },
   cwd,
   permissionConfig,
+  planQueryHandler: {
+    log: async (source) => {
+      const { definition, queries } = await openPlanQueries(source);
+      return queries.log(definition.planId);
+    },
+    status: async (source) => {
+      const { definition, queries } = await openPlanQueries(source);
+      return queries.status(definition);
+    },
+  },
   planValidator: {
     validate: async (source) => {
       const plan = await parseStrikerPlan(path.resolve(cwd, source));

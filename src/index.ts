@@ -1,5 +1,6 @@
 export { AdapterRegistry } from "./core/adapter-registry.js";
 export { Dispatcher } from "./core/dispatcher.js";
+export { PlanQueries } from "./core/plan-queries.js";
 export { agentHarnesses, approvalModes } from "./core/contracts.js";
 export {
   parseProjectConfig,
@@ -39,6 +40,15 @@ export type {
   RunCommandRequest,
   RunCommandResult,
   RecoveryCommandHandler,
+  PlanLedgerStatus,
+  PlanAttention,
+  PlanLogReader,
+  PlanQueryDefinition,
+  PlanQueryHandler,
+  PlanQueryLedgerDefinition,
+  PlanReviewStatus,
+  PlanStatus,
+  PlanTaskStatus,
   PlanValidationResult,
   PlanValidator,
   PermissionConfig,

@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, rmdir, unlink } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rmdir,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -6,6 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import type { DispatchRequest, RunJournalEvent } from "../core/contracts.js";
 import { FileRunJournal } from "./file-run-journal.js";
+import { FilePlanLogReader } from "./plan-projections.js";
 
 const task = {
   identity: { id: "tasks/01.md", revision: "revision-1" },
@@ -127,5 +135,20 @@ describe("plan projections", () => {
         .trim()
         .split("\n"),
     ).toHaveLength(6);
+  });
+
+  it("replaces a stale log before a query reads it", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "striker-query-repair-"));
+    const journal = new FileRunJournal(root);
+    await appendAttempt(journal);
+    await journal.append(completion);
+    const logPath = path.join(root, "plans/plan-1/log.md");
+    await writeFile(logPath, "stale\n");
+
+    await journal.load("plan-1");
+
+    await expect(new FilePlanLogReader(root).read("plan-1")).resolves.toContain(
+      "## Build task state",
+    );
   });
 });

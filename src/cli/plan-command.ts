@@ -1,10 +1,63 @@
 import type { Command } from "commander";
 
-import type { PlanValidator } from "../core/contracts.js";
+import type {
+  PlanQueryHandler,
+  PlanStatus,
+  PlanValidator,
+} from "../core/contracts.js";
 
 export interface PlanCommandDependencies {
+  readonly queryHandler?: PlanQueryHandler;
   readonly validator: PlanValidator;
   readonly writeOut: (text: string) => void;
+}
+
+function renderLedger(
+  label: string,
+  entries: PlanStatus["assumptions"],
+): readonly string[] {
+  return [
+    `${label}:`,
+    ...(entries.length === 0
+      ? ["- none"]
+      : entries.map(
+          (entry) => `- ${entry.id}: ${entry.state}: ${entry.statement}`,
+        )),
+  ];
+}
+
+function renderReviews(reviews: PlanStatus["reviews"]): readonly string[] {
+  return [
+    "Reviews:",
+    ...(reviews.length === 0
+      ? ["- none"]
+      : reviews.map(
+          (review) =>
+            `- ${review.task.id}@${review.task.revision}: standards ${review.standards}, plan ${review.plan}`,
+        )),
+  ];
+}
+
+function renderStatus(status: PlanStatus): string {
+  const lines = [
+    `Plan: ${status.planId}`,
+    `Status: ${status.status}`,
+    "Tasks:",
+    ...status.tasks.map(
+      (task) => `- ${task.id}@${task.revision}: ${task.state}`,
+    ),
+    `Active run: ${status.activeRun?.runId ?? "none"}`,
+    `Attempt: ${String(status.activeRun?.attempt ?? "none")}`,
+    `Attention: ${
+      status.attention === null
+        ? "none"
+        : `${status.attention.reason}: ${status.attention.detail}`
+    }`,
+    ...renderReviews(status.reviews),
+    ...renderLedger("Assumptions", status.assumptions),
+    ...renderLedger("Defaults", status.defaults),
+  ];
+  return `${lines.join("\n")}\n`;
 }
 
 export function addPlanCommand(
@@ -22,5 +75,21 @@ export function addPlanCommand(
       dependencies.writeOut(
         `Valid Striker plan: ${String(result.taskCount)} ${noun}\n`,
       );
+    });
+  if (dependencies.queryHandler === undefined) return;
+  const queryHandler = dependencies.queryHandler;
+  plan
+    .command("status")
+    .description("Report persistent plan state")
+    .argument("<source>", "plan directory")
+    .action(async (source: string) => {
+      dependencies.writeOut(renderStatus(await queryHandler.status(source)));
+    });
+  plan
+    .command("log")
+    .description("Print persistent plan history")
+    .argument("<source>", "plan directory")
+    .action(async (source: string) => {
+      dependencies.writeOut(await queryHandler.log(source));
     });
 }

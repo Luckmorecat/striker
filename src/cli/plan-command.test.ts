@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { parseStrikerPlan } from "../adapters/striker-plan/plan-parser.js";
+import type { PlanStatus } from "../core/contracts.js";
 import { runCli } from "./program.js";
 
 async function validPlan(): Promise<string> {
@@ -86,5 +87,86 @@ describe("striker plan validate", () => {
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
     expect(result.stderr).toContain("Invalid input: expected 2");
+  });
+});
+
+const status: PlanStatus = {
+  activeRun: { attempt: 2, runId: "run-1" },
+  assumptions: [
+    { id: "A1", state: "recorded", statement: "The CLI owns commands." },
+  ],
+  attention: {
+    detail: "Verification failed.",
+    reason: "verification_failed",
+  },
+  defaults: [{ id: "D1", state: "recorded", statement: "Use text output." }],
+  planId: "plan-1",
+  reviews: [
+    {
+      plan: "passed",
+      standards: "passed",
+      task: { id: "tasks/01.md", revision: "revision-1" },
+    },
+  ],
+  status: "needs_attention",
+  tasks: [
+    { id: "tasks/01.md", revision: "revision-1", state: "completed" },
+    { id: "tasks/02.md", revision: "revision-2", state: "active" },
+  ],
+};
+
+async function queryPlan(command: "log" | "status") {
+  let stdout = "";
+  let stderr = "";
+  const sources: string[] = [];
+  const exitCode = await runCli(["plan", command, "plans/current"], {
+    cwd: "/repo",
+    permissionConfig: {
+      read: () => Promise.resolve("attended"),
+      write: () => Promise.resolve(),
+    },
+    planQueryHandler: {
+      log: (source) => {
+        sources.push(source);
+        return Promise.resolve("# Plan log\n\n## First task\n");
+      },
+      status: (source) => {
+        sources.push(source);
+        return Promise.resolve(status);
+      },
+    },
+    planValidator: { validate: () => Promise.resolve({ taskCount: 0 }) },
+    skillInstaller: {
+      install: () => Promise.resolve({ changed: false }),
+      supportedHarnesses: [],
+    },
+    stderr: { write: (text) => (stderr += text) },
+    stdout: { write: (text) => (stdout += text) },
+  });
+  return { exitCode, sources, stderr, stdout };
+}
+
+describe("striker plan history queries", () => {
+  it("renders persistent task and ledger status", async () => {
+    const result = await queryPlan("status");
+
+    expect(result).toEqual({
+      exitCode: 0,
+      sources: ["plans/current"],
+      stderr: "",
+      stdout:
+        "Plan: plan-1\nStatus: needs_attention\nTasks:\n- tasks/01.md@revision-1: completed\n- tasks/02.md@revision-2: active\nActive run: run-1\nAttempt: 2\nAttention: verification_failed: Verification failed.\nReviews:\n- tasks/01.md@revision-1: standards passed, plan passed\nAssumptions:\n- A1: recorded: The CLI owns commands.\nDefaults:\n- D1: recorded: Use text output.\n",
+    });
+  });
+
+  it("prints the generated chronological log unchanged", async () => {
+    const result = await queryPlan("log");
+
+    expect(result).toEqual({
+      exitCode: 0,
+      sources: ["plans/current"],
+      stderr: "",
+      stdout: "# Plan log\n\n## First task\n",
+    });
   });
 });

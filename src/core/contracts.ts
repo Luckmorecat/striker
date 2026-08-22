@@ -1,4 +1,8 @@
-import type { AttentionReason, RunAttention } from "./run-journal-contracts.js";
+import type {
+  AttentionReason,
+  RunAttention,
+  RunStatus,
+} from "./run-journal-contracts.js";
 import type {
   AgentSession,
   GitState,
@@ -131,6 +135,60 @@ export interface PlanValidationResult {
 
 export interface PlanValidator {
   validate(source: string): Promise<PlanValidationResult>;
+}
+
+export interface PlanQueryDefinition {
+  readonly assumptions: readonly PlanQueryLedgerDefinition[];
+  readonly defaults: readonly PlanQueryLedgerDefinition[];
+  readonly planId: string;
+  readonly tasks: readonly TaskIdentity[];
+}
+
+export interface PlanQueryLedgerDefinition {
+  readonly id: string;
+  readonly statement: string;
+}
+
+export interface PlanLogReader {
+  read(planId: string | null): Promise<string>;
+}
+
+export interface PlanQueryHandler {
+  log(source: string): Promise<string>;
+  status(source: string): Promise<PlanStatus>;
+}
+
+export interface PlanStatus {
+  readonly activeRun: {
+    readonly attempt: number | null;
+    readonly runId: string;
+  } | null;
+  readonly assumptions: readonly PlanLedgerStatus[];
+  readonly attention: PlanAttention | null;
+  readonly defaults: readonly PlanLedgerStatus[];
+  readonly planId: string;
+  readonly reviews: readonly PlanReviewStatus[];
+  readonly status: RunStatus | "not_started";
+  readonly tasks: readonly PlanTaskStatus[];
+}
+
+export interface PlanLedgerStatus extends PlanQueryLedgerDefinition {
+  readonly state: "recorded";
+}
+
+export interface PlanTaskStatus extends TaskIdentity {
+  readonly state: "active" | "completed" | "pending";
+}
+
+export interface PlanAttention {
+  readonly detail: string;
+  readonly reason: AttentionReason | "completed_task_changed";
+}
+
+export interface PlanReviewStatus {
+  readonly plan: "passed";
+  readonly standards: "passed";
+  readonly task: TaskIdentity;
 }
 
 export interface PublicSkillInstallRequest {

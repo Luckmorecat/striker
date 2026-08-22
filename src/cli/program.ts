@@ -2,6 +2,7 @@ import { Command, CommanderError } from "commander";
 
 import type {
   PlanValidator,
+  PlanQueryHandler,
   PermissionConfig,
   PublicSkillInstaller,
   RecoveryCommandHandler,
@@ -26,6 +27,7 @@ export interface CliDependencies {
   readonly answerReader?: AnswerReader;
   readonly cwd: string;
   readonly permissionConfig: PermissionConfig;
+  readonly planQueryHandler?: PlanQueryHandler;
   readonly planValidator: PlanValidator;
   readonly runHandler?: RunCommandHandler;
   readonly recoveryHandler?: RecoveryCommandHandler;
@@ -49,6 +51,9 @@ export function createProgram(dependencies: CliDependencies): Command {
     })
     .exitOverride();
   addPlanCommand(program, {
+    ...(dependencies.planQueryHandler === undefined
+      ? {}
+      : { queryHandler: dependencies.planQueryHandler }),
     validator: dependencies.planValidator,
     writeOut: (text) => {
       dependencies.stdout.write(text);

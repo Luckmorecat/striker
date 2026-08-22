@@ -1,10 +1,33 @@
-import { chmod, open, rename } from "node:fs/promises";
+import { chmod, open, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
-import type { RunJournalEvent, RunSnapshot } from "../core/contracts.js";
+import type {
+  PlanLogReader,
+  RunJournalEvent,
+  RunSnapshot,
+} from "../core/contracts.js";
 import { runJournalSchemaId } from "./run-journal-schema.js";
 
 export const taskStateSchemaId = "striker.plan-task-state.v1";
+
+export class FilePlanLogReader implements PlanLogReader {
+  constructor(private readonly stateRoot: string) {}
+
+  read(planId: string | null): Promise<string> {
+    if (planId === null) return Promise.resolve(humanLog([]));
+    if (
+      !/^[A-Za-z0-9._-]+$/.test(planId) ||
+      planId === "." ||
+      planId === ".."
+    ) {
+      throw new Error("Invalid plan identity");
+    }
+    return readFile(
+      path.join(this.stateRoot, "plans", planId, "log.md"),
+      "utf8",
+    );
+  }
+}
 
 type CompletionEvent = Extract<
   RunJournalEvent,

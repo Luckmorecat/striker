@@ -228,6 +228,22 @@ pnpm exec striker retry
 pnpm exec striker discard --force
 ```
 
+Inspect one plan's retained state and chronological completion log with:
+
+```sh
+pnpm exec striker plan status path/to/plan
+pnpm exec striker plan log path/to/plan
+```
+
+Both commands accept absolute paths or paths relative to the current directory.
+They validate the immutable plan to derive its identity, then replay its
+Git-private events before reading any projection. `plan status` lists every task
+revision and state, the active run and attempt, attention, recorded reviews, and
+the assumption and default states. A plan without events reports `not_started`.
+`plan log` prints an empty `# Plan log` view in that case. Neither command
+creates authoritative events. `striker status` remains limited to the active
+checkout run.
+
 `resume` continues an interrupted session or sends a repair request back to a
 paused session. `answer` continues that same session with developer input.
 `retry` records the failed attempt and starts the incomplete task in a fresh
