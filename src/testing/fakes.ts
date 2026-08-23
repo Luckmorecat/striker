@@ -152,10 +152,37 @@ export class FakeAgentRunner implements AgentRunner {
     sessionStarted?: (session: AgentSession) => Promise<void>,
   ): Promise<ReviewTurn> {
     this.reviewRequests.push(request);
-    const turn = this.#reviewTurns.shift() ?? passedStandardsReview(request);
+    const turn =
+      this.#reviewTurns.shift() ??
+      (request.instructions.includes("# Independent plan-compliance review")
+        ? passedPlanComplianceReview(request)
+        : passedStandardsReview(request));
     await sessionStarted?.(turn.session);
     return turn;
   }
+}
+
+export function passedPlanComplianceReview(request: ReviewRequest): ReviewTurn {
+  const startCommit = /"startCommit": "([^"]+)"/u.exec(
+    request.instructions,
+  )?.[1];
+  const resultCommit = /"resultCommit": "([^"]+)"/u.exec(
+    request.instructions,
+  )?.[1];
+  if (startCommit === undefined || resultCommit === undefined) {
+    throw new Error("Fake plan review request is missing candidate commits");
+  }
+  return {
+    result: {
+      findings: [],
+      kind: "plan_compliance",
+      resultCommit,
+      startCommit,
+      verdict: "passed",
+    },
+    session: { id: "plan-compliance-review" },
+    status: "returned",
+  };
 }
 
 export function passedStandardsReview(request: ReviewRequest): ReviewTurn {
@@ -186,6 +213,19 @@ export async function runPassingStandardsReview(
   sessionStarted?: (session: AgentSession) => Promise<void>,
 ): Promise<ReviewTurn> {
   const turn = passedStandardsReview(request);
+  await sessionStarted?.(turn.session);
+  return turn;
+}
+
+export async function runPassingReview(
+  request: ReviewRequest,
+  sessionStarted?: (session: AgentSession) => Promise<void>,
+): Promise<ReviewTurn> {
+  const turn = request.instructions.includes(
+    "# Independent plan-compliance review",
+  )
+    ? passedPlanComplianceReview(request)
+    : passedStandardsReview(request);
   await sessionStarted?.(turn.session);
   return turn;
 }

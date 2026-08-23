@@ -14,10 +14,7 @@ import {
   type StrikerPlanTask,
 } from "./plan-parser.js";
 import { loadImplementorWorkflow } from "./workflow-loader.js";
-import {
-  hasReviewEvidence,
-  reviewEvidenceInstructions,
-} from "./review-evidence.js";
+import { parseImplementationResult } from "../../runner/implementation-result.js";
 
 interface AdapterOptions {
   readonly projectRoot: string;
@@ -89,18 +86,21 @@ class StrikerPlanSource implements TaskSource {
         status: "needs_attention",
       });
     }
-    if (!hasReviewEvidence(agentOutput)) {
+    let result;
+    try {
+      result = parseImplementationResult(agentOutput);
+    } catch (error) {
       return Promise.resolve({
         attention: {
-          detail: "The implementor did not report both required review passes.",
-          reason: "review_evidence_missing",
+          detail: error instanceof Error ? error.message : String(error),
+          reason: "completion_evidence_missing",
         },
         status: "needs_attention",
       });
     }
     return Promise.resolve({
       evidence: {
-        summary: `${task.title} passed Git, reviews, and verification evidence`,
+        summary: result.summary,
         verification: execution.verification,
       },
       status: "completed",
@@ -115,7 +115,7 @@ class StrikerPlanSource implements TaskSource {
         affectedPaths: task.affectedPaths,
         cwd: this.projectRoot,
         verifyCommand: task.verifyCommand,
-        workflowInstructions: `${this.workflow}\n\n${reviewEvidenceInstructions}`,
+        workflowInstructions: this.workflow,
       },
     };
   }

@@ -55,6 +55,11 @@ export interface TaskSourceConflict {
   readonly current: TaskIdentity | null;
 }
 
+export interface ImplementationResult {
+  readonly kind: "implementation";
+  readonly summary: string;
+}
+
 export interface TaskSourceAdapter {
   readonly type: string;
   open(location: string): Promise<TaskSource>;
@@ -235,6 +240,7 @@ export interface RecoveryCommandHandler {
 export type {
   AttentionReason,
   DispatchRequest,
+  PlanComplianceReviewState,
   RunAttention,
   RunJournal,
   RunJournalEvent,
@@ -245,10 +251,12 @@ export type {
   StandardsReviewState,
 } from "./run-journal-contracts.js";
 export type {
+  PlanComplianceReviewResult,
   ReviewFinding,
   ReviewRequest,
   ReviewResult,
   ReviewTurn,
+  StandardsReviewResult,
 } from "./review-contracts.js";
 
 export type DispatchResult =

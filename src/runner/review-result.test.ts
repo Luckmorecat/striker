@@ -15,6 +15,12 @@ describe("parseReviewResult", () => {
     expect(parseReviewResult(JSON.stringify(passed))).toEqual(passed);
   });
 
+  it("accepts one strict plan-compliance result", () => {
+    const planResult = { ...passed, kind: "plan_compliance" } as const;
+
+    expect(parseReviewResult(JSON.stringify(planResult))).toEqual(planResult);
+  });
+
   it("rejects prose or a code fence around the result", () => {
     expect(() =>
       parseReviewResult(`Review complete.\n${JSON.stringify(passed)}`),

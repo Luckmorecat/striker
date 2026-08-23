@@ -8,30 +8,50 @@ import type {
 } from "../core/contracts.js";
 import { transitionRun } from "../core/run-state.js";
 
-export type ReviewEvent = Extract<
+export type PlanReviewEvent = Extract<
   RunJournalEvent,
   {
     type:
-      | "standards_repair_interrupted"
-      | "standards_repair_completed"
-      | "standards_repair_started"
-      | "standards_review_completed"
-      | "standards_review_interrupted"
-      | "standards_review_started";
+      | "plan_compliance_repair_completed"
+      | "plan_compliance_repair_interrupted"
+      | "plan_compliance_repair_started"
+      | "plan_compliance_review_completed"
+      | "plan_compliance_review_interrupted"
+      | "plan_compliance_review_started";
   }
 >;
 
-const eventTypes: readonly ReviewEvent["type"][] = [
-  "standards_repair_interrupted",
-  "standards_repair_completed",
-  "standards_repair_started",
-  "standards_review_completed",
-  "standards_review_interrupted",
-  "standards_review_started",
+const eventTypes: readonly PlanReviewEvent["type"][] = [
+  "plan_compliance_repair_completed",
+  "plan_compliance_repair_interrupted",
+  "plan_compliance_repair_started",
+  "plan_compliance_review_completed",
+  "plan_compliance_review_interrupted",
+  "plan_compliance_review_started",
 ];
 
-export function isReviewEvent(event: RunJournalEvent): event is ReviewEvent {
-  return eventTypes.includes(event.type as ReviewEvent["type"]);
+export function isPlanReviewEvent(
+  event: RunJournalEvent,
+): event is PlanReviewEvent {
+  return eventTypes.includes(event.type as PlanReviewEvent["type"]);
+}
+
+export function planReviewAfterAttention(
+  snapshot: RunSnapshot,
+): Exclude<RunSnapshot["planComplianceReview"], undefined> {
+  const review = snapshot.planComplianceReview;
+  return review?.stage === "repaired" || review?.stage === "repair_attention"
+    ? { ...review, stage: "repair_attention" }
+    : (review ?? null);
+}
+
+export function planReviewAfterRetry(
+  snapshot: RunSnapshot,
+): Exclude<RunSnapshot["planComplianceReview"], undefined> {
+  const review = snapshot.planComplianceReview;
+  return review?.result?.verdict === "changes_required"
+    ? { ...review, repairOutput: null, stage: "repair_attention" }
+    : null;
 }
 
 function sameTask(left: TaskIdentity, right: TaskIdentity): boolean {
@@ -44,27 +64,29 @@ function sameSession(left: AgentSession, right: AgentSession): boolean {
 
 function requireTask(snapshot: RunSnapshot, task: TaskIdentity): void {
   if (snapshot.task === null || !sameTask(snapshot.task.identity, task)) {
-    throw new Error("Striker review event contradicts its selected task");
+    throw new Error("Striker plan review contradicts its selected task");
   }
 }
 
 function startReview(
   snapshot: RunSnapshot,
-  event: Extract<ReviewEvent, { type: "standards_review_started" }>,
+  event: Extract<PlanReviewEvent, { type: "plan_compliance_review_started" }>,
 ): RunSnapshot {
+  const standards = snapshot.standardsReview;
   if (
     snapshot.session === null ||
     snapshot.attempt !== event.attempt ||
     snapshot.before?.head !== event.startCommit ||
+    standards?.stage !== "passed" ||
+    !isDeepStrictEqual(standards.result, event.standards) ||
     !["running", "needs_attention"].includes(snapshot.status)
   ) {
-    throw new Error("Standards review has invalid candidate evidence");
+    throw new Error("Plan-compliance review has invalid candidate evidence");
   }
   return {
     ...snapshot,
     attention: null,
-    planComplianceReview: null,
-    standardsReview: {
+    planComplianceReview: {
       attempt: event.attempt,
       changedPaths: event.changedPaths,
       completion: event.completion,
@@ -73,6 +95,7 @@ function startReview(
       repairOutput: null,
       reviewSession: event.session,
       stage: "reviewing",
+      standards: event.standards,
       startCommit: event.startCommit,
       verification: event.verification,
     },
@@ -85,9 +108,9 @@ function startReview(
 
 function completeReview(
   snapshot: RunSnapshot,
-  event: Extract<ReviewEvent, { type: "standards_review_completed" }>,
+  event: Extract<PlanReviewEvent, { type: "plan_compliance_review_completed" }>,
 ): RunSnapshot {
-  const review = snapshot.standardsReview;
+  const review = snapshot.planComplianceReview;
   if (
     review?.stage !== "reviewing" ||
     review.reviewSession === null ||
@@ -95,11 +118,11 @@ function completeReview(
     review.startCommit !== event.result.startCommit ||
     review.resultCommit !== event.result.resultCommit
   ) {
-    throw new Error("Standards review result contradicts its candidate");
+    throw new Error("Plan-compliance result contradicts its candidate");
   }
   return {
     ...snapshot,
-    standardsReview: {
+    planComplianceReview: {
       ...review,
       result: event.result,
       stage: event.result.verdict === "passed" ? "passed" : "changes_required",
@@ -109,23 +132,28 @@ function completeReview(
 
 function interruptReview(
   snapshot: RunSnapshot,
-  event: Extract<ReviewEvent, { type: "standards_review_interrupted" }>,
+  event: Extract<
+    PlanReviewEvent,
+    { type: "plan_compliance_review_interrupted" }
+  >,
 ): RunSnapshot {
-  const review = snapshot.standardsReview;
+  const standards = snapshot.standardsReview;
+  const review = snapshot.planComplianceReview;
   if (
     snapshot.status !== "running" ||
+    standards?.stage !== "passed" ||
+    !isDeepStrictEqual(standards.result, event.standards) ||
     (review?.stage === "reviewing" &&
       (event.session === null ||
         review.reviewSession === null ||
         !sameSession(review.reviewSession, event.session)))
   ) {
-    throw new Error("Standards review interruption has invalid state");
+    throw new Error("Plan-compliance interruption has invalid state");
   }
   return {
     ...snapshot,
     attention: event.attention,
-    planComplianceReview: null,
-    standardsReview: {
+    planComplianceReview: {
       attempt: event.attempt,
       changedPaths: event.changedPaths,
       completion: event.completion,
@@ -134,6 +162,7 @@ function interruptReview(
       repairOutput: null,
       reviewSession: event.session,
       stage: "interrupted",
+      standards: event.standards,
       startCommit: event.startCommit,
       verification: event.verification,
     },
@@ -143,23 +172,22 @@ function interruptReview(
 
 function startRepair(
   snapshot: RunSnapshot,
-  event: Extract<ReviewEvent, { type: "standards_repair_started" }>,
+  event: Extract<PlanReviewEvent, { type: "plan_compliance_repair_started" }>,
 ): RunSnapshot {
-  const review = snapshot.standardsReview;
+  const review = snapshot.planComplianceReview;
   if (
     snapshot.session === null ||
     !sameSession(snapshot.session, event.session) ||
-    review === null ||
-    review === undefined ||
+    review == null ||
     !["changes_required", "repair_interrupted"].includes(review.stage) ||
     !isDeepStrictEqual(review.result, event.result)
   ) {
-    throw new Error("Standards repair has invalid review evidence");
+    throw new Error("Plan-compliance repair has invalid review evidence");
   }
   return {
     ...snapshot,
     attention: null,
-    standardsReview: { ...review, repairOutput: null, stage: "repairing" },
+    planComplianceReview: { ...review, repairOutput: null, stage: "repairing" },
     status:
       snapshot.status === "needs_attention"
         ? transitionRun(snapshot.status, "resume")
@@ -169,9 +197,9 @@ function startRepair(
 
 function completeRepair(
   snapshot: RunSnapshot,
-  event: Extract<ReviewEvent, { type: "standards_repair_completed" }>,
+  event: Extract<PlanReviewEvent, { type: "plan_compliance_repair_completed" }>,
 ): RunSnapshot {
-  const review = snapshot.standardsReview;
+  const review = snapshot.planComplianceReview;
   if (
     snapshot.status !== "running" ||
     review?.stage !== "repairing" ||
@@ -179,11 +207,11 @@ function completeRepair(
     !sameSession(snapshot.session, event.session) ||
     !isDeepStrictEqual(review.result, event.result)
   ) {
-    throw new Error("Standards repair result has invalid state");
+    throw new Error("Plan-compliance repair result has invalid state");
   }
   return {
     ...snapshot,
-    standardsReview: {
+    planComplianceReview: {
       ...review,
       repairOutput: event.output,
       stage: "repaired",
@@ -193,9 +221,12 @@ function completeRepair(
 
 function interruptRepair(
   snapshot: RunSnapshot,
-  event: Extract<ReviewEvent, { type: "standards_repair_interrupted" }>,
+  event: Extract<
+    PlanReviewEvent,
+    { type: "plan_compliance_repair_interrupted" }
+  >,
 ): RunSnapshot {
-  const review = snapshot.standardsReview;
+  const review = snapshot.planComplianceReview;
   if (
     snapshot.status !== "running" ||
     review?.stage !== "repairing" ||
@@ -203,33 +234,33 @@ function interruptRepair(
     !sameSession(snapshot.session, event.session) ||
     !isDeepStrictEqual(review.result, event.result)
   ) {
-    throw new Error("Standards repair interruption has invalid state");
+    throw new Error("Plan-compliance repair interruption has invalid state");
   }
   return {
     ...snapshot,
     attention: event.attention,
-    standardsReview: { ...review, stage: "repair_interrupted" },
+    planComplianceReview: { ...review, stage: "repair_interrupted" },
     status: transitionRun(snapshot.status, "request_attention"),
   };
 }
 
-export function replayReviewEvent(
+export function replayPlanReviewEvent(
   snapshot: RunSnapshot,
-  event: ReviewEvent,
+  event: PlanReviewEvent,
 ): RunSnapshot {
   requireTask(snapshot, event.task);
   switch (event.type) {
-    case "standards_review_started":
+    case "plan_compliance_review_started":
       return startReview(snapshot, event);
-    case "standards_review_completed":
+    case "plan_compliance_review_completed":
       return completeReview(snapshot, event);
-    case "standards_review_interrupted":
+    case "plan_compliance_review_interrupted":
       return interruptReview(snapshot, event);
-    case "standards_repair_started":
+    case "plan_compliance_repair_started":
       return startRepair(snapshot, event);
-    case "standards_repair_interrupted":
-      return interruptRepair(snapshot, event);
-    case "standards_repair_completed":
+    case "plan_compliance_repair_completed":
       return completeRepair(snapshot, event);
+    case "plan_compliance_repair_interrupted":
+      return interruptRepair(snapshot, event);
   }
 }

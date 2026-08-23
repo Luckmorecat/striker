@@ -7,7 +7,7 @@ import type {
   TaskSourceReference,
   VerificationResult,
 } from "./execution-contracts.js";
-import type { ReviewResult } from "./review-contracts.js";
+import type { StandardsReviewResult } from "./review-contracts.js";
 
 export type RunStatus =
   | "created"
@@ -21,6 +21,8 @@ export type AttentionReason =
   | "completion_evidence_missing"
   | "commit_evidence_missing"
   | "dirty_final_state"
+  | "plan_compliance_repair_interrupted"
+  | "plan_compliance_review_interrupted"
   | "review_evidence_missing"
   | "run_initialization_interrupted"
   | "session_resume_failed"
@@ -59,6 +61,7 @@ export interface RunSnapshot {
   readonly baselineRecorded?: boolean;
   readonly before?: GitState | null;
   readonly planId: string;
+  readonly planComplianceReview?: PlanComplianceReviewState | null;
   readonly request: DispatchRequest;
   readonly runId: string;
   readonly session: AgentSession | null;
@@ -67,23 +70,40 @@ export interface RunSnapshot {
   readonly task: ImplementationTask | null;
 }
 
+export interface PlanComplianceReviewState {
+  readonly attempt: number;
+  readonly changedPaths: readonly string[];
+  readonly completion: TaskCompletionEvidence;
+  readonly result:
+    import("./review-contracts.js").PlanComplianceReviewResult | null;
+  readonly resultCommit: string;
+  readonly repairOutput: string | null;
+  readonly reviewSession: AgentSession | null;
+  readonly stage: ReviewStage;
+  readonly standards: import("./review-contracts.js").StandardsReviewResult;
+  readonly startCommit: string;
+  readonly verification: VerificationResult;
+}
+
+export type ReviewStage =
+  | "changes_required"
+  | "interrupted"
+  | "passed"
+  | "repaired"
+  | "repair_attention"
+  | "repair_interrupted"
+  | "repairing"
+  | "reviewing";
+
 export interface StandardsReviewState {
   readonly attempt: number;
   readonly changedPaths: readonly string[];
   readonly completion: TaskCompletionEvidence;
-  readonly result: ReviewResult | null;
+  readonly result: StandardsReviewResult | null;
   readonly resultCommit: string;
   readonly repairOutput: string | null;
   readonly reviewSession: AgentSession | null;
-  readonly stage:
-    | "changes_required"
-    | "interrupted"
-    | "passed"
-    | "repaired"
-    | "repair_attention"
-    | "repair_interrupted"
-    | "repairing"
-    | "reviewing";
+  readonly stage: ReviewStage;
   readonly startCommit: string;
   readonly verification: VerificationResult;
 }
@@ -127,7 +147,8 @@ export type RunJournalEvent =
     }
   | {
       readonly attempt: number;
-      readonly certification: "legacy" | "standards_review";
+      readonly certification:
+        "independent_reviews" | "legacy" | "standards_review";
       readonly changedPaths: readonly string[];
       readonly completedAt: string;
       readonly resultCommit: string;
@@ -151,7 +172,64 @@ export type RunJournalEvent =
       readonly verification: VerificationResult;
     }
   | {
-      readonly result: ReviewResult;
+      readonly attempt: number;
+      readonly changedPaths: readonly string[];
+      readonly completion: TaskCompletionEvidence;
+      readonly resultCommit: string;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly standards: import("./review-contracts.js").StandardsReviewResult;
+      readonly startCommit: string;
+      readonly task: TaskIdentity;
+      readonly type: "plan_compliance_review_started";
+      readonly verification: VerificationResult;
+    }
+  | {
+      readonly result: import("./review-contracts.js").PlanComplianceReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "plan_compliance_review_completed";
+    }
+  | {
+      readonly attempt: number;
+      readonly attention: RunAttention;
+      readonly changedPaths: readonly string[];
+      readonly completion: TaskCompletionEvidence;
+      readonly resultCommit: string;
+      readonly runId: string;
+      readonly session: AgentSession | null;
+      readonly standards: import("./review-contracts.js").StandardsReviewResult;
+      readonly startCommit: string;
+      readonly task: TaskIdentity;
+      readonly type: "plan_compliance_review_interrupted";
+      readonly verification: VerificationResult;
+    }
+  | {
+      readonly result: import("./review-contracts.js").PlanComplianceReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "plan_compliance_repair_started";
+    }
+  | {
+      readonly attention: RunAttention;
+      readonly result: import("./review-contracts.js").PlanComplianceReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "plan_compliance_repair_interrupted";
+    }
+  | {
+      readonly output: string;
+      readonly result: import("./review-contracts.js").PlanComplianceReviewResult;
+      readonly runId: string;
+      readonly session: AgentSession;
+      readonly task: TaskIdentity;
+      readonly type: "plan_compliance_repair_completed";
+    }
+  | {
+      readonly result: StandardsReviewResult;
       readonly runId: string;
       readonly session: AgentSession;
       readonly task: TaskIdentity;
@@ -171,7 +249,7 @@ export type RunJournalEvent =
       readonly verification: VerificationResult;
     }
   | {
-      readonly result: ReviewResult;
+      readonly result: StandardsReviewResult;
       readonly runId: string;
       readonly session: AgentSession;
       readonly task: TaskIdentity;
@@ -179,7 +257,7 @@ export type RunJournalEvent =
     }
   | {
       readonly attention: RunAttention;
-      readonly result: ReviewResult;
+      readonly result: StandardsReviewResult;
       readonly runId: string;
       readonly session: AgentSession;
       readonly task: TaskIdentity;
@@ -187,7 +265,7 @@ export type RunJournalEvent =
     }
   | {
       readonly output: string;
-      readonly result: ReviewResult;
+      readonly result: StandardsReviewResult;
       readonly runId: string;
       readonly session: AgentSession;
       readonly task: TaskIdentity;

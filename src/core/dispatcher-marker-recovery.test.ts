@@ -12,7 +12,7 @@ import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
 import {
   passedStandardsReviewEvents,
-  runPassingStandardsReview,
+  runPassingReview,
 } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
@@ -115,7 +115,6 @@ async function planFixture(options: PlanFixtureOptions) {
       "---\nname: striker-implementor\ndescription: Implement one task.\n---\n\nWorkflow.\n",
     ),
     writeFile(path.join(workflowRoot, "references/tdd.md"), "TDD.\n"),
-    writeFile(path.join(workflowRoot, "references/review.md"), "Review.\n"),
   ]);
   if (options.initializeGit === true) {
     await git(root, "init", "-q");
@@ -361,7 +360,7 @@ describe("Dispatcher immutable multi-task plans", () => {
       resumeSession: () => {
         throw new Error("Two-task dispatch must not resume a session");
       },
-      runReviewInNewSession: runPassingStandardsReview,
+      runReviewInNewSession: runPassingReview,
       runInNewSession: async (_request, sessionStarted) => {
         sessionCount += 1;
         const session = { id: `session-${String(sessionCount)}` };
@@ -376,8 +375,7 @@ describe("Dispatcher immutable multi-task plans", () => {
           `complete task ${String(sessionCount)}`,
         );
         return {
-          output:
-            'done\nSTRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
+          output: `{"kind":"implementation","summary":"Completed task ${String(sessionCount)}."}`,
           session,
           status: "returned",
         };

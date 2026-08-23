@@ -15,7 +15,7 @@ import { Dispatcher } from "../core/dispatcher.js";
 import { RunOperations } from "../core/run-operations.js";
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { GitCliRepository } from "../infrastructure/git-cli.js";
-import { runPassingStandardsReview } from "../testing/fakes.js";
+import { runPassingReview } from "../testing/fakes.js";
 import { InMemoryTaskSourceAdapter } from "../testing/fakes.js";
 import { runCli } from "./program.js";
 
@@ -112,7 +112,7 @@ function retryRunner(
       resumeRequests.push({ instructions, session });
       throw new Error("Retry must start a fresh session");
     },
-    runReviewInNewSession: runPassingStandardsReview,
+    runReviewInNewSession: runPassingReview,
     runInNewSession: async (_request, sessionStarted) => {
       const session = { id: "runtime-new", resumeId: "provider-new" };
       await sessionStarted?.(session);

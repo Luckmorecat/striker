@@ -24,7 +24,6 @@ const requiredFiles = [
   "skills/striker-preparation/BRIEF-FORMAT.md",
   "skills/striker-preparation/SPEC-FORMAT.md",
   "skills/striker-implementor/SKILL.md",
-  "skills/striker-implementor/references/review.md",
   "skills/striker-implementor/references/tdd.md",
 ];
 

@@ -199,21 +199,21 @@ only when task changes preserve the initial patch and do not overlap its paths:
 pnpm exec striker run path/to/plan --allow-dirty
 ```
 
-After each task, Striker requires one descendant commit, an unchanged allowed
-dirty baseline, the exact verification result, and the implementor's existing
-review evidence. It then starts a fresh read-only standards reviewer for the
-exact start and candidate commits. The reviewer returns one strict JSON object
-with its verdict and file locations. Striker accepts findings only for the
-Git-derived changed paths.
+After each task, Striker requires one strict implementation-result JSON object,
+one descendant commit, an unchanged allowed dirty baseline, and the exact
+verification result. It then starts fresh read-only standards and
+plan-compliance reviewers for the exact start and candidate commits. The plan
+reviewer receives the task contract, immutable spine and map context, changed
+paths, verification, and the passed standards result. Each reviewer returns one
+strict JSON object. Striker accepts findings only for Git-derived changed paths.
 
-A blocking standards finding resumes the preserved implementation session with
-the typed findings. The implementor amends its one task commit, Striker reruns
-verification, and a new read-only reviewer checks the amended commit. Only a
-passed result can precede `task_completed`. The journal records the attempt,
-implementation and review sessions, candidate evidence, review results, repair
-starts, interruptions, and final completion before Striker selects another task.
-The implementation session reads plan context but never updates the plan
-directory.
+A blocking finding from either review resumes the preserved implementation
+session with the typed findings. The implementor amends its one task commit.
+Striker reruns verification, standards review, and plan-compliance review
+against the amended commit. Both passed results must match the final candidate
+before `task_completed`. The journal records each review and repair stage for
+recovery. The implementation session reads plan context but never updates the
+plan directory or reviews its own work.
 
 Striker keys one persistent event journal by the immutable plan identity under
 Git-private checkout storage. The journal records each run, task selection,

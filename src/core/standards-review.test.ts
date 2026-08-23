@@ -4,7 +4,7 @@ import { FakeAgentRunner, InMemoryRunJournal } from "../testing/fakes.js";
 import type {
   AgentRunner,
   AgentSession,
-  ReviewResult,
+  StandardsReviewResult,
   ReviewTurn,
   TaskExecutionEvidence,
 } from "./contracts.js";
@@ -49,7 +49,9 @@ const execution: TaskExecutionEvidence = {
   verification: { command: "pnpm check", exitCode: 0, output: "ok" },
 };
 
-function result(overrides: Partial<ReviewResult> = {}): ReviewResult {
+function result(
+  overrides: Partial<StandardsReviewResult> = {},
+): StandardsReviewResult {
   return {
     findings: [],
     kind: "standards",

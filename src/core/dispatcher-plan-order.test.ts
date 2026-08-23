@@ -5,10 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapter.js";
-import {
-  InMemoryRunJournal,
-  runPassingStandardsReview,
-} from "../testing/fakes.js";
+import { InMemoryRunJournal, runPassingReview } from "../testing/fakes.js";
 import { AdapterRegistry, Dispatcher } from "../index.js";
 import type {
   AgentRequest,
@@ -105,7 +102,6 @@ async function createOrderedPlan() {
       "---\nname: striker-implementor\ndescription: Implement one task.\n---\n\nworkflow",
     ),
     writeFile(path.join(workflowRoot, "references/tdd.md"), "tdd"),
-    writeFile(path.join(workflowRoot, "references/review.md"), "review"),
     writeFile(
       path.join(planRoot, "plan.json"),
       manifest(["tasks/01.md", "tasks/02.md"]),
@@ -127,7 +123,7 @@ class OrderedPlanRunner implements AgentRunner {
     throw new Error("Changing plan runner does not resume sessions");
   }
 
-  runReviewInNewSession = runPassingStandardsReview;
+  runReviewInNewSession = runPassingReview;
 
   async runInNewSession(
     request: AgentRequest,
@@ -140,7 +136,7 @@ class OrderedPlanRunner implements AgentRunner {
     const session = { id: `session-${String(this.requests.length)}` };
     await sessionStarted?.(session);
     return {
-      output: 'done\nSTRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
+      output: '{"kind":"implementation","summary":"Task complete."}',
       session,
       status: "returned" as const,
     };

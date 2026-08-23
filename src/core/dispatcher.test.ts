@@ -236,13 +236,29 @@ describe("Dispatcher", () => {
     expect(journal.events.map((event) => event.type)).toContain(
       "standards_review_completed",
     );
+    expect(journal.events.map((event) => event.type)).toContain(
+      "plan_compliance_review_completed",
+    );
     expect(
       journal.events.findIndex(
         (event) => event.type === "standards_review_completed",
       ),
     ).toBeLessThan(
+      journal.events.findIndex(
+        (event) => event.type === "plan_compliance_review_completed",
+      ),
+    );
+    expect(
+      journal.events.findIndex(
+        (event) => event.type === "plan_compliance_review_completed",
+      ),
+    ).toBeLessThan(
       journal.events.findIndex((event) => event.type === "task_completed"),
     );
+    expect(
+      journal.events.find((event) => event.type === "task_completed"),
+    ).toMatchObject({ certification: "independent_reviews" });
+    expect(journal.snapshots.at(-1)?.planComplianceReview).toBeNull();
     expect(journal.snapshots.at(-1)?.standardsReview).toBeNull();
     expect(journal.releasedRunIds).toEqual(["run-1"]);
   });

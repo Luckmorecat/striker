@@ -5,20 +5,20 @@ import type {
   DispatchResult,
   GitState,
   ImplementationTask,
+  PlanComplianceReviewState,
   RunAttention,
   RunJournal,
-  StandardsReviewState,
   TaskExecutionEvidence,
 } from "./contracts.js";
 import {
-  repairStandardsFindings,
-  runStandardsReview,
-} from "./standards-review.js";
+  repairPlanComplianceFindings,
+  runPlanComplianceReview,
+} from "./plan-compliance-review.js";
 
-interface ReviewRecoveryRequest {
+interface PlanReviewRecoveryRequest {
   readonly before: GitState;
   readonly completeCandidate: (
-    review: StandardsReviewState,
+    review: PlanComplianceReviewState,
   ) => Promise<DispatchResult>;
   readonly completeRepair: (
     output: string,
@@ -26,21 +26,17 @@ interface ReviewRecoveryRequest {
   ) => Promise<DispatchResult>;
   readonly journal: RunJournal;
   readonly request: DispatchRequest;
-  readonly review: StandardsReviewState;
+  readonly review: PlanComplianceReviewState;
   readonly runner: AgentRunner;
   readonly session: AgentSession;
   readonly task: ImplementationTask;
   readonly validateCandidate: (
-    review: StandardsReviewState,
+    review: PlanComplianceReviewState,
   ) => Promise<RunAttention | null>;
 }
 
-function interruption(reason: RunAttention["reason"], detail: string) {
-  return { detail, reason } as const;
-}
-
 function attentionResult(
-  input: ReviewRecoveryRequest,
+  input: PlanReviewRecoveryRequest,
   attention: RunAttention,
 ): DispatchResult {
   return {
@@ -53,7 +49,7 @@ function attentionResult(
 }
 
 function executionEvidence(
-  input: ReviewRecoveryRequest,
+  input: PlanReviewRecoveryRequest,
 ): TaskExecutionEvidence {
   return {
     after: { ...input.before, head: input.review.resultCommit },
@@ -65,54 +61,55 @@ function executionEvidence(
 }
 
 async function markInterruptedReview(
-  input: ReviewRecoveryRequest,
+  input: PlanReviewRecoveryRequest,
 ): Promise<void> {
-  const attention = interruption(
-    "standards_review_interrupted",
-    "The standards reviewer did not record a result before interruption.",
-  );
   await input.journal.append({
     attempt: input.review.attempt,
-    attention,
+    attention: {
+      detail:
+        "The plan-compliance reviewer did not record a result before interruption.",
+      reason: "plan_compliance_review_interrupted",
+    },
     changedPaths: input.review.changedPaths,
     completion: input.review.completion,
     resultCommit: input.review.resultCommit,
     runId: input.request.runId,
     session: input.review.reviewSession,
+    standards: input.review.standards,
     startCommit: input.review.startCommit,
     task: input.task.identity,
-    type: "standards_review_interrupted",
+    type: "plan_compliance_review_interrupted",
     verification: input.review.verification,
   });
 }
 
 async function markInterruptedRepair(
-  input: ReviewRecoveryRequest,
+  input: PlanReviewRecoveryRequest,
 ): Promise<void> {
   if (input.review.result === null) {
-    throw new Error("Interrupted standards repair has no review result");
+    throw new Error("Interrupted plan-compliance repair has no result");
   }
   await input.journal.append({
-    attention: interruption(
-      "standards_repair_interrupted",
-      "The implementation repair did not return before interruption.",
-    ),
+    attention: {
+      detail: "The plan-compliance repair did not return before interruption.",
+      reason: "plan_compliance_repair_interrupted",
+    },
     result: input.review.result,
     runId: input.request.runId,
     session: input.session,
     task: input.task.identity,
-    type: "standards_repair_interrupted",
+    type: "plan_compliance_repair_interrupted",
   });
 }
 
 async function repair(
-  input: ReviewRecoveryRequest,
+  input: PlanReviewRecoveryRequest,
   result = input.review.result,
 ): Promise<DispatchResult> {
   if (result === null) {
-    throw new Error("Standards repair has no review result");
+    throw new Error("Plan-compliance repair has no review result");
   }
-  const outcome = await repairStandardsFindings({
+  const outcome = await repairPlanComplianceFindings({
     journal: input.journal,
     request: input.request,
     result,
@@ -125,14 +122,17 @@ async function repair(
     : input.completeRepair(outcome.output, result.resultCommit);
 }
 
-async function review(input: ReviewRecoveryRequest): Promise<DispatchResult> {
-  const outcome = await runStandardsReview({
+async function review(
+  input: PlanReviewRecoveryRequest,
+): Promise<DispatchResult> {
+  const outcome = await runPlanComplianceReview({
     attempt: input.review.attempt,
     completion: input.review.completion,
     execution: executionEvidence(input),
     journal: input.journal,
     request: input.request,
     runner: input.runner,
+    standards: input.review.standards,
     task: input.task,
   });
   if (outcome.status === "interrupted") {
@@ -141,16 +141,12 @@ async function review(input: ReviewRecoveryRequest): Promise<DispatchResult> {
   if (outcome.status === "changes_required") {
     return repair(input, outcome.result);
   }
-  return completeCandidate(input, {
-    ...input.review,
-    result: outcome.result,
-    stage: "passed",
-  });
+  return completeCandidate(input, input.review);
 }
 
 async function completeCandidate(
-  input: ReviewRecoveryRequest,
-  candidate: StandardsReviewState,
+  input: PlanReviewRecoveryRequest,
+  candidate: PlanComplianceReviewState,
 ): Promise<DispatchResult> {
   const attention = await input.validateCandidate(candidate);
   if (attention === null) return input.completeCandidate(candidate);
@@ -164,8 +160,8 @@ async function completeCandidate(
   return attentionResult(input, attention);
 }
 
-export async function recoverStandardsReview(
-  input: ReviewRecoveryRequest,
+export async function recoverPlanComplianceReview(
+  input: PlanReviewRecoveryRequest,
 ): Promise<DispatchResult> {
   switch (input.review.stage) {
     case "passed":
@@ -184,15 +180,13 @@ export async function recoverStandardsReview(
       return repair(input);
     case "repaired":
       if (input.review.repairOutput === null) {
-        throw new Error("Completed standards repair has no output");
+        throw new Error("Completed plan-compliance repair has no output");
       }
       return input.completeRepair(
         input.review.repairOutput,
         input.review.resultCommit,
       );
     case "repair_attention":
-      throw new Error(
-        "Repair attention must resume the implementation session",
-      );
+      throw new Error("Repair attention must resume the implementor");
   }
 }

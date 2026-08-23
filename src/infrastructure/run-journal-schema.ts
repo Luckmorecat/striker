@@ -1,9 +1,10 @@
 import { z } from "zod";
 
-import { reviewResultSchema } from "../review-result-schema.js";
+import { createRunJournalReviewSchemas } from "./run-journal-review-schema.js";
 
 export const legacyRunJournalSchemaId = "striker.plan-journal.v2";
-export const runJournalSchemaId = "striker.plan-journal.v3";
+export const standardsRunJournalSchemaId = "striker.plan-journal.v3";
+export const runJournalSchemaId = "striker.plan-journal.v4";
 
 const taskIdentitySchema = z
   .object({ id: z.string().min(1), revision: z.string().min(1) })
@@ -63,6 +64,8 @@ const attentionReasonSchema = z.enum([
   "completion_evidence_missing",
   "commit_evidence_missing",
   "dirty_final_state",
+  "plan_compliance_repair_interrupted",
+  "plan_compliance_review_interrupted",
   "review_evidence_missing",
   "run_initialization_interrupted",
   "session_resume_failed",
@@ -73,29 +76,13 @@ const attentionReasonSchema = z.enum([
 const runAttentionSchema = z
   .object({ detail: z.string(), reason: attentionReasonSchema })
   .strict();
-const standardsReviewStateSchema = z
-  .object({
-    attempt: z.number().int().positive(),
-    changedPaths: z.array(z.string()),
-    completion: completionEvidenceSchema,
-    result: reviewResultSchema.nullable(),
-    resultCommit: z.string().min(1),
-    repairOutput: z.string().nullable(),
-    reviewSession: agentSessionSchema.nullable(),
-    stage: z.enum([
-      "changes_required",
-      "interrupted",
-      "passed",
-      "repaired",
-      "repair_attention",
-      "repair_interrupted",
-      "repairing",
-      "reviewing",
-    ]),
-    startCommit: z.string().min(1),
-    verification: verificationSchema,
-  })
-  .strict();
+const reviewSchemas = createRunJournalReviewSchemas({
+  agentSession: agentSessionSchema,
+  completion: completionEvidenceSchema,
+  runAttention: runAttentionSchema,
+  taskIdentity: taskIdentitySchema,
+  verification: verificationSchema,
+});
 
 export const runSnapshotSchema = z
   .object({
@@ -104,6 +91,7 @@ export const runSnapshotSchema = z
     baselineRecorded: z.boolean().optional(),
     before: gitStateSchema.nullable().optional(),
     planId: z.string().min(1),
+    planComplianceReview: reviewSchemas.planState.nullable().optional(),
     request: dispatchRequestSchema,
     runId: z.string().min(1),
     session: agentSessionSchema.nullable(),
@@ -115,7 +103,7 @@ export const runSnapshotSchema = z
       "completed",
       "discarded",
     ]),
-    standardsReview: standardsReviewStateSchema.nullable().optional(),
+    standardsReview: reviewSchemas.standardsState.nullable().optional(),
     task: implementationTaskSchema.nullable(),
   })
   .strict();
@@ -171,7 +159,7 @@ const runRetriedSchema = z
 const taskCompletedSchema = z
   .object({
     attempt: z.number().int().positive(),
-    certification: z.literal("standards_review"),
+    certification: z.enum(["independent_reviews", "standards_review"]),
     changedPaths: z.array(z.string()),
     completedAt: z.iso.datetime(),
     resultCommit: z.string().min(1),
@@ -186,73 +174,6 @@ const taskCompletedSchema = z
 const legacyTaskCompletedSchema = taskCompletedSchema
   .omit({ certification: true })
   .transform((event) => ({ ...event, certification: "legacy" as const }));
-const standardsReviewStartedSchema = z
-  .object({
-    attempt: z.number().int().positive(),
-    changedPaths: z.array(z.string()),
-    completion: completionEvidenceSchema,
-    resultCommit: z.string().min(1),
-    runId: z.string().min(1),
-    session: agentSessionSchema,
-    startCommit: z.string().min(1),
-    task: taskIdentitySchema,
-    type: z.literal("standards_review_started"),
-    verification: verificationSchema,
-  })
-  .strict();
-const standardsReviewCompletedSchema = z
-  .object({
-    result: reviewResultSchema,
-    runId: z.string().min(1),
-    session: agentSessionSchema,
-    task: taskIdentitySchema,
-    type: z.literal("standards_review_completed"),
-  })
-  .strict();
-const standardsReviewInterruptedSchema = z
-  .object({
-    attempt: z.number().int().positive(),
-    attention: runAttentionSchema,
-    changedPaths: z.array(z.string()),
-    completion: completionEvidenceSchema,
-    resultCommit: z.string().min(1),
-    runId: z.string().min(1),
-    session: agentSessionSchema.nullable(),
-    startCommit: z.string().min(1),
-    task: taskIdentitySchema,
-    type: z.literal("standards_review_interrupted"),
-    verification: verificationSchema,
-  })
-  .strict();
-const standardsRepairStartedSchema = z
-  .object({
-    result: reviewResultSchema,
-    runId: z.string().min(1),
-    session: agentSessionSchema,
-    task: taskIdentitySchema,
-    type: z.literal("standards_repair_started"),
-  })
-  .strict();
-const standardsRepairInterruptedSchema = z
-  .object({
-    attention: runAttentionSchema,
-    result: reviewResultSchema,
-    runId: z.string().min(1),
-    session: agentSessionSchema,
-    task: taskIdentitySchema,
-    type: z.literal("standards_repair_interrupted"),
-  })
-  .strict();
-const standardsRepairCompletedSchema = z
-  .object({
-    output: z.string(),
-    result: reviewResultSchema,
-    runId: z.string().min(1),
-    session: agentSessionSchema,
-    task: taskIdentitySchema,
-    type: z.literal("standards_repair_completed"),
-  })
-  .strict();
 const runNeedsAttentionSchema = z
   .object({
     attention: runAttentionSchema,
@@ -311,12 +232,18 @@ export const runJournalEventSchema = z.discriminatedUnion("type", [
   taskAttemptStartedSchema,
   taskSessionStartedSchema,
   runRetriedSchema,
-  standardsReviewStartedSchema,
-  standardsReviewCompletedSchema,
-  standardsReviewInterruptedSchema,
-  standardsRepairStartedSchema,
-  standardsRepairInterruptedSchema,
-  standardsRepairCompletedSchema,
+  reviewSchemas.standardsReviewStarted,
+  reviewSchemas.standardsReviewCompleted,
+  reviewSchemas.standardsReviewInterrupted,
+  reviewSchemas.standardsRepairStarted,
+  reviewSchemas.standardsRepairInterrupted,
+  reviewSchemas.standardsRepairCompleted,
+  reviewSchemas.planReviewStarted,
+  reviewSchemas.planReviewCompleted,
+  reviewSchemas.planReviewInterrupted,
+  reviewSchemas.planRepairStarted,
+  reviewSchemas.planRepairInterrupted,
+  reviewSchemas.planRepairCompleted,
   taskCompletedSchema,
   runNeedsAttentionSchema,
   runAnsweredSchema,
@@ -341,6 +268,13 @@ export const legacyEventEnvelopeSchema = z
   })
   .strict();
 
+export const standardsEventEnvelopeSchema = z
+  .object({
+    event: runJournalEventSchema,
+    schema: z.literal(standardsRunJournalSchemaId),
+  })
+  .strict();
+
 export const snapshotEnvelopeSchema = z
   .object({
     eventCount: z.number().int().nonnegative().optional(),
@@ -351,4 +285,8 @@ export const snapshotEnvelopeSchema = z
 
 export const legacySnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
   schema: z.literal(legacyRunJournalSchemaId),
+});
+
+export const standardsSnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
+  schema: z.literal(standardsRunJournalSchemaId),
 });

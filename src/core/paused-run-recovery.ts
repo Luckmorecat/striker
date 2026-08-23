@@ -20,10 +20,14 @@ import {
 } from "./dispatch-evidence.js";
 import { runInFreshSession } from "./fresh-session.js";
 import { transitionRun } from "./run-state.js";
+import { resumePlanReview } from "./paused-plan-review.js";
 import { recoverStandardsReview } from "./standards-review-recovery.js";
+import { continueAfterStandardsReview } from "./task-certification.js";
 import {
   recoverableRun,
   recoverableSnapshot,
+  pausedSessionlessRun,
+  pauseResumeFailure,
   reviewOwnsRecovery,
   type RecoverableRun,
 } from "./recovery-context.js";
@@ -50,7 +54,7 @@ interface RecoveryHost {
     request: DispatchRequest,
     task: ImplementationTask,
     session: AgentSession,
-    review: NonNullable<RunSnapshot["standardsReview"]>,
+    review: NonNullable<RunSnapshot["planComplianceReview"]>,
   ): Promise<DispatchResult>;
   continueRun(request: DispatchRequest): Promise<DispatchResult>;
   fail(
@@ -63,20 +67,6 @@ interface RecoveryHost {
 
 interface ContinuedRun extends RecoverableRun {
   readonly session: AgentSession;
-}
-
-function pausedSessionlessRun(run: RecoverableRun): DispatchResult | null {
-  if (run.session !== null || run.status !== "needs_attention") return null;
-  if (run.attention === null) {
-    throw new Error("Paused Striker run is missing attention evidence");
-  }
-  return {
-    reason: run.attention.reason,
-    runId: run.request.runId,
-    session: null,
-    status: "needs_attention",
-    task: run.task,
-  };
 }
 
 export class PausedRunRecovery {
@@ -120,13 +110,18 @@ export class PausedRunRecovery {
       return this.host.continueRun(request);
     }
     if (reviewOwnsRecovery(recovery.snapshot)) {
-      return this.resumeStandardsReview(recovery.snapshot);
+      const snapshot = recovery.snapshot;
+      if (snapshot === null) {
+        throw new Error("Review recovery is missing its run snapshot");
+      }
+      return this.resumeOwnedReview(snapshot);
     }
     const run = recoverableRun(recovery, ["needs_attention", "running"]);
     const paused = pausedSessionlessRun(run);
     if (paused !== null) return paused;
     if (run.session === null) {
-      return this.pauseResumeFailure(
+      return pauseResumeFailure(
+        this.dependencies.journal,
         run,
         new Error("the interrupted attempt did not record a session"),
       );
@@ -136,6 +131,21 @@ export class PausedRunRecovery {
         ? "Continue the interrupted task in this preserved session and return completion evidence."
         : this.repairInstructions(run.attention);
     return this.continue(run as ContinuedRun, "resume", instructions);
+  }
+
+  private resumeOwnedReview(snapshot: RunSnapshot): Promise<DispatchResult> {
+    if (snapshot.planComplianceReview == null) {
+      return this.resumeStandardsReview(snapshot);
+    }
+    return resumePlanReview({
+      checkCompletion: (run, session, output, rejectedCommit) =>
+        this.checkCompletion(run, session, output, rejectedCommit),
+      completeReviewed: (...arguments_) =>
+        this.host.completeReviewed(...arguments_),
+      continueRun: (request) => this.host.continueRun(request),
+      dependencies: this.dependencies,
+      snapshot,
+    });
   }
 
   private resumeStandardsReview(
@@ -149,12 +159,16 @@ export class PausedRunRecovery {
     return recoverStandardsReview({
       before,
       completeCandidate: async (candidate) => {
-        const result = await this.host.completeReviewed(
-          snapshot.request,
-          task,
+        const result = await continueAfterStandardsReview(this.dependencies, {
+          before,
+          recheck: (output, rejectedCommit) =>
+            this.checkCompletion(run, session, output, rejectedCommit),
+          request: snapshot.request,
+          review: candidate,
           session,
-          candidate,
-        );
+          task,
+        });
+        if (result.status !== "completed") return result;
         const continued = await this.host.continueRun(snapshot.request);
         return continued.status === "source_exhausted" ? result : continued;
       },
@@ -246,13 +260,21 @@ export class PausedRunRecovery {
         instructions,
       );
     } catch (error) {
-      return this.pauseResumeFailure({ ...paused, status: "running" }, error);
+      return pauseResumeFailure(
+        this.dependencies.journal,
+        {
+          ...paused,
+          status: "running",
+        },
+        error,
+      );
     }
     if (
       turn.session.id !== paused.session.id ||
       turn.session.resumeId !== paused.session.resumeId
     ) {
-      return this.pauseResumeFailure(
+      return pauseResumeFailure(
+        this.dependencies.journal,
         { ...paused, status: "running" },
         new Error("Agent runner replaced the paused session"),
       );
@@ -287,9 +309,11 @@ export class PausedRunRecovery {
       output,
       paused.attempt,
       rejectedCommit ??
-        (paused.standardsReview?.result?.verdict === "changes_required"
-          ? paused.standardsReview.resultCommit
-          : undefined),
+        (paused.planComplianceReview?.result?.verdict === "changes_required"
+          ? paused.planComplianceReview.resultCommit
+          : paused.standardsReview?.result?.verdict === "changes_required"
+            ? paused.standardsReview.resultCommit
+            : undefined),
     );
     if (result.status !== "completed") return result;
     const continued = await this.host.continueRun(paused.request);
@@ -316,36 +340,6 @@ export class PausedRunRecovery {
       task: paused.task.identity,
       type: "run_answered",
     });
-  }
-
-  private async pauseResumeFailure(
-    paused: RecoverableRun,
-    error: unknown,
-  ): Promise<DispatchResult> {
-    const message = error instanceof Error ? error.message : String(error);
-    const failure = `Could not resume the preserved session: ${message}`.slice(
-      0,
-      1_800,
-    );
-    const attention: RunAttention = {
-      detail: `${failure}. Run \`striker retry\` to start a fresh attempt.`,
-      reason: "session_resume_failed",
-    };
-    transitionRun(paused.status, "request_attention");
-    await this.dependencies.journal.append({
-      attention,
-      runId: paused.request.runId,
-      session: paused.session,
-      task: paused.task.identity,
-      type: "run_needs_attention",
-    });
-    return {
-      reason: attention.reason,
-      runId: paused.request.runId,
-      session: paused.session,
-      status: "needs_attention",
-      task: paused.task,
-    };
   }
 
   private async requireActiveRecovery(): Promise<RunRecoveryState> {

@@ -21,6 +21,9 @@ import {
   runJournalEventSchema,
   runJournalSchemaId,
   snapshotEnvelopeSchema,
+  standardsEventEnvelopeSchema,
+  standardsRunJournalSchemaId,
+  standardsSnapshotEnvelopeSchema,
 } from "./run-journal-schema.js";
 import { writePlanProjections } from "./plan-projections.js";
 
@@ -72,6 +75,7 @@ function rejectUnsupportedSchema(value: unknown): void {
   if (
     schema !== undefined &&
     schema !== runJournalSchemaId &&
+    schema !== standardsRunJournalSchemaId &&
     schema !== legacyRunJournalSchemaId
   ) {
     const label = typeof schema === "string" ? schema : JSON.stringify(schema);
@@ -86,7 +90,9 @@ function parseEvent(line: string): RunJournalEvent {
   const parsed =
     schema === legacyRunJournalSchemaId
       ? legacyEventEnvelopeSchema.safeParse(value)
-      : eventEnvelopeSchema.safeParse(value);
+      : schema === standardsRunJournalSchemaId
+        ? standardsEventEnvelopeSchema.safeParse(value)
+        : eventEnvelopeSchema.safeParse(value);
   if (!parsed.success) {
     throw new Error("Invalid Striker plan journal event", {
       cause: parsed.error,
@@ -251,10 +257,13 @@ export class FileRunJournal implements RunJournal {
     }
     const value = parseJson(content, "Invalid Striker run snapshot");
     rejectUnsupportedSchema(value);
-    const legacy = schemaValue(value) === legacyRunJournalSchemaId;
+    const schema = schemaValue(value);
+    const legacy = schema === legacyRunJournalSchemaId;
     const parsed = legacy
       ? legacySnapshotEnvelopeSchema.safeParse(value)
-      : snapshotEnvelopeSchema.safeParse(value);
+      : schema === standardsRunJournalSchemaId
+        ? standardsSnapshotEnvelopeSchema.safeParse(value)
+        : snapshotEnvelopeSchema.safeParse(value);
     if (!parsed.success) {
       throw new Error("Invalid Striker run snapshot", { cause: parsed.error });
     }

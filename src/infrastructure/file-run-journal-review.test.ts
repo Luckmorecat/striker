@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 
 import type { DispatchRequest, ImplementationTask } from "../core/contracts.js";
+import { appendPassedStandardsReview } from "../testing/fakes.js";
 import { FileRunJournal } from "./file-run-journal.js";
 
 const identity = { id: "tasks/05.md", revision: "revision-5" };
@@ -116,4 +117,56 @@ it("rejects task completion without matching passed review evidence", async () =
       verification: { command: "pnpm check", exitCode: 0, output: "ok" },
     }),
   ).rejects.toThrow("passed standards review");
+});
+
+it("reloads an interrupted plan-compliance review after standards passed", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "striker-plan-review-"));
+  const journal = new FileRunJournal(root);
+  await startAttempt(journal);
+  await appendPassedStandardsReview(journal, {
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    resultCommit: "after",
+    runId: request.runId,
+    startCommit: "before",
+    task: identity,
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  });
+  const standards = {
+    findings: [],
+    kind: "standards",
+    resultCommit: "after",
+    startCommit: "before",
+    verdict: "passed",
+  } as const;
+
+  await journal.append({
+    attempt: 1,
+    attention: {
+      detail: "plan reviewer disconnected",
+      reason: "plan_compliance_review_interrupted",
+    },
+    changedPaths: ["src/task.ts"],
+    completion: { summary: "implementation complete" },
+    resultCommit: "after",
+    runId: request.runId,
+    session: null,
+    standards,
+    startCommit: "before",
+    task: identity,
+    type: "plan_compliance_review_interrupted",
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  });
+
+  await expect(new FileRunJournal(root).loadActive()).resolves.toMatchObject({
+    snapshot: {
+      planComplianceReview: {
+        resultCommit: "after",
+        stage: "interrupted",
+        standards,
+      },
+      standardsReview: { stage: "passed" },
+      status: "needs_attention",
+    },
+  });
 });

@@ -2,7 +2,7 @@ import type { AgentSession } from "./execution-contracts.js";
 
 export interface ReviewFinding {
   readonly fix: string;
-  readonly kind: "defect" | "rule_violation";
+  readonly kind: "defect" | "plan_violation" | "rule_violation";
   readonly location: {
     readonly line: number;
     readonly endLine?: number;
@@ -13,13 +13,22 @@ export interface ReviewFinding {
   readonly severity: "advisory" | "blocking";
 }
 
-export interface ReviewResult {
+interface ReviewResultBase {
   readonly findings: readonly ReviewFinding[];
-  readonly kind: "standards";
   readonly resultCommit: string;
   readonly startCommit: string;
   readonly verdict: "changes_required" | "passed";
 }
+
+export interface StandardsReviewResult extends ReviewResultBase {
+  readonly kind: "standards";
+}
+
+export interface PlanComplianceReviewResult extends ReviewResultBase {
+  readonly kind: "plan_compliance";
+}
+
+export type ReviewResult = PlanComplianceReviewResult | StandardsReviewResult;
 
 export interface ReviewRequest {
   readonly instructions: string;

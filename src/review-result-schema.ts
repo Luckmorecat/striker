@@ -13,7 +13,7 @@ const relativePathSchema = z
 const findingSchema = z
   .object({
     fix: z.string().min(1),
-    kind: z.enum(["defect", "rule_violation"]),
+    kind: z.enum(["defect", "plan_violation", "rule_violation"]),
     location: z
       .object({
         endLine: z.number().int().positive().optional(),
@@ -34,7 +34,7 @@ const findingSchema = z
 export const reviewResultSchema = z
   .object({
     findings: z.array(findingSchema),
-    kind: z.literal("standards"),
+    kind: z.enum(["plan_compliance", "standards"]),
     resultCommit: z.string().min(1),
     startCommit: z.string().min(1),
     verdict: z.enum(["changes_required", "passed"]),
@@ -45,4 +45,25 @@ export const reviewResultSchema = z
       (verdict === "changes_required") ===
       findings.some((finding) => finding.severity === "blocking"),
     "Review verdict does not match its blocking findings",
+  )
+  .refine(
+    ({ findings, kind }) =>
+      findings.every(
+        (finding) =>
+          finding.kind === "defect" ||
+          (kind === "standards"
+            ? finding.kind === "rule_violation"
+            : finding.kind === "plan_violation"),
+      ),
+    "Review finding kind does not match its review kind",
   );
+
+export const standardsReviewResultSchema = reviewResultSchema.refine(
+  (result) => result.kind === "standards",
+  "Expected a standards review result",
+);
+
+export const planComplianceReviewResultSchema = reviewResultSchema.refine(
+  (result) => result.kind === "plan_compliance",
+  "Expected a plan-compliance review result",
+);

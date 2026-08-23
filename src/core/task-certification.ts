@@ -3,13 +3,19 @@ import type {
   AgentSession,
   DispatchRequest,
   DispatchResult,
+  GitState,
   ImplementationTask,
+  PlanComplianceReviewState,
   RunAttention,
   RunJournal,
   StandardsReviewState,
   TaskCompletionEvidence,
   TaskExecutionEvidence,
 } from "./contracts.js";
+import {
+  repairPlanComplianceFindings,
+  runPlanComplianceReview,
+} from "./plan-compliance-review.js";
 import {
   repairStandardsFindings,
   runStandardsReview,
@@ -70,7 +76,7 @@ async function appendCompletion(
   transitionRun("running", "complete_task");
   await journal.append({
     attempt: candidate.attempt,
-    certification: "standards_review",
+    certification: "independent_reviews",
     changedPaths: candidate.changedPaths,
     completedAt: new Date().toISOString(),
     resultCommit: candidate.resultCommit,
@@ -129,6 +135,50 @@ async function completePassedReview(
   );
 }
 
+async function certifyPlanCompliance(
+  dependencies: CertificationDependencies,
+  input: TaskCertificationRequest,
+  standards: import("./contracts.js").StandardsReviewResult,
+): Promise<DispatchResult> {
+  const review = await runPlanComplianceReview({
+    attempt: input.attempt,
+    completion: input.completion,
+    execution: input.execution,
+    journal: dependencies.journal,
+    request: input.request,
+    runner: dependencies.runner,
+    standards,
+    task: input.task,
+  });
+  if (review.status === "interrupted") {
+    return attentionResult(
+      input.request,
+      input.task,
+      input.session,
+      review.attention,
+    );
+  }
+  if (review.status === "passed") {
+    return completePassedReview(dependencies, input);
+  }
+  const repair = await repairPlanComplianceFindings({
+    journal: dependencies.journal,
+    request: input.request,
+    result: review.result,
+    runner: dependencies.runner,
+    session: input.session,
+    task: input.task,
+  });
+  return repair.status === "interrupted"
+    ? attentionResult(
+        input.request,
+        input.task,
+        input.session,
+        repair.attention,
+      )
+    : input.recheck(repair.output, review.result.resultCommit);
+}
+
 export async function certifyTask(
   dependencies: CertificationDependencies,
   input: TaskCertificationRequest,
@@ -151,7 +201,7 @@ export async function certifyTask(
     );
   }
   if (review.status === "passed") {
-    return completePassedReview(dependencies, input);
+    return certifyPlanCompliance(dependencies, input, review.result);
   }
   const repair = await repairStandardsFindings({
     journal: dependencies.journal,
@@ -176,7 +226,7 @@ export function completeReviewedTask(
   request: DispatchRequest,
   task: ImplementationTask,
   session: AgentSession,
-  review: StandardsReviewState,
+  review: PlanComplianceReviewState,
 ): Promise<DispatchResult> {
   return appendCompletion(journal, request, task, session, {
     attempt: review.attempt,
@@ -186,4 +236,39 @@ export function completeReviewedTask(
     startCommit: review.startCommit,
     verification: review.verification,
   });
+}
+
+export function continueAfterStandardsReview(
+  dependencies: CertificationDependencies,
+  input: {
+    readonly before: GitState;
+    readonly recheck: TaskCertificationRequest["recheck"];
+    readonly request: DispatchRequest;
+    readonly review: StandardsReviewState;
+    readonly session: AgentSession;
+    readonly task: ImplementationTask;
+  },
+): Promise<DispatchResult> {
+  if (input.review.result?.verdict !== "passed") {
+    throw new Error("Plan compliance requires a passed standards review");
+  }
+  return certifyPlanCompliance(
+    dependencies,
+    {
+      attempt: input.review.attempt,
+      completion: input.review.completion,
+      execution: {
+        after: { ...input.before, head: input.review.resultCommit },
+        before: input.before,
+        changedPaths: input.review.changedPaths,
+        commits: [input.review.resultCommit],
+        verification: input.review.verification,
+      },
+      recheck: input.recheck,
+      request: input.request,
+      session: input.session,
+      task: input.task,
+    },
+    input.review.result,
+  );
 }

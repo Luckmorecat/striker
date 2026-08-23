@@ -1,5 +1,3 @@
-import { isDeepStrictEqual } from "node:util";
-
 import type {
   AgentSession,
   GitState,
@@ -8,6 +6,14 @@ import type {
   TaskIdentity,
 } from "../core/contracts.js";
 import { transitionRun } from "../core/run-state.js";
+import { completeTask } from "./run-journal-completion.js";
+import {
+  isPlanReviewEvent,
+  planReviewAfterAttention,
+  planReviewAfterRetry,
+  replayPlanReviewEvent,
+  type PlanReviewEvent,
+} from "./run-journal-plan-review-replay.js";
 import {
   isReviewEvent,
   replayReviewEvent,
@@ -94,6 +100,7 @@ export function replayEvent(
   if (event.runId !== snapshot.runId) {
     throw new Error("Striker plan journal contains a mismatched run id");
   }
+  if (isPlanReviewEvent(event)) return replayPlanReviewEvent(snapshot, event);
   if (isReviewEvent(event)) return replayReviewEvent(snapshot, event);
   if (isProgressEvent(event)) return replayProgress(snapshot, event);
   if (isResultEvent(event)) return replayResult(snapshot, event);
@@ -141,6 +148,7 @@ function replayProgress(
       return {
         ...snapshot,
         attention: null,
+        planComplianceReview: planReviewAfterRetry(snapshot),
         session: null,
         standardsReview: reviewAfterRetry(snapshot),
         status: transitionRun(snapshot.status, "retry"),
@@ -161,6 +169,7 @@ function replayResult(snapshot: RunSnapshot, event: ResultEvent): RunSnapshot {
       return {
         ...snapshot,
         attention: event.attention,
+        planComplianceReview: planReviewAfterAttention(snapshot),
         session: event.session,
         standardsReview: reviewAfterAttention(snapshot),
         status: transitionRun(snapshot.status, "request_attention"),
@@ -206,7 +215,10 @@ function reviewAfterRetry(
 
 function replayTerminal(
   snapshot: RunSnapshot,
-  event: Exclude<ReplayEvent, ProgressEvent | ResultEvent | ReviewEvent>,
+  event: Exclude<
+    ReplayEvent,
+    PlanReviewEvent | ProgressEvent | ResultEvent | ReviewEvent
+  >,
 ): RunSnapshot {
   switch (event.type) {
     case "run_source_changed":
@@ -248,6 +260,7 @@ function selectTask(
     ...snapshot,
     baselineRecorded: false,
     before: null,
+    planComplianceReview: null,
     standardsReview: null,
     task,
   };
@@ -304,37 +317,4 @@ function startSession(
     throw new Error("Striker session event has an invalid attempt");
   }
   return { ...snapshot, session };
-}
-
-function completeTask(
-  snapshot: RunSnapshot,
-  event: Extract<RunJournalEvent, { type: "task_completed" }>,
-): RunSnapshot {
-  const status = transitionRun(snapshot.status, "complete_task");
-  const review = snapshot.standardsReview;
-  if (
-    event.certification === "standards_review" &&
-    (review?.stage !== "passed" ||
-      review.attempt !== event.attempt ||
-      review.startCommit !== event.startCommit ||
-      review.resultCommit !== event.resultCommit ||
-      !isDeepStrictEqual(review.changedPaths, event.changedPaths) ||
-      !isDeepStrictEqual(review.verification, event.verification))
-  ) {
-    throw new Error(
-      "Task completion requires matching passed standards review",
-    );
-  }
-  const completed = { ...snapshot };
-  delete completed.attempt;
-  return {
-    ...completed,
-    attention: null,
-    baselineRecorded: false,
-    before: null,
-    session: null,
-    standardsReview: null,
-    status,
-    task: null,
-  };
 }

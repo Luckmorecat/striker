@@ -203,7 +203,7 @@ export class Dispatcher {
     const attention = executionAttention(execution);
     if (execution?.after.head === rejectedCommit) {
       return this.finishNeedsAttention(request, task, session, {
-        detail: "The standards repair did not amend the rejected candidate.",
+        detail: "The review repair did not amend the rejected candidate.",
         reason: "commit_evidence_missing",
       });
     }

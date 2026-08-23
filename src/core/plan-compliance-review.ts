@@ -3,96 +3,76 @@ import type {
   AgentSession,
   DispatchRequest,
   ImplementationTask,
-  StandardsReviewResult,
+  PlanComplianceReviewResult,
   ReviewTurn,
   RunAttention,
   RunJournal,
+  StandardsReviewResult,
   TaskCompletionEvidence,
   TaskExecutionEvidence,
 } from "./contracts.js";
 
-interface StandardsReviewRequest {
+interface PlanReviewRequest {
   readonly attempt: number;
   readonly completion: TaskCompletionEvidence;
   readonly execution: TaskExecutionEvidence;
   readonly journal: RunJournal;
   readonly request: DispatchRequest;
   readonly runner: AgentRunner;
+  readonly standards: StandardsReviewResult;
   readonly task: ImplementationTask;
 }
 
-export type StandardsReviewOutcome =
-  | {
-      readonly result: StandardsReviewResult;
-      readonly status: "changes_required" | "passed";
-    }
-  | {
-      readonly attention: RunAttention;
-      readonly status: "interrupted";
-    };
-
-interface StandardsRepairRequest {
+interface PlanRepairRequest {
   readonly journal: RunJournal;
   readonly request: DispatchRequest;
-  readonly result: StandardsReviewResult;
+  readonly result: PlanComplianceReviewResult;
   readonly runner: AgentRunner;
   readonly session: AgentSession;
   readonly task: ImplementationTask;
 }
 
-export type StandardsRepairOutcome =
-  | { readonly output: string; readonly status: "returned" }
+export type PlanReviewOutcome =
   | {
-      readonly attention: RunAttention;
-      readonly status: "interrupted";
-    };
+      readonly result: PlanComplianceReviewResult;
+      readonly status: "changes_required" | "passed";
+    }
+  | { readonly attention: RunAttention; readonly status: "interrupted" };
 
-function reviewInstructions(input: StandardsReviewRequest): string {
+export type PlanRepairOutcome =
+  | { readonly output: string; readonly status: "returned" }
+  | { readonly attention: RunAttention; readonly status: "interrupted" };
+
+function reviewInstructions(input: PlanReviewRequest): string {
   const evidence = {
     changedPaths: input.execution.changedPaths,
     resultCommit: input.execution.after.head,
+    standardsResult: input.standards,
     startCommit: input.execution.before.head,
-    task: input.task.identity,
+    task: {
+      contract: input.task.instructions,
+      identity: input.task.identity,
+    },
     verification: input.execution.verification,
   };
   return [
-    "# Independent standards review",
+    "# Independent plan-compliance review",
     "",
-    "Review only the candidate described below. Read every repository rule that governs a changed path. Report mandatory rule breaches and concrete defects. Do not modify files, run write commands, or review work outside the changed paths.",
+    "Review only the candidate below against the current task's Build, Paths, Test contract, and Verify sections, plus the immutable spine and map paths named in the task contract. Find missing or partial requirements, scope creep, changed public behavior, and task-plan conflicts. Do not modify files or run write commands.",
     "",
     JSON.stringify(evidence, null, 2),
     "",
-    "Return one strict JSON object and no other text. Use kind `standards`, repeat the exact startCommit and resultCommit, set verdict to `passed` or `changes_required`, and include findings. Each finding needs kind (`rule_violation` or `defect`), severity (`blocking` or `advisory`), repository-relative path, location with a positive line and optional endLine, rule, message, and fix. A changes_required verdict needs at least one blocking finding; passed permits no blocking findings.",
+    "Return one strict JSON object and no other text. Use kind `plan_compliance`, repeat the exact commits, set verdict to `passed` or `changes_required`, and include findings. Each finding needs kind (`plan_violation` or `defect`), severity, repository-relative changed path, location, rule, message, and fix. A changes_required verdict needs a blocking finding; passed permits no blocking findings.",
   ].join("\n");
 }
 
-function validateResult(
-  result: StandardsReviewResult,
-  execution: TaskExecutionEvidence,
-): void {
-  if (
-    result.startCommit !== execution.before.head ||
-    result.resultCommit !== execution.after.head
-  ) {
-    throw new Error("Standards review result names different commits");
-  }
-  const invalidPath = result.findings.find(
-    (finding) => !execution.changedPaths.includes(finding.path),
-  );
-  if (invalidPath !== undefined) {
-    throw new Error(
-      `Standards review finding names unchanged path: ${invalidPath.path}`,
-    );
-  }
-}
-
-function reviewInterruption(error: unknown): RunAttention {
+function interruption(error: unknown): RunAttention {
   return {
     detail: (error instanceof Error ? error.message : String(error)).slice(
       0,
       2_000,
     ),
-    reason: "standards_review_interrupted",
+    reason: "plan_compliance_review_interrupted",
   };
 }
 
@@ -100,12 +80,32 @@ function sameSession(left: AgentSession | null, right: AgentSession): boolean {
   return left?.id === right.id && left.resumeId === right.resumeId;
 }
 
+function validateResult(
+  result: PlanComplianceReviewResult,
+  execution: TaskExecutionEvidence,
+): void {
+  if (
+    result.startCommit !== execution.before.head ||
+    result.resultCommit !== execution.after.head
+  ) {
+    throw new Error("Plan-compliance result names different commits");
+  }
+  const invalid = result.findings.find(
+    (finding) => !execution.changedPaths.includes(finding.path),
+  );
+  if (invalid !== undefined) {
+    throw new Error(
+      `Plan-compliance finding names unchanged path: ${invalid.path}`,
+    );
+  }
+}
+
 async function appendInterruption(
-  input: StandardsReviewRequest,
+  input: PlanReviewRequest,
   session: AgentSession | null,
   error: unknown,
-): Promise<Extract<StandardsReviewOutcome, { status: "interrupted" }>> {
-  const attention = reviewInterruption(error);
+): Promise<Extract<PlanReviewOutcome, { status: "interrupted" }>> {
+  const attention = interruption(error);
   await input.journal.append({
     attempt: input.attempt,
     attention,
@@ -114,30 +114,31 @@ async function appendInterruption(
     resultCommit: input.execution.after.head,
     runId: input.request.runId,
     session,
+    standards: input.standards,
     startCommit: input.execution.before.head,
     task: input.task.identity,
-    type: "standards_review_interrupted",
+    type: "plan_compliance_review_interrupted",
     verification: input.execution.verification,
   });
   return { attention, status: "interrupted" };
 }
 
 function invokeReviewer(
-  input: StandardsReviewRequest,
-  sessionStarted: (session: AgentSession) => Promise<void>,
+  input: PlanReviewRequest,
+  started: (session: AgentSession) => Promise<void>,
 ): Promise<ReviewTurn> {
   if (input.runner.runReviewInNewSession === undefined) {
     throw new Error("Agent runner does not support read-only reviews");
   }
   return input.runner.runReviewInNewSession(
     { instructions: reviewInstructions(input) },
-    sessionStarted,
+    started,
   );
 }
 
-export async function runStandardsReview(
-  input: StandardsReviewRequest,
-): Promise<StandardsReviewOutcome> {
+export async function runPlanComplianceReview(
+  input: PlanReviewRequest,
+): Promise<PlanReviewOutcome> {
   let startedSession: AgentSession | null = null;
   let turn: ReviewTurn;
   try {
@@ -150,9 +151,10 @@ export async function runStandardsReview(
         resultCommit: input.execution.after.head,
         runId: input.request.runId,
         session,
+        standards: input.standards,
         startCommit: input.execution.before.head,
         task: input.task.identity,
-        type: "standards_review_started",
+        type: "plan_compliance_review_started",
         verification: input.execution.verification,
       });
     });
@@ -162,8 +164,8 @@ export async function runStandardsReview(
     if (!sameSession(startedSession, turn.session)) {
       throw new Error("Reviewer replaced its recorded session");
     }
-    if (turn.result.kind !== "standards") {
-      throw new Error("Standards reviewer returned the wrong kind");
+    if (turn.result.kind !== "plan_compliance") {
+      throw new Error("Plan-compliance reviewer returned the wrong kind");
     }
     validateResult(turn.result, input.execution);
   } catch (error) {
@@ -174,58 +176,53 @@ export async function runStandardsReview(
     runId: input.request.runId,
     session: turn.session,
     task: input.task.identity,
-    type: "standards_review_completed",
+    type: "plan_compliance_review_completed",
   });
   return { result: turn.result, status: turn.result.verdict };
 }
 
-function repairInstructions(result: StandardsReviewResult): string {
+function repairInstructions(result: PlanComplianceReviewResult): string {
   return [
-    "# Independent standards review findings",
+    "# Independent plan-compliance review findings",
     "",
     JSON.stringify(result.findings, null, 2),
     "",
-    "Repair every blocking finding in the current task. Keep the task to one descendant commit by amending its existing commit. Rerun the affected checks and the task verification, then return the implementation completion evidence required by the packaged workflow.",
+    "Repair every blocking finding in the current task. Amend the existing task commit, rerun affected checks and task verification, then return the strict implementation result required by the packaged workflow.",
   ].join("\n");
 }
 
-function repairInterruption(error: unknown): RunAttention {
-  return {
+async function appendRepairInterruption(
+  input: PlanRepairRequest,
+  error: unknown,
+): Promise<Extract<PlanRepairOutcome, { status: "interrupted" }>> {
+  const attention: RunAttention = {
     detail: (error instanceof Error ? error.message : String(error)).slice(
       0,
       2_000,
     ),
-    reason: "standards_repair_interrupted",
+    reason: "plan_compliance_repair_interrupted",
   };
-}
-
-async function appendRepairInterruption(
-  input: StandardsRepairRequest,
-  error: unknown,
-): Promise<Extract<StandardsRepairOutcome, { status: "interrupted" }>> {
-  const attention = repairInterruption(error);
   await input.journal.append({
     attention,
     result: input.result,
     runId: input.request.runId,
     session: input.session,
     task: input.task.identity,
-    type: "standards_repair_interrupted",
+    type: "plan_compliance_repair_interrupted",
   });
   return { attention, status: "interrupted" };
 }
 
-export async function repairStandardsFindings(
-  input: StandardsRepairRequest,
-): Promise<StandardsRepairOutcome> {
+export async function repairPlanComplianceFindings(
+  input: PlanRepairRequest,
+): Promise<PlanRepairOutcome> {
   await input.journal.append({
     result: input.result,
     runId: input.request.runId,
     session: input.session,
     task: input.task.identity,
-    type: "standards_repair_started",
+    type: "plan_compliance_repair_started",
   });
-  let output: string;
   try {
     const turn = await input.runner.resumeSession(
       input.session,
@@ -237,17 +234,16 @@ export async function repairStandardsFindings(
     if (!sameSession(input.session, turn.session)) {
       throw new Error("Agent runner replaced the implementation session");
     }
-    output = turn.output;
+    await input.journal.append({
+      output: turn.output,
+      result: input.result,
+      runId: input.request.runId,
+      session: input.session,
+      task: input.task.identity,
+      type: "plan_compliance_repair_completed",
+    });
+    return { output: turn.output, status: "returned" };
   } catch (error) {
     return appendRepairInterruption(input, error);
   }
-  await input.journal.append({
-    output,
-    result: input.result,
-    runId: input.request.runId,
-    session: input.session,
-    task: input.task.identity,
-    type: "standards_repair_completed",
-  });
-  return { output, status: "returned" };
 }

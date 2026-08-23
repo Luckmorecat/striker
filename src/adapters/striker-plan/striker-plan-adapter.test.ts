@@ -57,7 +57,6 @@ async function createFixture() {
       "---\nname: striker-implementor\ndescription: Implement one task.\n---\n\nprivate workflow",
     ),
     writeFile(path.join(workflowRoot, "references/tdd.md"), "tdd rules"),
-    writeFile(path.join(workflowRoot, "references/review.md"), "review rules"),
   ]);
   return { planRoot, root, workflowRoot };
 }
@@ -91,15 +90,15 @@ describe("Striker plan adapter", () => {
       identity: { id: "tasks/01.md" },
     });
     expect(task?.execution?.workflowInstructions).toContain("private workflow");
-    expect(task?.execution?.workflowInstructions).toContain(
-      'STRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
+    expect(task?.execution?.workflowInstructions).not.toContain(
+      "Sequential review",
     );
     expect(task?.instructions).toContain(`Plan root: ${fixture.planRoot}`);
   });
 });
 
 describe("Striker plan completion evidence", () => {
-  it("requires review evidence without mutating plan files", async () => {
+  it("requires one strict implementation result without trusting reviews", async () => {
     const fixture = await createFixture();
     const adapter = new StrikerPlanAdapter({
       projectRoot: fixture.root,
@@ -122,28 +121,29 @@ describe("Striker plan completion evidence", () => {
     await expect(
       resumedSource.completionEvidence(task, execution, "done"),
     ).resolves.toMatchObject({
-      attention: { reason: "review_evidence_missing" },
+      attention: { reason: "completion_evidence_missing" },
       status: "needs_attention",
     });
     await expect(
       resumedSource.completionEvidence(
         task,
         execution,
-        'STRIKER_REVIEWS {"standards":"passed","plan":"passed"} but review failed',
+        '{"kind":"implementation","summary":"done"} but more prose',
       ),
     ).resolves.toMatchObject({
-      attention: { reason: "review_evidence_missing" },
+      attention: { reason: "completion_evidence_missing" },
       status: "needs_attention",
     });
     const result = await resumedSource.completionEvidence(
       task,
       execution,
-      'done\nSTRIKER_REVIEWS {"standards":"passed","plan":"passed"}',
+      '{"kind":"implementation","summary":"Added the command."}',
     );
     expect(result.status).toBe("completed");
     if (result.status !== "completed")
       throw new Error("Expected completion evidence");
     expect(result.evidence.verification?.exitCode).toBe(0);
+    expect(result.evidence.summary).toBe("Added the command.");
 
     await expect(resumedSource.nextTask([task.identity])).resolves.toBeNull();
   });

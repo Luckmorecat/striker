@@ -6,7 +6,7 @@ import type {
   DispatchRequest,
   GitRepository,
   GitState,
-  ReviewResult,
+  StandardsReviewResult,
   TaskCompletionResult,
   TaskIdentity,
   TaskSource,
@@ -46,8 +46,8 @@ function state(head: string): GitState {
 
 function reviewResult(
   resultCommit: string,
-  verdict: ReviewResult["verdict"] = "passed",
-): ReviewResult {
+  verdict: StandardsReviewResult["verdict"] = "passed",
+): StandardsReviewResult {
   const finding = {
     fix: "Split the function.",
     kind: "rule_violation",
@@ -138,7 +138,7 @@ async function seedImplementation(journal: InMemoryRunJournal): Promise<void> {
 
 async function seedChangesRequired(
   journal: InMemoryRunJournal,
-): Promise<ReviewResult> {
+): Promise<StandardsReviewResult> {
   await seedImplementation(journal);
   const result = reviewResult("candidate-1", "changes_required");
   await journal.append(reviewStarted());
@@ -205,7 +205,10 @@ describe("standards review recovery", () => {
       dispatcher(journal, runner, new RepairGit("candidate-1")).resume(),
     ).resolves.toMatchObject({ status: "completed" });
 
-    expect(runner.reviewRequests).toHaveLength(1);
+    expect(runner.reviewRequests).toHaveLength(2);
+    expect(runner.reviewRequests[1]?.instructions).toContain(
+      "# Independent plan-compliance review",
+    );
     expect(runner.resumeRequests).toEqual([]);
     expect(
       journal.events.filter(
@@ -322,7 +325,7 @@ describe("standards repair recovery", () => {
     expect(runner.resumeRequests[0]?.instructions).toContain(
       "Split the function.",
     );
-    expect(runner.reviewRequests).toHaveLength(1);
+    expect(runner.reviewRequests).toHaveLength(2);
     const repairCompleted = journal.events.findIndex(
       (event) => event.type === "standards_repair_completed",
     );

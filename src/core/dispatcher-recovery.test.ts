@@ -435,7 +435,7 @@ describe("Dispatcher replacement-session recovery", () => {
 });
 
 describe("Dispatcher attention evidence", () => {
-  it.each(["completion_evidence_missing", "review_evidence_missing"] as const)(
+  it.each(["completion_evidence_missing"] as const)(
     "persists the %s task-source reason",
     async (reason) => {
       const { dispatcher, journal } = sourceAttentionFixture(reason);

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  InMemoryRunJournal,
-  runPassingStandardsReview,
-} from "../testing/fakes.js";
+import { InMemoryRunJournal, runPassingReview } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
@@ -174,7 +171,7 @@ describe("Dispatcher session initialization", () => {
       resumeSession: () => {
         throw new Error("Unexpected resume");
       },
-      runReviewInNewSession: runPassingStandardsReview,
+      runReviewInNewSession: runPassingReview,
       runInNewSession: async (_request, sessionStarted) => {
         await sessionStarted?.(session);
         throw new Error("turn transport failed");
@@ -235,7 +232,7 @@ describe("Dispatcher retry initialization", () => {
       resumeSession: () => {
         throw new Error("Unexpected resume");
       },
-      runReviewInNewSession: runPassingStandardsReview,
+      runReviewInNewSession: runPassingReview,
       runInNewSession: async (_request, sessionStarted) => {
         requestCount += 1;
         if (requestCount < 3) {

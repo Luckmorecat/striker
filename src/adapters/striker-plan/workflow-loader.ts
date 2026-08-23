@@ -1,11 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const workflowFiles = [
-  "SKILL.md",
-  "references/tdd.md",
-  "references/review.md",
-] as const;
+const workflowFiles = ["SKILL.md", "references/tdd.md"] as const;
 
 function validateEntrypoint(content: string): void {
   const frontmatter = /^---\n([\s\S]*?)\n---/.exec(content)?.[1];
