@@ -56,6 +56,7 @@ export interface TaskSourceConflict {
 }
 
 export interface ImplementationResult {
+  readonly discoveries: readonly import("./discovery-contracts.js").DiscoveryProposal[];
   readonly kind: "implementation";
   readonly summary: string;
 }
@@ -135,6 +136,11 @@ export interface GitRepository {
     descendant: string,
   ): Promise<readonly string[]>;
   inspect(root: string): Promise<GitState>;
+  readFileAtCommit?(
+    root: string,
+    commit: string,
+    path: string,
+  ): Promise<string | null>;
   resolveRoot(location: string): Promise<string>;
   resolvePrivatePath(root: string, name: string): Promise<string>;
 }
@@ -183,7 +189,15 @@ export interface PlanStatus {
 }
 
 export interface PlanLedgerStatus extends PlanQueryLedgerDefinition {
-  readonly state: "recorded";
+  readonly applied?: boolean;
+  readonly decision?: "accepted" | "rejected";
+  readonly deviation?: string;
+  readonly locator?: import("./discovery-contracts.js").ResolvedDiscoveryProposal["locator"];
+  readonly proposal?: string;
+  readonly pauseReason?: "assumption_disproved" | "assumption_needs_decision";
+  readonly reason?: string;
+  readonly state:
+    "confirmed" | "deviated" | "disproved" | "needs_decision" | "recorded";
 }
 
 export interface PlanTaskStatus extends TaskIdentity {
@@ -239,6 +253,7 @@ export interface RecoveryCommandHandler {
 
 export type {
   AttentionReason,
+  DiscoveryReviewRecord,
   DispatchRequest,
   PlanComplianceReviewState,
   RunAttention,
@@ -251,6 +266,7 @@ export type {
   StandardsReviewState,
 } from "./run-journal-contracts.js";
 export type {
+  DiscoveryDecision,
   PlanComplianceReviewResult,
   ReviewFinding,
   ReviewRequest,

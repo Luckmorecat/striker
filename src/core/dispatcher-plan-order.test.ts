@@ -136,7 +136,8 @@ class OrderedPlanRunner implements AgentRunner {
     const session = { id: `session-${String(this.requests.length)}` };
     await sessionStarted?.(session);
     return {
-      output: '{"kind":"implementation","summary":"Task complete."}',
+      output:
+        '{"discoveries":[],"kind":"implementation","summary":"Task complete."}',
       session,
       status: "returned" as const,
     };

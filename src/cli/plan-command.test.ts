@@ -93,7 +93,23 @@ describe("striker plan validate", () => {
 const status: PlanStatus = {
   activeRun: { attempt: 2, runId: "run-1" },
   assumptions: [
-    { id: "A1", state: "recorded", statement: "The CLI owns commands." },
+    {
+      id: "A1",
+      applied: true,
+      decision: "accepted",
+      locator: {
+        commit: "candidate",
+        kind: "code",
+        line: 42,
+        path: "src/cli.ts",
+        text: "registerCommands();",
+      },
+      proposal: "Core now owns command registration.",
+      pauseReason: "assumption_disproved",
+      reason: "The exact candidate line disproves the assumption.",
+      state: "disproved",
+      statement: "The CLI owns commands.",
+    },
   ],
   attention: {
     detail: "Verification failed.",
@@ -155,7 +171,7 @@ describe("striker plan history queries", () => {
       sources: ["plans/current"],
       stderr: "",
       stdout:
-        "Plan: plan-1\nStatus: needs_attention\nTasks:\n- tasks/01.md@revision-1: completed\n- tasks/02.md@revision-2: active\nActive run: run-1\nAttempt: 2\nAttention: verification_failed: Verification failed.\nReviews:\n- tasks/01.md@revision-1: standards passed, plan passed\nAssumptions:\n- A1: recorded: The CLI owns commands.\nDefaults:\n- D1: recorded: Use text output.\n",
+        "Plan: plan-1\nStatus: needs_attention\nTasks:\n- tasks/01.md@revision-1: completed\n- tasks/02.md@revision-2: active\nActive run: run-1\nAttempt: 2\nAttention: verification_failed: Verification failed.\nReviews:\n- tasks/01.md@revision-1: standards passed, plan passed\nAssumptions:\n- A1: disproved: The CLI owns commands.\n  Proposal: Core now owns command registration.\n  Review: accepted. The exact candidate line disproves the assumption.\n  Transition: applied\n  Pause: assumption_disproved\n  Evidence: src/cli.ts:42 at candidate\nDefaults:\n- D1: recorded: Use text output.\n",
     });
   });
 

@@ -37,6 +37,7 @@ export interface GitState {
 }
 
 export interface TaskCompletionEvidence {
+  readonly discoveries?: readonly import("./discovery-contracts.js").DiscoveryProposal[];
   readonly summary: string;
   readonly verification?: VerificationResult;
 }

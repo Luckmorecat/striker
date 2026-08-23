@@ -1,4 +1,5 @@
 import type {
+  AgentSession,
   DispatchResult,
   DispatchRequest,
   GitState,
@@ -22,6 +23,43 @@ export interface RecoverableRun {
   readonly standardsReview: RunSnapshot["standardsReview"];
   readonly status: "failed" | "needs_attention" | "running";
   readonly task: ImplementationTask;
+}
+
+export function completedTaskRequest(
+  recovery: RunRecoveryState,
+): DispatchRequest | null {
+  const snapshot = recovery.snapshot;
+  const canContinue =
+    recovery.lastEvent.type === "task_completed" ||
+    (snapshot?.status === "running" && snapshot.task === null);
+  if (!canContinue) return null;
+  if (snapshot === null) {
+    throw new Error("Completed Striker task is missing its run request");
+  }
+  return snapshot.request;
+}
+
+export function appendRunContinuation(
+  journal: RunJournal,
+  paused: RecoverableRun & { readonly session: AgentSession },
+  answer?: string,
+): Promise<void> {
+  if (answer === undefined) {
+    return journal.append({
+      ...(paused.attention === null ? {} : { attention: paused.attention }),
+      runId: paused.request.runId,
+      session: paused.session,
+      task: paused.task.identity,
+      type: "run_resumed",
+    });
+  }
+  return journal.append({
+    answer,
+    runId: paused.request.runId,
+    session: paused.session,
+    task: paused.task.identity,
+    type: "run_answered",
+  });
 }
 
 export function pausedSessionlessRun(

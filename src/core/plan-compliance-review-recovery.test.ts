@@ -77,14 +77,17 @@ class GitSequence implements GitRepository {
 }
 
 function passed(kind: "plan_compliance" | "standards"): ReviewTurn {
+  const common = {
+    findings: [],
+    resultCommit: "candidate",
+    startCommit: "baseline",
+    verdict: "passed" as const,
+  };
   return {
-    result: {
-      findings: [],
-      kind,
-      resultCommit: "candidate",
-      startCommit: "baseline",
-      verdict: "passed",
-    },
+    result:
+      kind === "plan_compliance"
+        ? { ...common, discoveryDecisions: [], kind }
+        : { ...common, kind },
     session: { id: `${kind}-reviewer` },
     status: "returned",
   };
@@ -157,6 +160,7 @@ it("recovers an interrupted plan review without rerunning standards", async () =
 
 const blockingPlanReview: ReviewTurn = {
   result: {
+    discoveryDecisions: [],
     findings: [
       {
         fix: "Add the missing recovery behavior.",
@@ -178,14 +182,17 @@ const blockingPlanReview: ReviewTurn = {
 };
 
 function passedAmended(kind: "plan_compliance" | "standards"): ReviewTurn {
+  const common = {
+    findings: [],
+    resultCommit: "candidate-2",
+    startCommit: "baseline",
+    verdict: "passed" as const,
+  };
   return {
-    result: {
-      findings: [],
-      kind,
-      resultCommit: "candidate-2",
-      startCommit: "baseline",
-      verdict: "passed",
-    },
+    result:
+      kind === "plan_compliance"
+        ? { ...common, discoveryDecisions: [], kind }
+        : { ...common, kind },
     session: { id: `${kind}-reviewer-2` },
     status: "returned",
   };
@@ -219,12 +226,14 @@ function repairFixture(
         status: "returned",
       },
       {
-        output: '{"kind":"implementation","summary":"Repaired."}',
+        output:
+          '{"discoveries":[],"kind":"implementation","summary":"Repaired."}',
         session: { id: "implementor" },
         status: "returned",
       },
       {
-        output: '{"kind":"implementation","summary":"Amended."}',
+        output:
+          '{"discoveries":[],"kind":"implementation","summary":"Amended."}',
         session: { id: "implementor" },
         status: "returned",
       },

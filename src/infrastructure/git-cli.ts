@@ -78,6 +78,18 @@ export class GitCliRepository implements GitRepository {
     };
   }
 
+  async readFileAtCommit(
+    root: string,
+    commit: string,
+    file: string,
+  ): Promise<string | null> {
+    try {
+      return await git(root, ["cat-file", "blob", `${commit}:${file}`]);
+    } catch {
+      return null;
+    }
+  }
+
   async commitsBetween(
     root: string,
     ancestor: string,

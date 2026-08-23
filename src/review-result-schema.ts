@@ -31,39 +31,97 @@ const findingSchema = z
   })
   .strict();
 
-export const reviewResultSchema = z
-  .object({
-    findings: z.array(findingSchema),
-    kind: z.enum(["plan_compliance", "standards"]),
-    resultCommit: z.string().min(1),
-    startCommit: z.string().min(1),
-    verdict: z.enum(["changes_required", "passed"]),
-  })
+const resultFields = {
+  findings: z.array(findingSchema),
+  resultCommit: z.string().min(1),
+  startCommit: z.string().min(1),
+  verdict: z.enum(["changes_required", "passed"]),
+} as const;
+
+function verdictMatchesFindings(result: {
+  readonly findings: readonly { readonly severity: string }[];
+  readonly verdict: "changes_required" | "passed";
+}): boolean {
+  return (
+    (result.verdict === "changes_required") ===
+    result.findings.some((finding) => finding.severity === "blocking")
+  );
+}
+
+export const discoveryDecisionSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      decision: z.enum(["accepted", "rejected"]),
+      id: z.string().regex(/^A[1-9]\d*$/u),
+      kind: z.literal("assumption"),
+      reason: z.string().min(1).regex(/\S/u),
+    })
+    .strict(),
+  z
+    .object({
+      decision: z.enum(["accepted", "rejected"]),
+      id: z.string().regex(/^D[1-9]\d*$/u),
+      kind: z.literal("default"),
+      reason: z.string().min(1).regex(/\S/u),
+    })
+    .strict(),
+]);
+
+const discoveryDecisionsSchema = z
+  .array(discoveryDecisionSchema)
+  .default([])
+  .superRefine((decisions, context) => {
+    const keys = new Set<string>();
+    for (const [index, decision] of decisions.entries()) {
+      const key = `${decision.kind}:${decision.id}`;
+      if (keys.has(key)) {
+        context.addIssue({
+          code: "custom",
+          message: "Plan review permits one decision per discovery proposal",
+          path: [index],
+        });
+      }
+      keys.add(key);
+    }
+  });
+
+export const standardsReviewResultSchema = z
+  .object({ ...resultFields, kind: z.literal("standards") })
   .strict()
   .refine(
-    ({ findings, verdict }) =>
-      (verdict === "changes_required") ===
-      findings.some((finding) => finding.severity === "blocking"),
+    verdictMatchesFindings,
     "Review verdict does not match its blocking findings",
   )
   .refine(
-    ({ findings, kind }) =>
+    ({ findings }) =>
       findings.every(
         (finding) =>
-          finding.kind === "defect" ||
-          (kind === "standards"
-            ? finding.kind === "rule_violation"
-            : finding.kind === "plan_violation"),
+          finding.kind === "defect" || finding.kind === "rule_violation",
       ),
     "Review finding kind does not match its review kind",
   );
 
-export const standardsReviewResultSchema = reviewResultSchema.refine(
-  (result) => result.kind === "standards",
-  "Expected a standards review result",
-);
+export const planComplianceReviewResultSchema = z
+  .object({
+    ...resultFields,
+    discoveryDecisions: discoveryDecisionsSchema,
+    kind: z.literal("plan_compliance"),
+  })
+  .strict()
+  .refine(
+    verdictMatchesFindings,
+    "Review verdict does not match its blocking findings",
+  )
+  .refine(
+    ({ findings }) =>
+      findings.every(
+        (finding) =>
+          finding.kind === "defect" || finding.kind === "plan_violation",
+      ),
+    "Review finding kind does not match its review kind",
+  );
 
-export const planComplianceReviewResultSchema = reviewResultSchema.refine(
-  (result) => result.kind === "plan_compliance",
-  "Expected a plan-compliance review result",
-);
+export const reviewResultSchema = z.union([
+  standardsReviewResultSchema,
+  planComplianceReviewResultSchema,
+]);

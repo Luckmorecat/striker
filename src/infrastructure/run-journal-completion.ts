@@ -30,7 +30,15 @@ export function completeTask(
   snapshot: RunSnapshot,
   event: Extract<RunJournalEvent, { type: "task_completed" }>,
 ): RunSnapshot {
+  if (
+    snapshot.status === "needs_attention" &&
+    snapshot.attention?.reason !== "assumption_disproved" &&
+    snapshot.attention?.reason !== "assumption_needs_decision"
+  ) {
+    throw new Error("Only a discovery pause can complete its reviewed task");
+  }
   const status = transitionRun(snapshot.status, "complete_task");
+  const attention = snapshot.attention ?? null;
   const standards = snapshot.standardsReview;
   const plan = snapshot.planComplianceReview;
   if (
@@ -51,7 +59,7 @@ export function completeTask(
   delete completed.attempt;
   return {
     ...completed,
-    attention: null,
+    attention,
     baselineRecorded: false,
     before: null,
     planComplianceReview: null,

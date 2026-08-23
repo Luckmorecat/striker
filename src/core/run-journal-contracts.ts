@@ -21,6 +21,8 @@ export type AttentionReason =
   | "completion_evidence_missing"
   | "commit_evidence_missing"
   | "dirty_final_state"
+  | "assumption_disproved"
+  | "assumption_needs_decision"
   | "plan_compliance_repair_interrupted"
   | "plan_compliance_review_interrupted"
   | "review_evidence_missing"
@@ -74,6 +76,7 @@ export interface PlanComplianceReviewState {
   readonly attempt: number;
   readonly changedPaths: readonly string[];
   readonly completion: TaskCompletionEvidence;
+  readonly discoveries?: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
   readonly result:
     import("./review-contracts.js").PlanComplianceReviewResult | null;
   readonly resultCommit: string;
@@ -109,6 +112,19 @@ export interface StandardsReviewState {
 }
 
 export type RunJournalEvent =
+  | {
+      readonly decision: import("./review-contracts.js").DiscoveryDecision;
+      readonly proposal: import("./discovery-contracts.js").ResolvedDiscoveryProposal;
+      readonly runId: string;
+      readonly task: TaskIdentity;
+      readonly transition: import("./ledger-state.js").PlanLedgerTransition;
+      readonly type: "ledger_transition_recorded";
+    }
+  | {
+      readonly answer: string;
+      readonly runId: string;
+      readonly type: "ledger_attention_answered";
+    }
   | {
       readonly type: "run_started";
       readonly planId: string;
@@ -175,6 +191,7 @@ export type RunJournalEvent =
       readonly attempt: number;
       readonly changedPaths: readonly string[];
       readonly completion: TaskCompletionEvidence;
+      readonly discoveries?: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
       readonly resultCommit: string;
       readonly runId: string;
       readonly session: AgentSession;
@@ -196,6 +213,7 @@ export type RunJournalEvent =
       readonly attention: RunAttention;
       readonly changedPaths: readonly string[];
       readonly completion: TaskCompletionEvidence;
+      readonly discoveries?: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
       readonly resultCommit: string;
       readonly runId: string;
       readonly session: AgentSession | null;
@@ -314,9 +332,21 @@ export interface RunJournal {
   loadActive(): Promise<RunRecoveryState | null>;
 }
 
+export interface DiscoveryReviewRecord {
+  readonly applied: boolean;
+  readonly decision: import("./review-contracts.js").DiscoveryDecision;
+  readonly proposal: import("./discovery-contracts.js").ResolvedDiscoveryProposal;
+  readonly transition?: import("./ledger-state.js").PlanLedgerTransition;
+}
+
 export interface RunRecoveryState {
   readonly completedTasks: readonly TaskIdentity[];
+  readonly discoveryReviews?: readonly DiscoveryReviewRecord[];
   readonly lastEvent: RunJournalEvent;
+  readonly ledgerTransitions?: readonly Extract<
+    RunJournalEvent,
+    { readonly type: "ledger_transition_recorded" }
+  >[];
   readonly planId: string;
   readonly snapshot: RunSnapshot | null;
 }

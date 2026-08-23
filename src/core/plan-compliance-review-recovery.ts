@@ -72,6 +72,7 @@ async function markInterruptedReview(
     },
     changedPaths: input.review.changedPaths,
     completion: input.review.completion,
+    discoveries: input.review.discoveries ?? [],
     resultCommit: input.review.resultCommit,
     runId: input.request.runId,
     session: input.review.reviewSession,
@@ -128,6 +129,7 @@ async function review(
   const outcome = await runPlanComplianceReview({
     attempt: input.review.attempt,
     completion: input.review.completion,
+    discoveries: input.review.discoveries ?? [],
     execution: executionEvidence(input),
     journal: input.journal,
     request: input.request,
@@ -141,7 +143,11 @@ async function review(
   if (outcome.status === "changes_required") {
     return repair(input, outcome.result);
   }
-  return completeCandidate(input, input.review);
+  return completeCandidate(input, {
+    ...input.review,
+    result: outcome.result,
+    stage: "passed",
+  });
 }
 
 async function completeCandidate(

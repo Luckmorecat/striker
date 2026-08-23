@@ -21,7 +21,8 @@ import {
   runStandardsReview,
 } from "./standards-review.js";
 import { reviewedCandidateAttention } from "./dispatch-evidence.js";
-import { transitionRun } from "./run-state.js";
+import { reconcileReviewedDiscoveries } from "./discovery-reconciliation.js";
+import { resolveDiscoveryProposals } from "./discovery-proposal.js";
 
 interface CertificationDependencies {
   readonly git?: import("./contracts.js").GitRepository;
@@ -32,6 +33,7 @@ interface CertificationDependencies {
 interface TaskCertificationRequest {
   readonly attempt: number;
   readonly completion: TaskCompletionEvidence;
+  readonly discoveries: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
   readonly execution: TaskExecutionEvidence;
   readonly recheck: (
     output: string,
@@ -73,7 +75,6 @@ async function appendCompletion(
   session: AgentSession,
   candidate: CompletionCandidate,
 ): Promise<DispatchResult> {
-  transitionRun("running", "complete_task");
   await journal.append({
     attempt: candidate.attempt,
     certification: "independent_reviews",
@@ -99,6 +100,7 @@ async function appendCompletion(
 async function completePassedReview(
   dependencies: CertificationDependencies,
   input: TaskCertificationRequest,
+  review: import("./contracts.js").PlanComplianceReviewResult,
 ): Promise<DispatchResult> {
   const candidate = {
     changedPaths: input.execution.changedPaths,
@@ -121,7 +123,15 @@ async function completePassedReview(
     });
     return attentionResult(input.request, input.task, input.session, attention);
   }
-  return appendCompletion(
+  const discoveryAttention = await reconcileReviewedDiscoveries(
+    dependencies.journal,
+    input.request.planId,
+    input.request.runId,
+    input.task.identity,
+    input.discoveries,
+    review,
+  );
+  const completed = await appendCompletion(
     dependencies.journal,
     input.request,
     input.task,
@@ -133,6 +143,14 @@ async function completePassedReview(
       verification: input.execution.verification,
     },
   );
+  return discoveryAttention === null
+    ? completed
+    : attentionResult(
+        input.request,
+        input.task,
+        input.session,
+        discoveryAttention,
+      );
 }
 
 async function certifyPlanCompliance(
@@ -143,6 +161,7 @@ async function certifyPlanCompliance(
   const review = await runPlanComplianceReview({
     attempt: input.attempt,
     completion: input.completion,
+    discoveries: input.discoveries,
     execution: input.execution,
     journal: dependencies.journal,
     request: input.request,
@@ -159,7 +178,7 @@ async function certifyPlanCompliance(
     );
   }
   if (review.status === "passed") {
-    return completePassedReview(dependencies, input);
+    return completePassedReview(dependencies, input, review.result);
   }
   const repair = await repairPlanComplianceFindings({
     journal: dependencies.journal,
@@ -228,7 +247,36 @@ export function completeReviewedTask(
   session: AgentSession,
   review: PlanComplianceReviewState,
 ): Promise<DispatchResult> {
-  return appendCompletion(journal, request, task, session, {
+  if (review.result?.verdict !== "passed") {
+    throw new Error("Reviewed completion requires a passed plan review");
+  }
+  return completeRecoveredReview(
+    journal,
+    request,
+    task,
+    session,
+    review,
+    review.result,
+  );
+}
+
+async function completeRecoveredReview(
+  journal: RunJournal,
+  request: DispatchRequest,
+  task: ImplementationTask,
+  session: AgentSession,
+  review: PlanComplianceReviewState,
+  result: import("./contracts.js").PlanComplianceReviewResult,
+): Promise<DispatchResult> {
+  const attention = await reconcileReviewedDiscoveries(
+    journal,
+    request.planId,
+    request.runId,
+    task.identity,
+    review.discoveries ?? [],
+    result,
+  );
+  const completed = await appendCompletion(journal, request, task, session, {
     attempt: review.attempt,
     changedPaths: review.changedPaths,
     completion: review.completion,
@@ -236,6 +284,9 @@ export function completeReviewedTask(
     startCommit: review.startCommit,
     verification: review.verification,
   });
+  return attention === null
+    ? completed
+    : attentionResult(request, task, session, attention);
 }
 
 export function continueAfterStandardsReview(
@@ -252,23 +303,32 @@ export function continueAfterStandardsReview(
   if (input.review.result?.verdict !== "passed") {
     throw new Error("Plan compliance requires a passed standards review");
   }
-  return certifyPlanCompliance(
-    dependencies,
-    {
-      attempt: input.review.attempt,
-      completion: input.review.completion,
-      execution: {
-        after: { ...input.before, head: input.review.resultCommit },
-        before: input.before,
-        changedPaths: input.review.changedPaths,
-        commits: [input.review.resultCommit],
-        verification: input.review.verification,
+  const standards = input.review.result;
+  const execution = {
+    after: { ...input.before, head: input.review.resultCommit },
+    before: input.before,
+    changedPaths: input.review.changedPaths,
+    commits: [input.review.resultCommit],
+    verification: input.review.verification,
+  };
+  return resolveDiscoveryProposals(
+    input.review.completion.discoveries ?? [],
+    execution,
+    dependencies.git,
+  ).then((discoveries) =>
+    certifyPlanCompliance(
+      dependencies,
+      {
+        attempt: input.review.attempt,
+        completion: input.review.completion,
+        discoveries,
+        execution,
+        recheck: input.recheck,
+        request: input.request,
+        session: input.session,
+        task: input.task,
       },
-      recheck: input.recheck,
-      request: input.request,
-      session: input.session,
-      task: input.task,
-    },
-    input.review.result,
+      standards,
+    ),
   );
 }

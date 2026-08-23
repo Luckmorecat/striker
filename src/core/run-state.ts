@@ -17,6 +17,7 @@ const transitions: Readonly<
   },
   needs_attention: {
     answer: "running",
+    complete_task: "needs_attention",
     discard: "discarded",
     resume: "running",
     retry: "running",

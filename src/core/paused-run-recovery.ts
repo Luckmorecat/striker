@@ -26,11 +26,17 @@ import { continueAfterStandardsReview } from "./task-certification.js";
 import {
   recoverableRun,
   recoverableSnapshot,
+  appendRunContinuation,
+  completedTaskRequest,
   pausedSessionlessRun,
   pauseResumeFailure,
   reviewOwnsRecovery,
   type RecoverableRun,
 } from "./recovery-context.js";
+import {
+  answerDiscoveryPause,
+  isCompletedDiscoveryPause,
+} from "./discovery-reconciliation.js";
 
 interface RecoveryDependencies {
   readonly adapters: AdapterRegistry;
@@ -84,6 +90,12 @@ export class PausedRunRecovery {
         "Standards review recovery does not accept developer answers",
       );
     }
+    const ledgerRequest = await answerDiscoveryPause(
+      this.dependencies.journal,
+      recovery.snapshot,
+      answer,
+    );
+    if (ledgerRequest !== null) return this.host.continueRun(ledgerRequest);
     const run = recoverableRun(recovery, ["needs_attention"]);
     if (run.session === null) {
       throw new Error("Paused Striker run has no session to answer");
@@ -98,17 +110,11 @@ export class PausedRunRecovery {
 
   async resume(): Promise<DispatchResult> {
     const recovery = await this.requireActiveRecovery();
-    if (
-      recovery.lastEvent.type === "task_completed" ||
-      (recovery.snapshot?.status === "running" &&
-        recovery.snapshot.task === null)
-    ) {
-      const request = recovery.snapshot?.request;
-      if (request === undefined) {
-        throw new Error("Completed Striker task is missing its run request");
-      }
-      return this.host.continueRun(request);
+    if (isCompletedDiscoveryPause(recovery.snapshot)) {
+      throw new Error("Discovery attention requires a developer answer");
     }
+    const request = completedTaskRequest(recovery);
+    if (request !== null) return this.host.continueRun(request);
     if (reviewOwnsRecovery(recovery.snapshot)) {
       const snapshot = recovery.snapshot;
       if (snapshot === null) {
@@ -252,7 +258,7 @@ export class PausedRunRecovery {
     answer?: string,
   ): Promise<DispatchResult> {
     transitionRun(paused.status, action);
-    await this.appendContinuation(paused, answer);
+    await appendRunContinuation(this.dependencies.journal, paused, answer);
     let turn;
     try {
       turn = await this.dependencies.runner.resumeSession(
@@ -318,28 +324,6 @@ export class PausedRunRecovery {
     if (result.status !== "completed") return result;
     const continued = await this.host.continueRun(paused.request);
     return continued.status === "source_exhausted" ? result : continued;
-  }
-
-  private appendContinuation(
-    paused: ContinuedRun,
-    answer?: string,
-  ): Promise<void> {
-    if (answer === undefined) {
-      return this.dependencies.journal.append({
-        ...(paused.attention === null ? {} : { attention: paused.attention }),
-        runId: paused.request.runId,
-        session: paused.session,
-        task: paused.task.identity,
-        type: "run_resumed",
-      });
-    }
-    return this.dependencies.journal.append({
-      answer,
-      runId: paused.request.runId,
-      session: paused.session,
-      task: paused.task.identity,
-      type: "run_answered",
-    });
   }
 
   private async requireActiveRecovery(): Promise<RunRecoveryState> {

@@ -201,11 +201,19 @@ pnpm exec striker run path/to/plan --allow-dirty
 
 After each task, Striker requires one strict implementation-result JSON object,
 one descendant commit, an unchanged allowed dirty baseline, and the exact
-verification result. It then starts fresh read-only standards and
-plan-compliance reviewers for the exact start and candidate commits. The plan
-reviewer receives the task contract, immutable spine and map context, changed
-paths, verification, and the passed standards result. Each reviewer returns one
-strict JSON object. Striker accepts findings only for Git-derived changed paths.
+verification result. The result has a required `discoveries` array. Each item
+proposes a transition for one manifest `A<n>` assumption or `D<n>` default and
+cites either an exact candidate-commit line or a checked verification excerpt.
+An empty array means the task found no ledger change.
+
+Striker rejects unknown IDs and citations that do not match the exact candidate
+or stored verification before review. It then starts fresh read-only standards
+and plan-compliance reviewers for the exact start and candidate commits. The
+plan reviewer receives the task contract, immutable spine and map context,
+changed paths, verification, passed standards result, and resolved discovery
+evidence. Each reviewer returns one strict JSON object. The plan reviewer
+accepts or rejects every proposal. Striker accepts findings only for Git-derived
+changed paths.
 
 A blocking finding from either review resumes the preserved implementation
 session with the typed findings. The implementor amends its one task commit.
@@ -218,12 +226,13 @@ plan directory or reviews its own work.
 Striker keys one persistent event journal by the immutable plan identity under
 Git-private checkout storage. The journal records each run, task selection,
 baseline, attempt, session, continuation, failure, attention state, completion,
-source conflict, discard, and terminal completion. The active-run file is only a
-lock and lookup index. Successful completion and explicit discard release that
-claim without deleting plan history. `snapshot.json`, `task-state.json`, and
-`log.md` are rebuildable projections. Striker repairs or recreates them from
-`events.ndjson` after an interrupted projection write, without rerunning a
-completed implementation session.
+source conflict, discovery decision, ledger transition, discard, and terminal
+completion. The active-run file is only a lock and lookup index. Successful
+completion and explicit discard release that claim without deleting plan
+history. `snapshot.json`, `task-state.json`, and `log.md` are rebuildable
+projections. Striker repairs or recreates them from `events.ndjson` after an
+interrupted projection write, without rerunning a completed implementation
+session.
 
 One nonterminal run may exist per checkout. Inspect or operate it with:
 
@@ -251,6 +260,12 @@ the assumption and default states. A plan without events reports `not_started`.
 `plan log` prints an empty `# Plan log` view in that case. Neither command
 creates authoritative events. `striker status` remains limited to the active
 checkout run.
+
+An accepted default deviation or confirmed assumption records its transition and
+continues. An accepted disproved or undecidable assumption completes the current
+task, pauses before selecting another task, and requires `striker answer` with a
+developer decision. Status and log projections include the proposal, review
+decision, transition, evidence, and pause reason.
 
 `resume` continues an interrupted implementation or repair session. An
 interrupted reviewer is replaced with a fresh read-only review pinned to the

@@ -16,11 +16,53 @@ describe("parseReviewResult", () => {
   });
 
   it("accepts one strict plan-compliance result", () => {
-    const planResult = { ...passed, kind: "plan_compliance" } as const;
+    const planResult = {
+      ...passed,
+      discoveryDecisions: [
+        {
+          decision: "accepted",
+          id: "A1",
+          kind: "assumption",
+          reason: "The resolved candidate line proves the proposal.",
+        },
+      ],
+      kind: "plan_compliance",
+    } as const;
 
     expect(parseReviewResult(JSON.stringify(planResult))).toEqual(planResult);
   });
+});
 
+describe("plan review discovery decisions", () => {
+  it("rejects duplicate or malformed discovery decisions", () => {
+    const decision = {
+      decision: "accepted",
+      id: "D1",
+      kind: "default",
+      reason: "The deviation stays within the task contract.",
+    } as const;
+    expect(() =>
+      parseReviewResult(
+        JSON.stringify({
+          ...passed,
+          discoveryDecisions: [decision, decision],
+          kind: "plan_compliance",
+        }),
+      ),
+    ).toThrow("one decision per discovery proposal");
+    expect(() =>
+      parseReviewResult(
+        JSON.stringify({
+          ...passed,
+          discoveryDecisions: [{ ...decision, id: "A1" }],
+          kind: "plan_compliance",
+        }),
+      ),
+    ).toThrow();
+  });
+});
+
+describe("invalid review results", () => {
   it("rejects prose or a code fence around the result", () => {
     expect(() =>
       parseReviewResult(`Review complete.\n${JSON.stringify(passed)}`),
@@ -54,7 +96,9 @@ describe("parseReviewResult", () => {
       ),
     ).toThrow();
   });
+});
 
+describe("review verdict validation", () => {
   it("requires verdicts to agree with blocking findings", () => {
     const finding = {
       fix: "Split the function.",

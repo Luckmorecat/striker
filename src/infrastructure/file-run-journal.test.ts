@@ -220,11 +220,11 @@ describe("file plan journal validation and replay", () => {
     const journal = new FileRunJournal(root);
     await start(journal);
     const eventsPath = path.join(root, "plans/plan-1/events.ndjson");
-    const unsupported = `${JSON.stringify({ event: { runId: "run-1", type: "run_completed" }, schema: "striker.plan-journal.v5" })}\n`;
+    const unsupported = `${JSON.stringify({ event: { runId: "run-1", type: "run_completed" }, schema: "striker.plan-journal.v6" })}\n`;
     await writeFile(eventsPath, unsupported);
 
     await expect(journal.load("plan-1")).rejects.toThrow(
-      "Unsupported Striker plan journal schema: striker.plan-journal.v5",
+      "Unsupported Striker plan journal schema: striker.plan-journal.v6",
     );
     expect(await readFile(eventsPath, "utf8")).toBe(unsupported);
   });

@@ -68,6 +68,7 @@ function result(
   overrides: Partial<PlanComplianceReviewResult> = {},
 ): PlanComplianceReviewResult {
   return {
+    discoveryDecisions: [],
     findings: [],
     kind: "plan_compliance",
     resultCommit: "candidate",
@@ -134,12 +135,16 @@ class ReviewRunner extends FakeAgentRunner {
   }
 }
 
-async function reviewWith(turn: ReviewTurn) {
+async function reviewWith(
+  turn: ReviewTurn,
+  discoveries: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[] = [],
+) {
   const journal = await startedJournal();
   const runner = new ReviewRunner(turn);
   const outcome = await runPlanComplianceReview({
     attempt: 1,
     completion: { summary: "implementation complete" },
+    discoveries,
     execution,
     journal,
     request,
@@ -204,6 +209,55 @@ describe("runPlanComplianceReview", () => {
   });
 });
 
+describe("plan-compliance discovery review", () => {
+  it("requires one review decision for every resolved discovery", async () => {
+    const discovery = {
+      id: "A1",
+      kind: "assumption",
+      locator: {
+        commit: "candidate",
+        kind: "code",
+        line: 1,
+        path: "src/task.ts",
+        text: "export const owner = core;",
+      },
+      reason: "Core owns the transition.",
+      state: "confirmed",
+    } as const;
+    const decision = {
+      decision: "accepted",
+      id: "A1",
+      kind: "assumption",
+      reason: "The exact candidate evidence supports the proposal.",
+    } as const;
+    const accepted = await reviewWith(
+      {
+        result: result({ discoveryDecisions: [decision] }),
+        session: { id: "plan-reviewer" },
+        status: "returned",
+      },
+      [discovery],
+    );
+    expect(accepted.outcome).toMatchObject({ status: "passed" });
+    expect(accepted.runner.reviewInstructions).toContain(
+      '"commit": "candidate"',
+    );
+
+    const missing = await reviewWith(
+      {
+        result: result(),
+        session: { id: "plan-reviewer" },
+        status: "returned",
+      },
+      [discovery],
+    );
+    expect(missing.outcome).toMatchObject({
+      attention: { reason: "plan_compliance_review_interrupted" },
+      status: "interrupted",
+    });
+  });
+});
+
 describe("repairPlanComplianceFindings", () => {
   it("resumes the preserved implementor and records the repair", async () => {
     const journal = await startedJournal();
@@ -242,7 +296,8 @@ describe("repairPlanComplianceFindings", () => {
       type: "plan_compliance_review_completed",
     });
     const runner = new FakeAgentRunner({
-      output: '{"kind":"implementation","summary":"Repaired recovery."}',
+      output:
+        '{"discoveries":[],"kind":"implementation","summary":"Repaired recovery."}',
       session: implementor,
       status: "returned",
     });

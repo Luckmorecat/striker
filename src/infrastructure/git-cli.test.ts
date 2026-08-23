@@ -74,5 +74,14 @@ describe("Git CLI repository", () => {
     await expect(
       repositoryAdapter.changedPaths(root, before.head, after.head),
     ).resolves.toEqual(["added.txt", "tracked.txt"]);
+    await expect(
+      repositoryAdapter.readFileAtCommit(root, before.head, "tracked.txt"),
+    ).resolves.toBe("initial\n");
+    await expect(
+      repositoryAdapter.readFileAtCommit(root, after.head, "tracked.txt"),
+    ).resolves.toBe("committed\n");
+    await expect(
+      repositoryAdapter.readFileAtCommit(root, after.head, "missing.txt"),
+    ).resolves.toBeNull();
   });
 });

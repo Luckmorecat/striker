@@ -1,10 +1,17 @@
 import { z } from "zod";
 
 import { createRunJournalReviewSchemas } from "./run-journal-review-schema.js";
+import {
+  discoveryProposalsSchema,
+  resolvedDiscoveryProposalSchema,
+  resolvedDiscoveryProposalsSchema,
+} from "../discovery-schema.js";
+import { discoveryDecisionSchema } from "../review-result-schema.js";
 
 export const legacyRunJournalSchemaId = "striker.plan-journal.v2";
 export const standardsRunJournalSchemaId = "striker.plan-journal.v3";
-export const runJournalSchemaId = "striker.plan-journal.v4";
+export const independentRunJournalSchemaId = "striker.plan-journal.v4";
+export const runJournalSchemaId = "striker.plan-journal.v5";
 
 const taskIdentitySchema = z
   .object({ id: z.string().min(1), revision: z.string().min(1) })
@@ -21,6 +28,7 @@ const verificationSchema = z
   .strict();
 const completionEvidenceSchema = z
   .object({
+    discoveries: discoveryProposalsSchema.optional(),
     summary: z.string(),
     verification: verificationSchema.optional(),
   })
@@ -61,6 +69,8 @@ const dispatchRequestSchema = z
   })
   .strict();
 const attentionReasonSchema = z.enum([
+  "assumption_disproved",
+  "assumption_needs_decision",
   "completion_evidence_missing",
   "commit_evidence_missing",
   "dirty_final_state",
@@ -79,6 +89,7 @@ const runAttentionSchema = z
 const reviewSchemas = createRunJournalReviewSchemas({
   agentSession: agentSessionSchema,
   completion: completionEvidenceSchema,
+  discoveries: resolvedDiscoveryProposalsSchema.default([]),
   runAttention: runAttentionSchema,
   taskIdentity: taskIdentitySchema,
   verification: verificationSchema,
@@ -224,6 +235,40 @@ const runCompletedSchema = z
 const runDiscardedSchema = z
   .object({ runId: z.string().min(1), type: z.literal("run_discarded") })
   .strict();
+const assumptionTransitionSchema = z
+  .object({
+    id: z.string().regex(/^A[1-9]\d*$/u),
+    kind: z.literal("assumption"),
+    state: z.enum(["confirmed", "disproved", "needs_decision"]),
+  })
+  .strict();
+const defaultTransitionSchema = z
+  .object({
+    id: z.string().regex(/^D[1-9]\d*$/u),
+    kind: z.literal("default"),
+    state: z.literal("deviated"),
+  })
+  .strict();
+const ledgerTransitionRecordedSchema = z
+  .object({
+    decision: discoveryDecisionSchema,
+    proposal: resolvedDiscoveryProposalSchema,
+    runId: z.string().min(1),
+    task: taskIdentitySchema,
+    transition: z.discriminatedUnion("kind", [
+      assumptionTransitionSchema,
+      defaultTransitionSchema,
+    ]),
+    type: z.literal("ledger_transition_recorded"),
+  })
+  .strict();
+const ledgerAttentionAnsweredSchema = z
+  .object({
+    answer: z.string().min(1),
+    runId: z.string().min(1),
+    type: z.literal("ledger_attention_answered"),
+  })
+  .strict();
 
 export const runJournalEventSchema = z.discriminatedUnion("type", [
   runStartedSchema,
@@ -232,6 +277,8 @@ export const runJournalEventSchema = z.discriminatedUnion("type", [
   taskAttemptStartedSchema,
   taskSessionStartedSchema,
   runRetriedSchema,
+  ledgerTransitionRecordedSchema,
+  ledgerAttentionAnsweredSchema,
   reviewSchemas.standardsReviewStarted,
   reviewSchemas.standardsReviewCompleted,
   reviewSchemas.standardsReviewInterrupted,
@@ -275,6 +322,13 @@ export const standardsEventEnvelopeSchema = z
   })
   .strict();
 
+export const independentEventEnvelopeSchema = z
+  .object({
+    event: runJournalEventSchema,
+    schema: z.literal(independentRunJournalSchemaId),
+  })
+  .strict();
+
 export const snapshotEnvelopeSchema = z
   .object({
     eventCount: z.number().int().nonnegative().optional(),
@@ -289,4 +343,8 @@ export const legacySnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
 
 export const standardsSnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
   schema: z.literal(standardsRunJournalSchemaId),
+});
+
+export const independentSnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
+  schema: z.literal(independentRunJournalSchemaId),
 });

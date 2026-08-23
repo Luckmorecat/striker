@@ -15,6 +15,7 @@ import {
 } from "./plan-parser.js";
 import { loadImplementorWorkflow } from "./workflow-loader.js";
 import { parseImplementationResult } from "../../runner/implementation-result.js";
+import type { DiscoveryProposal } from "../../core/discovery-contracts.js";
 
 interface AdapterOptions {
   readonly projectRoot: string;
@@ -28,6 +29,19 @@ function includesIdentity(
   return completed.some(
     (item) => item.id === identity.id && item.revision === identity.revision,
   );
+}
+
+function validateDiscovery(
+  plan: StrikerPlan,
+  proposal: DiscoveryProposal,
+): void {
+  const definitions =
+    proposal.kind === "assumption"
+      ? plan.manifest.assumptions
+      : plan.manifest.defaults;
+  if (!(proposal.id in definitions)) {
+    throw new Error(`Unknown plan ${proposal.kind}: ${proposal.id}`);
+  }
 }
 
 class StrikerPlanSource implements TaskSource {
@@ -89,6 +103,9 @@ class StrikerPlanSource implements TaskSource {
     let result;
     try {
       result = parseImplementationResult(agentOutput);
+      for (const proposal of result.discoveries) {
+        validateDiscovery(this.plan, proposal);
+      }
     } catch (error) {
       return Promise.resolve({
         attention: {
@@ -100,6 +117,7 @@ class StrikerPlanSource implements TaskSource {
     }
     return Promise.resolve({
       evidence: {
+        discoveries: result.discoveries,
         summary: result.summary,
         verification: execution.verification,
       },

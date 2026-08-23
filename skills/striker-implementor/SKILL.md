@@ -15,9 +15,9 @@ Work in vertical red-green cycles through the test boundaries named in the task.
 Change only task-authorized project paths. Follow the repository rules, preserve
 current user changes, and run focused checks during the work.
 
-Treat every supplied plan file as read-only. Keep implementation discoveries in
-the final report so Striker can review and record them outside the immutable
-plan.
+Treat every supplied plan file as read-only. Read the assumption and default IDs
+from `plan.json`. Report a discovery only when this task produced exact code or
+verification evidence for one of those entries.
 
 Create exactly one commit containing only the implementation and tests. Preserve
 any allowed pre-existing dirty baseline.
@@ -25,5 +25,26 @@ any allowed pre-existing dirty baseline.
 After the checks pass, return one strict JSON object and no other text:
 
 ```json
-{ "kind": "implementation", "summary": "Describe what landed." }
+{
+  "discoveries": [],
+  "kind": "implementation",
+  "summary": "Describe what landed."
+}
 ```
+
+`discoveries` is required. Leave it empty when the task found nothing that
+changes a ledger entry. Use at most one proposal for each entry:
+
+- An assumption proposal has `kind: "assumption"`, its `A<n>` `id`, a `state` of
+  `confirmed`, `disproved`, or `needs_decision`, and a nonempty `reason`.
+- A default proposal has `kind: "default"`, its `D<n>` `id`, and a nonempty
+  description in `deviation`. Propose it only when the deviation stays inside
+  the current task and approved behavior.
+- A code locator is
+  `{ "kind": "code", "path": "src/file.ts", "line": 12, "text": "exact line text" }`.
+- A verification locator is
+  `{ "kind": "verification", "command": "pnpm check", "exitCode": 0, "output": "exact output excerpt" }`.
+
+Striker checks the locator against the candidate commit or stored verification,
+then gives it to the independent plan reviewer. A proposal does not update the
+ledger by itself.

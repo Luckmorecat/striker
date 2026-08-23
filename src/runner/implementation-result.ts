@@ -1,9 +1,11 @@
 import { z } from "zod";
 
 import type { ImplementationResult } from "../core/contracts.js";
+import { discoveryProposalsSchema } from "../discovery-schema.js";
 
 const implementationResultSchema = z
   .object({
+    discoveries: discoveryProposalsSchema,
     kind: z.literal("implementation"),
     summary: z.string().min(1),
   })

@@ -15,6 +15,9 @@ import {
 } from "./run-journal-sequence.js";
 import {
   eventEnvelopeSchema,
+  independentEventEnvelopeSchema,
+  independentRunJournalSchemaId,
+  independentSnapshotEnvelopeSchema,
   legacyEventEnvelopeSchema,
   legacyRunJournalSchemaId,
   legacySnapshotEnvelopeSchema,
@@ -75,6 +78,7 @@ function rejectUnsupportedSchema(value: unknown): void {
   if (
     schema !== undefined &&
     schema !== runJournalSchemaId &&
+    schema !== independentRunJournalSchemaId &&
     schema !== standardsRunJournalSchemaId &&
     schema !== legacyRunJournalSchemaId
   ) {
@@ -90,9 +94,11 @@ function parseEvent(line: string): RunJournalEvent {
   const parsed =
     schema === legacyRunJournalSchemaId
       ? legacyEventEnvelopeSchema.safeParse(value)
-      : schema === standardsRunJournalSchemaId
-        ? standardsEventEnvelopeSchema.safeParse(value)
-        : eventEnvelopeSchema.safeParse(value);
+      : schema === independentRunJournalSchemaId
+        ? independentEventEnvelopeSchema.safeParse(value)
+        : schema === standardsRunJournalSchemaId
+          ? standardsEventEnvelopeSchema.safeParse(value)
+          : eventEnvelopeSchema.safeParse(value);
   if (!parsed.success) {
     throw new Error("Invalid Striker plan journal event", {
       cause: parsed.error,
@@ -261,9 +267,11 @@ export class FileRunJournal implements RunJournal {
     const legacy = schema === legacyRunJournalSchemaId;
     const parsed = legacy
       ? legacySnapshotEnvelopeSchema.safeParse(value)
-      : schema === standardsRunJournalSchemaId
-        ? standardsSnapshotEnvelopeSchema.safeParse(value)
-        : snapshotEnvelopeSchema.safeParse(value);
+      : schema === independentRunJournalSchemaId
+        ? independentSnapshotEnvelopeSchema.safeParse(value)
+        : schema === standardsRunJournalSchemaId
+          ? standardsSnapshotEnvelopeSchema.safeParse(value)
+          : snapshotEnvelopeSchema.safeParse(value);
     if (!parsed.success) {
       throw new Error("Invalid Striker run snapshot", { cause: parsed.error });
     }

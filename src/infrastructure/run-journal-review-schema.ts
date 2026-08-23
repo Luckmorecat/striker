@@ -8,6 +8,7 @@ import {
 interface ReviewSchemaInputs {
   readonly agentSession: z.ZodType;
   readonly completion: z.ZodType;
+  readonly discoveries: z.ZodType;
   readonly runAttention: z.ZodType;
   readonly taskIdentity: z.ZodType;
   readonly verification: z.ZodType;
@@ -134,7 +135,7 @@ function repairEvent(
 export function createRunJournalReviewSchemas(input: ReviewSchemaInputs) {
   const standards = standardsReviewResultSchema;
   const plan = planComplianceReviewResultSchema;
-  const standardsField = { standards };
+  const standardsField = { discoveries: input.discoveries, standards };
   return {
     planRepairCompleted: repairEvent(
       input,

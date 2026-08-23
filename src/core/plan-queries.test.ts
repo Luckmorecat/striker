@@ -170,3 +170,101 @@ describe("plan queries", () => {
     });
   });
 });
+
+describe("plan ledger queries", () => {
+  it("derives accepted ledger state and its pause reason from events", async () => {
+    const recovery = pausedRecovery();
+    const decision = {
+      decision: "accepted",
+      id: "A1",
+      kind: "assumption",
+      reason: "The candidate proves CLI does not own command registration.",
+    } as const;
+    const proposal = {
+      id: "A1",
+      kind: "assumption",
+      locator: {
+        commit: "candidate",
+        kind: "code",
+        line: 10,
+        path: "src/core/dispatcher.ts",
+        text: "registry.register(command);",
+      },
+      reason: "Core owns registration.",
+      state: "disproved",
+    } as const;
+    const queries = new PlanQueries(
+      new QueryJournal({
+        ...recovery,
+        ledgerTransitions: [
+          {
+            decision,
+            proposal,
+            runId: "run-1",
+            task: secondTask,
+            transition: {
+              id: "A1",
+              kind: "assumption",
+              state: "disproved",
+            },
+            type: "ledger_transition_recorded",
+          },
+        ],
+      }),
+      new QueryLogReader("# Plan log\n"),
+    );
+
+    await expect(queries.status(plan)).resolves.toMatchObject({
+      assumptions: [
+        {
+          id: "A1",
+          reason: decision.reason,
+          state: "disproved",
+        },
+      ],
+    });
+  });
+});
+
+describe("rejected plan ledger queries", () => {
+  it("shows a rejected discovery without changing ledger state", async () => {
+    const recovery = pausedRecovery();
+    const proposal = {
+      deviation: "Keep the existing command label.",
+      id: "D1",
+      kind: "default",
+      locator: {
+        command: "pnpm check",
+        exitCode: 0,
+        kind: "verification",
+        output: "passed",
+      },
+    } as const;
+    const decision = {
+      decision: "rejected",
+      id: "D1",
+      kind: "default",
+      reason: "The evidence does not justify the deviation.",
+    } as const;
+    const queries = new PlanQueries(
+      new QueryJournal({
+        ...recovery,
+        discoveryReviews: [{ applied: false, decision, proposal }],
+      }),
+      new QueryLogReader("# Plan log\n"),
+    );
+
+    await expect(queries.status(plan)).resolves.toMatchObject({
+      defaults: [
+        {
+          applied: false,
+          decision: "rejected",
+          id: "D1",
+          proposal: proposal.deviation,
+          reason: decision.reason,
+          state: "recorded",
+        },
+      ],
+    });
+  });
+});

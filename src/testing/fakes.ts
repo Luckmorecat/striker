@@ -174,6 +174,7 @@ export function passedPlanComplianceReview(request: ReviewRequest): ReviewTurn {
   }
   return {
     result: {
+      discoveryDecisions: [],
       findings: [],
       kind: "plan_compliance",
       resultCommit,

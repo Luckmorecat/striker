@@ -95,6 +95,21 @@ the directory other than `spine.md` and `map.md` must appear in the manifest.
 `log.md` is not part of a version 2 plan and fails validation as undeclared
 Markdown.
 
+## Execution discoveries
+
+The immutable manifest defines the only ledger IDs an implementation result may
+name. An implementor may propose one transition per entry after a task:
+
+- assumptions may become `confirmed`, `disproved`, or `needs_decision`;
+- defaults may record one in-scope deviation.
+
+Each proposal carries either one exact code line or an excerpt from the stored
+verification result. Striker resolves code against the candidate commit and
+checks verification locators against the command, exit code, and output. The
+plan-compliance reviewer accepts or rejects every valid proposal. Only accepted
+legal transitions enter the Git-private journal. The plan directory stays
+unchanged.
+
 ## Plan identity
 
 Striker identifies the complete immutable package with SHA-256. It hashes files

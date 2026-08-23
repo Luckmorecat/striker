@@ -25,7 +25,15 @@ export interface StandardsReviewResult extends ReviewResultBase {
 }
 
 export interface PlanComplianceReviewResult extends ReviewResultBase {
+  readonly discoveryDecisions: readonly DiscoveryDecision[];
   readonly kind: "plan_compliance";
+}
+
+export interface DiscoveryDecision {
+  readonly decision: "accepted" | "rejected";
+  readonly id: string;
+  readonly kind: "assumption" | "default";
+  readonly reason: string;
 }
 
 export type ReviewResult = PlanComplianceReviewResult | StandardsReviewResult;

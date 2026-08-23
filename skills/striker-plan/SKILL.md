@@ -46,6 +46,10 @@ choice that can block implementation:
 4. Ask about hard-to-reverse implementation choices that remain within the
    approved specification.
 
+Write each ledger statement so an implementor can confirm or disprove it with
+one exact code line or stored verification result. Keep each ID stable within
+the immutable plan because implementation results refer to it directly.
+
 Enumerate the choices before asking questions. Resolve blocking choices first
 and batch only independent questions.
 

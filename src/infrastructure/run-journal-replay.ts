@@ -8,6 +8,11 @@ import type {
 import { transitionRun } from "../core/run-state.js";
 import { completeTask } from "./run-journal-completion.js";
 import {
+  isLedgerEvent,
+  replayLedgerEvent,
+  type LedgerEvent,
+} from "./run-journal-ledger-replay.js";
+import {
   isPlanReviewEvent,
   planReviewAfterAttention,
   planReviewAfterRetry,
@@ -96,9 +101,13 @@ export function startSnapshot(
 export function replayEvent(
   snapshot: RunSnapshot,
   event: ReplayEvent,
+  ledgerTransitionApplied = true,
 ): RunSnapshot {
   if (event.runId !== snapshot.runId) {
     throw new Error("Striker plan journal contains a mismatched run id");
+  }
+  if (isLedgerEvent(event)) {
+    return replayLedgerEvent(snapshot, event, ledgerTransitionApplied);
   }
   if (isPlanReviewEvent(event)) return replayPlanReviewEvent(snapshot, event);
   if (isReviewEvent(event)) return replayReviewEvent(snapshot, event);
@@ -217,7 +226,7 @@ function replayTerminal(
   snapshot: RunSnapshot,
   event: Exclude<
     ReplayEvent,
-    PlanReviewEvent | ProgressEvent | ResultEvent | ReviewEvent
+    LedgerEvent | PlanReviewEvent | ProgressEvent | ResultEvent | ReviewEvent
   >,
 ): RunSnapshot {
   switch (event.type) {

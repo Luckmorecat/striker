@@ -2,10 +2,13 @@ import { chmod, open, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
 import type {
+  DiscoveryReviewRecord,
   PlanLogReader,
   RunJournalEvent,
   RunSnapshot,
 } from "../core/contracts.js";
+import { ledgerTransitionPause } from "../core/ledger-state.js";
+import { projectDiscoveryReviewEntries } from "./discovery-review-history.js";
 import { runJournalSchemaId } from "./run-journal-schema.js";
 
 export const taskStateSchemaId = "striker.plan-task-state.v1";
@@ -117,12 +120,47 @@ function completionLog(
   ].join("\n");
 }
 
+function evidenceLabel(proposal: DiscoveryReviewRecord["proposal"]): string {
+  const locator = proposal.locator;
+  return locator.kind === "code"
+    ? `Code: \`${locator.path}:${String(locator.line)}\` at \`${locator.commit}\`.`
+    : `Verification: \`${locator.command}\` exited ${String(locator.exitCode)} and matched \`${locator.output}\`.`;
+}
+
+function discoveryLog(record: DiscoveryReviewRecord): string {
+  const { decision, proposal, transition } = record;
+  const proposalText =
+    proposal.kind === "assumption"
+      ? `Proposal: assumption \`${proposal.id}\` -> \`${proposal.state}\`. ${proposal.reason}`
+      : `Proposal: default \`${proposal.id}\` deviation. ${proposal.deviation}`;
+  const transitionText =
+    transition === undefined || !record.applied
+      ? "Transition: not applied."
+      : `Transition: \`recorded\` -> \`${transition.state}\`.`;
+  const pause =
+    transition === undefined || !record.applied
+      ? null
+      : ledgerTransitionPause(transition, decision.reason);
+  return [
+    `### Discovery ${proposal.id}`,
+    "",
+    proposalText,
+    evidenceLabel(proposal),
+    `Review: ${decision.decision}. ${decision.reason}`,
+    transitionText,
+    ...(pause === null ? [] : [`Pause: \`${pause.reason}\`.`]),
+  ].join("\n");
+}
+
 function humanLog(events: readonly RunJournalEvent[]): string {
-  const records = events
-    .filter(
-      (event): event is CompletionEvent => event.type === "task_completed",
-    )
-    .map((event) => completionLog(events, event));
+  const discoveryEntries = projectDiscoveryReviewEntries(events);
+  const records = events.flatMap((event, index) => {
+    if (event.type === "task_completed") return [completionLog(events, event)];
+    if (event.type !== "plan_compliance_review_completed") return [];
+    return discoveryEntries
+      .filter((entry) => entry.reviewIndex === index)
+      .map((entry) => discoveryLog(entry.record));
+  });
   return ["# Plan log", ...records.map((record) => `\n${record}`), ""].join(
     "\n",
   );

@@ -31,8 +31,19 @@ pnpm test
 
 function manifest(tasks = ["tasks/01.md"]): string {
   return JSON.stringify({
-    assumptions: {},
-    defaults: {},
+    assumptions: {
+      A1: {
+        evidence: [{ line: 1, path: "src/cli.ts" }],
+        statement: "The CLI owns command registration.",
+      },
+    },
+    defaults: {
+      D1: {
+        reason: "Keep the public command stable.",
+        reversalCost: "Rename the command and tests.",
+        statement: "Retain the command name.",
+      },
+    },
     taskSource: "striker-plan",
     tasks,
     version: 2,
@@ -128,7 +139,7 @@ describe("Striker plan completion evidence", () => {
       resumedSource.completionEvidence(
         task,
         execution,
-        '{"kind":"implementation","summary":"done"} but more prose',
+        '{"discoveries":[],"kind":"implementation","summary":"done"} but more prose',
       ),
     ).resolves.toMatchObject({
       attention: { reason: "completion_evidence_missing" },
@@ -137,7 +148,7 @@ describe("Striker plan completion evidence", () => {
     const result = await resumedSource.completionEvidence(
       task,
       execution,
-      '{"kind":"implementation","summary":"Added the command."}',
+      '{"discoveries":[],"kind":"implementation","summary":"Added the command."}',
     );
     expect(result.status).toBe("completed");
     if (result.status !== "completed")
@@ -146,6 +157,67 @@ describe("Striker plan completion evidence", () => {
     expect(result.evidence.summary).toBe("Added the command.");
 
     await expect(resumedSource.nextTask([task.identity])).resolves.toBeNull();
+  });
+});
+
+describe("Striker plan discovery evidence", () => {
+  it("accepts proposals only for ledger entries in the immutable plan", async () => {
+    const fixture = await createFixture();
+    const source = await new StrikerPlanAdapter({
+      projectRoot: fixture.root,
+      workflowRoot: fixture.workflowRoot,
+    }).open(fixture.planRoot);
+    const task = await source.nextTask([]);
+    if (task === null) throw new Error("Expected a task");
+    const execution: TaskExecutionEvidence = {
+      after: gitState(fixture.root, "after"),
+      before: gitState(fixture.root, "before"),
+      changedPaths: ["src/cli.ts"],
+      commits: ["after"],
+      verification: { command: "pnpm test", exitCode: 0, output: "ok" },
+    };
+    const proposal = {
+      id: "A1",
+      kind: "assumption",
+      locator: {
+        kind: "code",
+        line: 1,
+        path: "src/cli.ts",
+        text: "evidence",
+      },
+      reason: "The CLI owns registration.",
+      state: "confirmed",
+    } as const;
+    const accepted = await source.completionEvidence(
+      task,
+      execution,
+      JSON.stringify({
+        discoveries: [proposal],
+        kind: "implementation",
+        summary: "Added the command.",
+      }),
+    );
+    expect(accepted).toMatchObject({
+      evidence: { discoveries: [proposal] },
+      status: "completed",
+    });
+
+    const unknown = await source.completionEvidence(
+      task,
+      execution,
+      JSON.stringify({
+        discoveries: [{ ...proposal, id: "A2" }],
+        kind: "implementation",
+        summary: "Added the command.",
+      }),
+    );
+    expect(unknown).toMatchObject({
+      attention: {
+        detail: "Unknown plan assumption: A2",
+        reason: "completion_evidence_missing",
+      },
+      status: "needs_attention",
+    });
   });
 });
 

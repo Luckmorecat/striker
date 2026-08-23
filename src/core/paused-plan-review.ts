@@ -62,6 +62,7 @@ export function resumePlanReview(
         session,
         candidate,
       );
+      if (result.status !== "completed") return result;
       const continued = await input.continueRun(input.snapshot.request);
       return continued.status === "source_exhausted" ? result : continued;
     },

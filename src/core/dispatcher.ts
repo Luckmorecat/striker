@@ -30,6 +30,7 @@ import { transitionRun } from "./run-state.js";
 import { RunOperations } from "./run-operations.js";
 import { finalizeExhaustedSource } from "./source-finalization.js";
 import { certifyTask, completeReviewedTask } from "./task-certification.js";
+import { resolveDiscoveryProposals } from "./discovery-proposal.js";
 
 export interface DispatcherDependencies {
   readonly adapters: AdapterRegistry;
@@ -230,9 +231,24 @@ export class Dispatcher {
       });
     }
 
+    let discoveries;
+    try {
+      discoveries = await resolveDiscoveryProposals(
+        completion.evidence.discoveries ?? [],
+        execution,
+        this.dependencies.git,
+      );
+    } catch (error) {
+      return this.finishNeedsAttention(request, task, session, {
+        detail: error instanceof Error ? error.message : String(error),
+        reason: "completion_evidence_missing",
+      });
+    }
+
     return certifyTask(this.dependencies, {
       attempt,
       completion: completion.evidence,
+      discoveries,
       execution,
       recheck: (output, rejected) =>
         this.completeReturnedTurn(

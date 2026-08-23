@@ -20,9 +20,31 @@ function renderLedger(
     `${label}:`,
     ...(entries.length === 0
       ? ["- none"]
-      : entries.map(
-          (entry) => `- ${entry.id}: ${entry.state}: ${entry.statement}`,
-        )),
+      : entries.flatMap((entry) => {
+          const locator = entry.locator;
+          const evidence =
+            locator?.kind === "code"
+              ? `${locator.path}:${String(locator.line)} at ${locator.commit}`
+              : locator === undefined
+                ? undefined
+                : `${locator.command} exited ${String(locator.exitCode)}`;
+          return [
+            `- ${entry.id}: ${entry.state}: ${entry.statement}`,
+            ...(entry.proposal === undefined
+              ? []
+              : [`  Proposal: ${entry.proposal}`]),
+            ...(entry.reason === undefined
+              ? []
+              : [`  Review: ${entry.decision ?? "unknown"}. ${entry.reason}`]),
+            ...(entry.applied === undefined
+              ? []
+              : [`  Transition: ${entry.applied ? "applied" : "not applied"}`]),
+            ...(entry.pauseReason === undefined
+              ? []
+              : [`  Pause: ${entry.pauseReason}`]),
+            ...(evidence === undefined ? [] : [`  Evidence: ${evidence}`]),
+          ];
+        })),
   ];
 }
 

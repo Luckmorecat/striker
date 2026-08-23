@@ -375,7 +375,7 @@ describe("Dispatcher immutable multi-task plans", () => {
           `complete task ${String(sessionCount)}`,
         );
         return {
-          output: `{"kind":"implementation","summary":"Completed task ${String(sessionCount)}."}`,
+          output: `{"discoveries":[],"kind":"implementation","summary":"Completed task ${String(sessionCount)}."}`,
           session,
           status: "returned",
         };
