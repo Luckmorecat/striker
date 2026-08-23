@@ -32,16 +32,17 @@ version in the target project's `node_modules/.bin` directory.
 
 ## Install the public skills
 
-Striker ships four public, explicit-only skills:
+Striker ships five public, explicit-only skills:
 
+- `$striker-preparation` turns any intent source into a draft for
+  `$striker-spec`.
 - `$striker-shape` turns an open product decision into an approved brief.
 - `$striker-spec` turns shaped intent into an approved behavioral specification.
 - `$striker-plan` creates and validates a plan for an approved specification.
 - `$striker` operates the project-local CLI.
 
-The package also ships `striker-preparation`, a non-invocable reference tree
-shared by Shape, Spec, and Plan. Install the complete set for the selected
-harness from the project root:
+Preparation also contains the format references shared by Shape, Spec, and Plan.
+Install the complete set for the selected harness from the project root:
 
 ```sh
 pnpm exec striker skills install --harness codex
@@ -82,7 +83,7 @@ The configuration schema is packaged as `schema.json` and exported as
 
 ## Prepare work
 
-Striker preparation has four explicit stages:
+The standard Striker workflow has four explicit stages:
 
 ```text
 $striker-shape -> approved brief
@@ -90,6 +91,10 @@ $striker-spec  -> approved specification
 $striker-plan  -> validated Striker plan
 $striker       -> plan execution
 ```
+
+Use `$striker-preparation` when the input is an external idea, brief,
+specification, or plan. It recovers and settles the intent, then hands a
+complete draft to `$striker-spec` for approval.
 
 Start at the first missing artifact. Use Shape when product direction, outcome,
 or scope remains open. Spec accepts an approved brief or an already-shaped

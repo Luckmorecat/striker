@@ -22,7 +22,9 @@ const requiredFiles = [
   "skills/striker-plan/PLAN-FORMAT.md",
   "skills/striker-plan/agents/openai.yaml",
   "skills/striker-preparation/BRIEF-FORMAT.md",
+  "skills/striker-preparation/SKILL.md",
   "skills/striker-preparation/SPEC-FORMAT.md",
+  "skills/striker-preparation/agents/openai.yaml",
   "skills/striker-implementor/SKILL.md",
   "skills/striker-implementor/references/tdd.md",
 ];

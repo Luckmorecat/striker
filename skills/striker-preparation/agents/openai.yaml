@@ -1,0 +1,7 @@
+interface:
+  display_name: "Striker Preparation"
+  short_description: "Turn any intent into a draft for Striker Spec"
+  default_prompt:
+    "Use $striker-preparation to turn this intent into a draft for Striker Spec."
+policy:
+  allow_implicit_invocation: false
