@@ -69,6 +69,5 @@
   },
   "required": ["assumptions", "defaults", "taskSource", "tasks", "version"],
   "additionalProperties": false,
-  "$id": "https://kisshot.dev/striker/plan.schema.json",
   "title": "Striker plan manifest"
 }

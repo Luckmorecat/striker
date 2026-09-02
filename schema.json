@@ -15,6 +15,5 @@
   },
   "required": ["taskSource"],
   "additionalProperties": false,
-  "$id": "https://kisshot.dev/striker/schema.json",
   "title": "Striker project configuration"
 }

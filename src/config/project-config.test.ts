@@ -62,5 +62,6 @@ describe("Striker project configuration", () => {
     ) as unknown;
 
     expect(packaged).toEqual(projectConfigJsonSchema);
+    expect(packaged).not.toHaveProperty("$id");
   });
 });

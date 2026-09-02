@@ -27,11 +27,11 @@ describe("parsePlanManifest valid plans", () => {
   it("accepts a version 2 plan with typed ledger definitions", () => {
     expect(
       parsePlanManifest({
-        $schema: "./node_modules/@kisshot/striker/plan.schema.json",
+        $schema: "./node_modules/@useless_mob/striker/plan.schema.json",
         ...validManifest,
       }),
     ).toEqual({
-      $schema: "./node_modules/@kisshot/striker/plan.schema.json",
+      $schema: "./node_modules/@useless_mob/striker/plan.schema.json",
       ...validManifest,
     });
   });
@@ -212,5 +212,6 @@ describe("planManifestJsonSchema", () => {
     ) as unknown;
 
     expect(packaged).toEqual(planManifestJsonSchema);
+    expect(packaged).not.toHaveProperty("$id");
   });
 });

@@ -1,21 +1,20 @@
 # Striker
 
-Striker is a private, project-local task dispatcher for implementation plans. It
-reads an ordered Striker plan, opens one fresh agent session per task, checks
-the resulting commit and worktree, runs the task's verification command, and
-records completion before moving to the next task.
+Striker is a project-local task dispatcher for implementation plans. It reads an
+ordered Striker plan, opens one fresh agent session per task, checks the
+resulting commit and worktree, runs the task's verification command, and records
+completion before moving to the next task.
 
 The package requires Node.js 22.13 or newer and pnpm. It supports Codex, Claude
-Code, OpenCode, and Pi through `acpx@0.13.1`. Publishing, global installation,
-and automatic harness switching are outside this package's current scope.
+Code, OpenCode, and Pi through `acpx@0.13.1`. Global installation and automatic
+harness switching are outside this package's scope.
 
 ## Install
 
-Install `@kisshot/striker` as a development dependency from the private package
-source used by your project:
+Install `@useless_mob/striker` as a development dependency from npm:
 
 ```sh
-pnpm add --save-dev @kisshot/striker@<private-package-spec>
+pnpm add --save-dev @useless_mob/striker
 ```
 
 For local package testing, build and pack this repository, then install the
@@ -24,7 +23,7 @@ tarball in the consumer project:
 ```sh
 pnpm build
 pnpm pack --pack-destination /tmp
-pnpm add --save-dev /tmp/kisshot-striker-0.0.0.tgz
+pnpm add --save-dev /tmp/useless_mob-striker-0.1.0.tgz
 ```
 
 Do not install Striker globally. The public skills and their agents must use the
@@ -55,7 +54,7 @@ effect of `run`.
 
 Every canonical tree is installed under `.agents/skills`. Claude also receives
 aliases under `.claude/skills` so the skills can resolve their shared sibling
-references. The Striker implementor remains private package content. The plan
+references. The Striker implementor remains package-internal content. The plan
 adapter injects it into task sessions, and `skills install` does not expose or
 install it.
 
@@ -65,7 +64,7 @@ Create `striker.config.json` at the Git root:
 
 ```json
 {
-  "$schema": "./node_modules/@kisshot/striker/schema.json",
+  "$schema": "./node_modules/@useless_mob/striker/schema.json",
   "taskSource": "striker-plan",
   "harness": "codex",
   "skills": []
@@ -79,7 +78,7 @@ authentication, and every configured skill in a disposable read-only session. It
 stops instead of selecting another harness when preflight fails.
 
 The configuration schema is packaged as `schema.json` and exported as
-`@kisshot/striker/schema.json`.
+`@useless_mob/striker/schema.json`.
 
 ## Prepare work
 
@@ -143,7 +142,7 @@ local defaults, and strict task order:
 
 ```json
 {
-  "$schema": "./node_modules/@kisshot/striker/plan.schema.json",
+  "$schema": "./node_modules/@useless_mob/striker/plan.schema.json",
   "version": 2,
   "taskSource": "striker-plan",
   "assumptions": {
@@ -309,7 +308,7 @@ import {
   Dispatcher,
   type DispatcherDependencies,
   type TaskSourceAdapter,
-} from "@kisshot/striker";
+} from "@useless_mob/striker";
 ```
 
 Only the package root and the two JSON schemas are public export paths.

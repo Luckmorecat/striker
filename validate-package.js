@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const root = fileURLToPath(new globalThis.URL(".", import.meta.url));
 const requiredFiles = [
+  "LICENSE",
   "dist/cli.js",
   "dist/index.d.ts",
   "dist/index.js",
@@ -30,6 +31,25 @@ const requiredFiles = [
 ];
 
 await Promise.all(requiredFiles.map((file) => access(path.join(root, file))));
+await access(path.join(root, "PUBLISHING.md"));
+
+const packageJson = JSON.parse(
+  await readFile(path.join(root, "package.json"), "utf8"),
+);
+const releaseVersion =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+if (
+  packageJson.name !== "@useless_mob/striker" ||
+  typeof packageJson.version !== "string" ||
+  packageJson.version === "0.0.0" ||
+  !releaseVersion.test(packageJson.version) ||
+  packageJson.license !== "MIT" ||
+  packageJson.private === true ||
+  packageJson.publishConfig?.access !== "public" ||
+  packageJson.publishConfig?.registry !== "https://registry.npmjs.org/"
+) {
+  throw new Error("package release metadata is invalid");
+}
 
 const publicApi = await import(path.join(root, "dist/index.js"));
 for (const exportName of [

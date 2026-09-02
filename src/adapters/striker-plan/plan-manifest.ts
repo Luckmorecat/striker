@@ -57,7 +57,6 @@ export const planManifestSchema = z
   })
   .strict()
   .meta({
-    $id: "https://kisshot.dev/striker/plan.schema.json",
     title: "Striker plan manifest",
   });
 

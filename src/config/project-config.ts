@@ -14,7 +14,6 @@ export const projectConfigSchema = z
   })
   .strict()
   .meta({
-    $id: "https://kisshot.dev/striker/schema.json",
     title: "Striker project configuration",
   });
 

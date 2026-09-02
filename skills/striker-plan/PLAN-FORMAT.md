@@ -61,7 +61,7 @@ Write `plan.json` in this shape and keep task paths in dispatch order:
 
 ```json
 {
-  "$schema": "./node_modules/@kisshot/striker/plan.schema.json",
+  "$schema": "./node_modules/@useless_mob/striker/plan.schema.json",
   "version": 2,
   "taskSource": "striker-plan",
   "assumptions": {
