@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 
 import type {
   AcpRuntimeEnsureInput,
-  AcpRuntimeEvent,
   AcpRuntimeHandle,
   AcpRuntimeTurn,
 } from "acpx/runtime";
@@ -12,6 +11,7 @@ import type {
   ReviewRequest,
   ReviewTurn,
 } from "../core/contracts.js";
+import { collectFinalMessage } from "./acp-output.js";
 import { parseReviewResult } from "./review-result.js";
 
 interface ReviewRuntime {
@@ -27,16 +27,6 @@ interface ReviewRuntime {
     readonly requestId: string;
     readonly text: string;
   }): AcpRuntimeTurn;
-}
-
-async function collectText(events: AsyncIterable<AcpRuntimeEvent>) {
-  let output = "";
-  for await (const event of events) {
-    if (event.type === "text_delta" && event.stream !== "thought") {
-      output += event.text;
-    }
-  }
-  return output;
 }
 
 export async function runReviewSession(input: {
@@ -67,7 +57,7 @@ export async function runReviewSession(input: {
       requestId: randomUUID(),
       text: input.request.instructions,
     });
-    const outputPromise = collectText(turn.events);
+    const outputPromise = collectFinalMessage(turn.events);
     const result = await turn.result;
     const output = await outputPromise;
     if (result.status === "completed") {

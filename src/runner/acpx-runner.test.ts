@@ -26,6 +26,7 @@ class FakeRuntime implements AcpxRuntimeBoundary {
   doctorMessage = "ready";
   healthy = true;
   output = "done";
+  outputEvents?: readonly AcpRuntimeEvent[];
   turnText = "";
 
   doctor() {
@@ -61,10 +62,12 @@ class FakeRuntime implements AcpxRuntimeBoundary {
 
   startTurn(input: { readonly text: string }): AcpRuntimeTurn {
     this.turnText = input.text;
-    const output = this.output;
+    const outputEvents = this.outputEvents ?? [
+      { stream: "output", text: this.output, type: "text_delta" } as const,
+    ];
     const events = (async function* (): AsyncGenerator<AcpRuntimeEvent> {
       await Promise.resolve();
-      yield { stream: "output", text: output, type: "text_delta" };
+      yield* outputEvents;
     })();
     return {
       cancel: () => Promise.resolve(),
@@ -76,6 +79,39 @@ class FakeRuntime implements AcpxRuntimeBoundary {
     };
   }
 }
+
+const implementationEvents: readonly AcpRuntimeEvent[] = [
+  {
+    messageId: "commentary",
+    text: "Implementing the task.",
+    type: "text_delta",
+  },
+  { messageId: "result", text: '{"kind":', type: "text_delta" },
+  {
+    messageId: "result",
+    text: '"implementation"}',
+    type: "text_delta",
+  },
+];
+
+const reviewEvents: readonly AcpRuntimeEvent[] = [
+  {
+    messageId: "commentary",
+    text: "Checking repository standards.",
+    type: "text_delta",
+  },
+  {
+    messageId: "result",
+    text: JSON.stringify({
+      findings: [],
+      kind: "standards",
+      resultCommit: "after",
+      startCommit: "before",
+      verdict: "passed",
+    }),
+    type: "text_delta",
+  },
+];
 
 describe("acpx task cleanup", () => {
   it("releases a returned turn without discarding persistent state", async () => {
@@ -116,6 +152,7 @@ describe("acpx task cleanup", () => {
 describe("acpx task sessions", () => {
   it("injects private workflow instructions into a fresh persistent session", async () => {
     const runtime = new FakeRuntime();
+    runtime.outputEvents = implementationEvents;
     const runner = new AcpxAgentRunner({
       cwd: "/repo",
       harness: "codex",
@@ -129,7 +166,7 @@ describe("acpx task sessions", () => {
     });
 
     expect(result).toMatchObject({
-      output: "done",
+      output: '{"kind":"implementation"}',
       session: { resumeId: "codex-session" },
       status: "returned",
     });
@@ -214,13 +251,7 @@ describe("acpx review sessions", () => {
   it("returns a parsed result from a disposable read-only runtime", async () => {
     const taskRuntime = new FakeRuntime();
     const reviewRuntime = new FakeRuntime();
-    reviewRuntime.output = JSON.stringify({
-      findings: [],
-      kind: "standards",
-      resultCommit: "after",
-      startCommit: "before",
-      verdict: "passed",
-    });
+    reviewRuntime.outputEvents = reviewEvents;
     const runner = new AcpxAgentRunner({
       cwd: "/repo",
       harness: "codex",

@@ -9,7 +9,6 @@ import {
   type AcpPermissionRequest,
   type AcpRuntimeDoctorReport,
   type AcpRuntimeEnsureInput,
-  type AcpRuntimeEvent,
   type AcpRuntimeHandle,
   type AcpRuntimeTurn,
 } from "acpx/runtime";
@@ -31,6 +30,7 @@ import {
   harnessPreflightPrompt,
 } from "../preflight/harness-preflight.js";
 import { permissionPolicyFor } from "../permissions/permission-policy.js";
+import { collectFinalMessage, collectWholeOutput } from "./acp-output.js";
 import { runReviewSession } from "./review-session.js";
 
 export interface AcpxRuntimeBoundary {
@@ -108,18 +108,6 @@ function promptText(request: AgentRequest): string {
       : `# Configured installed skills\n\nApply these after the packaged workflow:\n${request.skills.map((skill) => `$${skill}`).join("\n")}`,
   ];
   return sections.filter((section) => section !== undefined).join("\n\n");
-}
-
-function collectText(events: AsyncIterable<AcpRuntimeEvent>): Promise<string> {
-  return (async () => {
-    let output = "";
-    for await (const event of events) {
-      if (event.type === "text_delta" && event.stream !== "thought") {
-        output += event.text;
-      }
-    }
-    return output;
-  })();
 }
 
 function doctorFailure(report: AcpRuntimeDoctorReport): {
@@ -229,7 +217,7 @@ export class AcpxAgentRunner implements AgentRunner {
       requestId: randomUUID(),
       text,
     });
-    const outputPromise = collectText(turn.events);
+    const outputPromise = collectFinalMessage(turn.events);
     const result = await turn.result;
     const output = await outputPromise;
     if (result.status === "completed") {
@@ -295,7 +283,7 @@ export class AcpxAgentRunner implements AgentRunner {
         requestId: randomUUID(),
         text: harnessPreflightPrompt(skills),
       });
-      const outputPromise = collectText(turn.events);
+      const outputPromise = collectWholeOutput(turn.events);
       const result = await turn.result;
       const output = await outputPromise;
       if (result.status !== "completed") {
