@@ -260,6 +260,9 @@ describe("Dispatcher completed-event recovery", () => {
       preflight: () => {
         throw new Error("Completed recovery must not preflight");
       },
+      resumeInitialSession: () => {
+        throw new Error("Completed recovery must not redeliver a request");
+      },
       resumeSession: () => {
         throw new Error("Completed recovery must not resume a session");
       },

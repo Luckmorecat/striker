@@ -10,7 +10,10 @@ import { GitCliRepository } from "../infrastructure/git-cli.js";
 import { FakeAgentRunner, runPassingReview } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
+  AgentRequest,
   AgentRunner,
+  AgentSession,
+  DispatchRequest,
   ImplementationTask,
   TaskCompletionResult,
   TaskIdentity,
@@ -113,6 +116,44 @@ class RestartSource implements TaskSource {
   }
 }
 
+async function appendInterruptedDelivery(
+  journal: FileRunJournal,
+  git: GitCliRepository,
+  root: string,
+  request: DispatchRequest,
+  task: ImplementationTask,
+  session: AgentSession,
+  preparedRequest: AgentRequest,
+): Promise<void> {
+  await journal.append({
+    planId: request.planId,
+    request,
+    runId: request.runId,
+    type: "run_started",
+  });
+  await journal.append({ runId: request.runId, task, type: "task_selected" });
+  await journal.append({
+    before: await git.inspect(root),
+    runId: request.runId,
+    task: task.identity,
+    type: "task_baseline_recorded",
+  });
+  await journal.append({
+    attempt: 1,
+    runId: request.runId,
+    task: task.identity,
+    type: "task_attempt_started",
+  });
+  await journal.append({
+    attempt: 1,
+    request: preparedRequest,
+    runId: request.runId,
+    session,
+    task: task.identity,
+    type: "task_session_started",
+  });
+}
+
 describe("Dispatcher initialization restart", () => {
   it("continues a run interrupted immediately after its start event", async () => {
     const root = await repository("striker-restart-start-");
@@ -188,7 +229,8 @@ describe("Dispatcher pre-attempt restart", () => {
     });
 
     await expect(dispatcher.resume()).resolves.toMatchObject({
-      reason: "session_resume_failed",
+      reason: "run_initialization_interrupted",
+      session: null,
       status: "needs_attention",
     });
     await expect(dispatcher.retry()).resolves.toMatchObject({
@@ -211,6 +253,81 @@ describe("Dispatcher pre-attempt restart", () => {
     );
     expect(recovery?.lastEvent).toMatchObject({ type: "run_completed" });
     expect(recovery?.completedTasks).toEqual([task.identity]);
+  });
+});
+
+describe("Dispatcher durable initial-delivery recovery", () => {
+  it("redelivers the recorded request in the same session after restart", async () => {
+    const root = await repository("striker-restart-delivery-");
+    const task = taskFor(root);
+    const git = new GitCliRepository();
+    const stateRoot = await git.resolvePrivatePath(root, "striker");
+    const journal = new FileRunJournal(stateRoot);
+    const adapters = new AdapterRegistry();
+    adapters.register({
+      open: () => Promise.resolve(new RestartSource(task)),
+      type: "memory",
+    });
+    const request = {
+      completedTasks: [],
+      planId: "plan-delivery-recovery",
+      runId: "run-delivery-recovery",
+      skills: ["security"],
+      taskSource: { location: "memory://plan", type: "memory" },
+    } as const;
+    const preparedRequest = {
+      instructions: task.instructions,
+      priorTaskEvidence: [],
+      skills: request.skills,
+      workflowInstructions: "Implement the task.",
+    };
+    const session = {
+      id: "runtime-before-crash",
+      resumeId: "provider-session",
+    };
+    await appendInterruptedDelivery(
+      journal,
+      git,
+      root,
+      request,
+      task,
+      session,
+      preparedRequest,
+    );
+    const recovered: unknown[] = [];
+    const runner: AgentRunner = {
+      preflight: () => {
+        throw new Error("Recovery must not preflight");
+      },
+      resumeInitialSession: async (recoveredSession, recovery) => {
+        recovered.push({ recovery, session: recoveredSession });
+        await writeFile(`${root}/task.txt`, "complete\n");
+        await execFileAsync("git", ["-C", root, "add", "task.txt"]);
+        await execFileAsync("git", ["-C", root, "commit", "-qm", "complete"]);
+        return { output: "done", session, status: "returned" };
+      },
+      resumeSession: () => {
+        throw new Error("Recovery must not send continuation instructions");
+      },
+      runInNewSession: () => {
+        throw new Error("Recovery must not start a replacement session");
+      },
+      runReviewInNewSession: runPassingReview,
+    };
+
+    await expect(
+      new Dispatcher({ adapters, git, journal, runner, verifier }).resume(),
+    ).resolves.toMatchObject({ status: "completed" });
+    expect(recovered).toEqual([
+      {
+        recovery: {
+          kind: "uncertain_initial_delivery",
+          request: preparedRequest,
+        },
+        session,
+      },
+    ]);
+    await expect(journal.loadActive()).resolves.toBeNull();
   });
 });
 

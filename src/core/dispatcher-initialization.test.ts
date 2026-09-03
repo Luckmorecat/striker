@@ -80,13 +80,15 @@ class CompletingSource implements TaskSource {
   }
 }
 
-function fixture(runner: AgentRunner) {
+function fixture(
+  runner: AgentRunner,
+  journal: InMemoryRunJournal = new InMemoryRunJournal(),
+) {
   const adapters = new AdapterRegistry();
   adapters.register({
     open: () => Promise.resolve(new CompletingSource()),
     type: "memory",
   });
-  const journal = new InMemoryRunJournal();
   return {
     dispatcher: new Dispatcher({
       adapters,
@@ -140,6 +142,43 @@ async function seedFailedAttempt(journal: InMemoryRunJournal): Promise<void> {
   });
 }
 
+describe("Dispatcher pre-durable session initialization", () => {
+  it("pauses when session recording fails before becoming durable", async () => {
+    class RejectingSessionJournal extends InMemoryRunJournal {
+      override append(event: RunJournalEvent): Promise<void> {
+        if (event.type === "task_session_started") {
+          return Promise.reject(new Error("journal write failed"));
+        }
+        return super.append(event);
+      }
+    }
+    const journal = new RejectingSessionJournal();
+    const session = { id: "runtime-new", resumeId: "provider-new" };
+    const test = fixture(
+      {
+        preflight: () => Promise.resolve(),
+        resumeSession: () => {
+          throw new Error("Unexpected resume");
+        },
+        runInNewSession: async (_request, sessionStarted) => {
+          await sessionStarted?.(session);
+          return { output: "unreachable", session, status: "returned" };
+        },
+      },
+      journal,
+    );
+
+    await expect(test.dispatcher.dispatchOne(request)).resolves.toMatchObject({
+      reason: "run_initialization_interrupted",
+      session: null,
+      status: "needs_attention",
+    });
+    expect(journal.events).not.toContainEqual(
+      expect.objectContaining({ type: "task_session_started" }),
+    );
+  });
+});
+
 describe("Dispatcher session initialization", () => {
   it("pauses a first attempt when initialization is interrupted", async () => {
     const test = fixture({
@@ -177,13 +216,23 @@ describe("Dispatcher session initialization", () => {
       task,
     });
   });
+});
 
-  it("preserves a session when the turn throws after its callback", async () => {
+describe("Dispatcher durable session initialization", () => {
+  it("redelivers an uncertain first turn at least once in the same session", async () => {
     const session = { id: "runtime-new", resumeId: "provider-new" };
+    const resumed: unknown[] = [];
     const test = fixture({
       preflight: () => Promise.resolve(),
+      resumeInitialSession: (recoveredSession, recovery) => {
+        resumed.push({ recovery, session: recoveredSession });
+        if (resumed.length === 1) {
+          return Promise.reject(new Error("redelivery transport failed"));
+        }
+        return Promise.resolve({ output: "done", session, status: "returned" });
+      },
       resumeSession: () => {
-        throw new Error("Unexpected resume");
+        throw new Error("Unexpected ordinary resume");
       },
       runReviewInNewSession: runPassingReview,
       runInNewSession: async (_request, sessionStarted) => {
@@ -203,6 +252,24 @@ describe("Dispatcher session initialization", () => {
     });
     expect(test.journal.events).not.toContainEqual(
       expect.objectContaining({ type: "run_needs_attention" }),
+    );
+
+    await expect(test.dispatcher.resume()).resolves.toMatchObject({
+      reason: "run_initialization_interrupted",
+      session,
+      status: "needs_attention",
+    });
+    await expect(test.dispatcher.resume()).resolves.toMatchObject({
+      status: "completed",
+    });
+    expect(resumed).toEqual(
+      Array.from({ length: 2 }, () => ({
+        recovery: {
+          kind: "uncertain_initial_delivery",
+          request: preparedRequest,
+        },
+        session,
+      })),
     );
   });
 });

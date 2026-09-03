@@ -45,6 +45,7 @@ export type {
   GitRepository,
   GitState,
   HarnessPreflightRequest,
+  InitialDeliveryRecovery,
   ImplementationTask,
   RunCommandHandler,
   RunCommandRequest,

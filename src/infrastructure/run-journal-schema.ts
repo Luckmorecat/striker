@@ -124,6 +124,7 @@ export const runSnapshotSchema = z
     before: gitStateSchema.nullable().optional(),
     planId: z.string().min(1),
     planComplianceReview: reviewSchemas.planState.nullable().optional(),
+    preparedRequest: agentRequestSchema.nullable().optional(),
     request: dispatchRequestSchema,
     runId: z.string().min(1),
     session: agentSessionSchema.nullable(),

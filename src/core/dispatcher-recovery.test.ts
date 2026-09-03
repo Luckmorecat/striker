@@ -288,6 +288,7 @@ describe("Dispatcher paused-session recovery", () => {
         session: { id: "runtime-session", resumeId: "agent-session" },
       },
     ]);
+    expect(runner.initialResumeRequests).toEqual([]);
     expect(
       journal.events.filter((event) => event.type === "run_answered"),
     ).toHaveLength(1);
@@ -313,6 +314,7 @@ describe("Dispatcher paused-session recovery", () => {
       "Reason: verification_failed",
     );
     expect(runner.resumeRequests[0]?.instructions).toContain("exit 1");
+    expect(runner.initialResumeRequests).toEqual([]);
     expect(
       journal.events.filter((event) => event.type === "run_resumed"),
     ).toHaveLength(1);

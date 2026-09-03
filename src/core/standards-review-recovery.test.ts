@@ -211,6 +211,7 @@ describe("standards review recovery", () => {
       "# Independent plan-compliance review",
     );
     expect(runner.resumeRequests).toEqual([]);
+    expect(runner.initialResumeRequests).toEqual([]);
     expect(
       journal.events.filter(
         (event) => event.type === "standards_review_interrupted",

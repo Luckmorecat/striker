@@ -7,6 +7,7 @@ import type {
   AgentRequest,
   AgentSession,
   GitState,
+  InitialDeliveryRecovery,
   ImplementationTask,
   TaskCompletionEvidence,
   TaskExecutionEvidence,
@@ -19,6 +20,7 @@ export type {
   AgentRequest,
   AgentSession,
   GitState,
+  InitialDeliveryRecovery,
   ImplementationTask,
   TaskCompletionEvidence,
   TaskExecution,
@@ -107,6 +109,10 @@ export interface AgentRunner {
   runInNewSession(
     request: AgentRequest,
     sessionStarted?: (session: AgentSession) => Promise<void>,
+  ): Promise<AgentTurn>;
+  resumeInitialSession?(
+    session: AgentSession,
+    recovery: InitialDeliveryRecovery,
   ): Promise<AgentTurn>;
   resumeSession(
     session: AgentSession,

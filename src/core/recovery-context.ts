@@ -1,4 +1,5 @@
 import type {
+  AgentRequest,
   AgentSession,
   DispatchResult,
   DispatchRequest,
@@ -18,6 +19,7 @@ export interface RecoverableRun {
   readonly baselineRecorded: boolean;
   readonly before: GitState | undefined;
   readonly planComplianceReview: RunSnapshot["planComplianceReview"];
+  readonly preparedRequest: AgentRequest | null;
   readonly request: DispatchRequest;
   readonly session: RunSnapshot["session"];
   readonly standardsReview: RunSnapshot["standardsReview"];
@@ -134,6 +136,7 @@ export function recoverableSnapshot(
     baselineRecorded: snapshot.baselineRecorded ?? false,
     before: snapshot.before ?? undefined,
     planComplianceReview: snapshot.planComplianceReview,
+    preparedRequest: snapshot.preparedRequest ?? null,
     request: snapshot.request,
     session: snapshot.session,
     standardsReview: snapshot.standardsReview,

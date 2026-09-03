@@ -13,12 +13,19 @@ import type {
   RunSnapshot,
   TaskSource,
 } from "./contracts.js";
-import { recordAttemptStart } from "./attempt-journal.js";
+import {
+  recordAttemptStart,
+  recordInitializationInterruption,
+} from "./attempt-journal.js";
 import {
   inspectBaseline,
   reviewedCandidateAttention,
 } from "./dispatch-evidence.js";
 import { runInFreshSession } from "./fresh-session.js";
+import {
+  redeliverInitialRequest,
+  requiresInitialDeliveryRecovery,
+} from "./initial-delivery-recovery.js";
 import { transitionRun } from "./run-state.js";
 import { resumePlanReview } from "./paused-plan-review.js";
 import { recoverStandardsReview } from "./standards-review-recovery.js";
@@ -123,12 +130,23 @@ export class PausedRunRecovery {
       return this.resumeOwnedReview(snapshot);
     }
     const run = recoverableRun(recovery, ["needs_attention", "running"]);
+    if (requiresInitialDeliveryRecovery(run)) {
+      const delivery = await redeliverInitialRequest({
+        journal: this.dependencies.journal,
+        run,
+        runner: this.dependencies.runner,
+      });
+      if (delivery.status === "needs_attention") return delivery.result;
+      return this.checkCompletion(run, run.session, delivery.output);
+    }
     const paused = pausedSessionlessRun(run);
     if (paused !== null) return paused;
     if (run.session === null) {
-      return pauseResumeFailure(
+      return recordInitializationInterruption(
         this.dependencies.journal,
-        run,
+        run.request,
+        run.task,
+        run.attempt,
         new Error("the interrupted attempt did not record a session"),
       );
     }

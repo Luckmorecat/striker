@@ -110,6 +110,7 @@ export function completeTask(
     baselineRecorded: false,
     before: null,
     planComplianceReview: null,
+    preparedRequest: null,
     session: null,
     standardsReview: null,
     status,

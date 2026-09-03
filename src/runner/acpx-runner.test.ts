@@ -345,6 +345,33 @@ describe("acpx review sessions", () => {
 });
 
 describe("acpx recovered task sessions", () => {
+  it("redelivers the exact prepared request after its recovery context", async () => {
+    const runtime = new FakeRuntime();
+    const runner = new AcpxAgentRunner({
+      cwd: "/repo",
+      harness: "codex",
+      runtime,
+    });
+    const request = {
+      instructions: "Build the original task.",
+      skills: ["security"],
+      workflowInstructions: "Use the packaged workflow.",
+    };
+
+    await runner.resumeInitialSession(
+      { id: "runtime-key", resumeId: "codex-session" },
+      { kind: "uncertain_initial_delivery", request },
+    );
+
+    expect(runtime.turnText).toBe(
+      "# Striker initial-delivery recovery\n\n" +
+        "The initial request below was durably prepared, but its first delivery was not confirmed. This is an at-least-once redelivery to the same session; continue any work already performed and return completion evidence once.\n\n" +
+        "# Packaged Striker workflow\n\nUse the packaged workflow.\n\n" +
+        "# Implementation task\n\nBuild the original task.\n\n" +
+        "# Configured installed skills\n\nApply these after the packaged workflow:\n$security",
+    );
+  });
+
   it("rejects a replacement backend session before starting its turn", async () => {
     const runtime = new FakeRuntime();
     runtime.backendSessionId = "replacement-session";

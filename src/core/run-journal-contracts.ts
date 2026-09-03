@@ -67,6 +67,7 @@ export interface RunSnapshot {
   readonly before?: GitState | null;
   readonly planId: string;
   readonly planComplianceReview?: PlanComplianceReviewState | null;
+  readonly preparedRequest?: AgentRequest | null;
   readonly request: DispatchRequest;
   readonly runId: string;
   readonly session: AgentSession | null;

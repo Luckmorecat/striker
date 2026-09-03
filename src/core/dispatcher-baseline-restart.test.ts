@@ -133,7 +133,7 @@ describe("Dispatcher baseline restart", () => {
     });
 
     await expect(dispatcher.resume()).resolves.toMatchObject({
-      reason: "session_resume_failed",
+      reason: "run_initialization_interrupted",
     });
     await expect(dispatcher.retry()).resolves.toMatchObject({
       status: "completed",

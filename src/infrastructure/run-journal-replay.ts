@@ -90,6 +90,7 @@ export function startSnapshot(
     baselineRecorded: false,
     before: null,
     planId,
+    preparedRequest: null,
     request,
     runId: event.runId,
     session: null,
@@ -148,7 +149,13 @@ function replayProgress(
     case "task_attempt_started":
       return startAttempt(snapshot, event.task, event.attempt);
     case "task_session_started":
-      return startSession(snapshot, event.task, event.attempt, event.session);
+      return startSession(
+        snapshot,
+        event.task,
+        event.attempt,
+        event.session,
+        event.request,
+      );
     case "run_retried":
       requireTask(snapshot, event.task);
       if ((snapshot.attempt ?? 0) !== event.attempt) {
@@ -158,6 +165,7 @@ function replayProgress(
         ...snapshot,
         attention: null,
         planComplianceReview: planReviewAfterRetry(snapshot),
+        preparedRequest: null,
         session: null,
         standardsReview: reviewAfterRetry(snapshot),
         status: transitionRun(snapshot.status, "retry"),
@@ -270,6 +278,7 @@ function selectTask(
     baselineRecorded: false,
     before: null,
     planComplianceReview: null,
+    preparedRequest: null,
     standardsReview: null,
     task,
   };
@@ -292,7 +301,13 @@ function startAttempt(
     }
     throw new Error("Striker attempt event has an invalid attempt");
   }
-  return { ...snapshot, attempt, attention: null, session: null };
+  return {
+    ...snapshot,
+    attempt,
+    attention: null,
+    preparedRequest: null,
+    session: null,
+  };
 }
 
 function recordBaseline(
@@ -316,6 +331,7 @@ function startSession(
   task: TaskIdentity,
   attempt: number,
   session: AgentSession,
+  preparedRequest: NonNullable<RunSnapshot["preparedRequest"]>,
 ): RunSnapshot {
   requireTask(snapshot, task);
   if (
@@ -325,5 +341,5 @@ function startSession(
   ) {
     throw new Error("Striker session event has an invalid attempt");
   }
-  return { ...snapshot, session };
+  return { ...snapshot, preparedRequest, session };
 }

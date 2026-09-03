@@ -212,6 +212,11 @@ describe("file plan journal validation and replay", () => {
       lastEvent: { type: "run_needs_attention" },
       snapshot: {
         attention: { reason: "verification_failed" },
+        preparedRequest: {
+          instructions: task.instructions,
+          skills: [],
+          workflowInstructions: "implement",
+        },
         status: "needs_attention",
       },
     });

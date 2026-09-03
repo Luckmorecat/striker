@@ -34,6 +34,11 @@ export interface AgentRequest {
   readonly workflowInstructions?: string;
 }
 
+export interface InitialDeliveryRecovery {
+  readonly kind: "uncertain_initial_delivery";
+  readonly request: AgentRequest;
+}
+
 export interface VerificationResult {
   readonly command: string;
   readonly exitCode: number;

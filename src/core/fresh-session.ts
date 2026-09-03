@@ -136,7 +136,6 @@ export async function runInFreshSession(
     return await input.runner.runInNewSession(
       preparedRequest,
       async (session) => {
-        callback.entered = true;
         await recordAttemptSession(
           input.journal,
           input.request,
@@ -145,6 +144,7 @@ export async function runInFreshSession(
           session,
           preparedRequest,
         );
+        callback.entered = true;
       },
     );
   } catch (error) {

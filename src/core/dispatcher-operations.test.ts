@@ -230,14 +230,23 @@ describe("Dispatcher interrupted-attempt recovery", () => {
     await expect(test.dispatcher.resume()).resolves.toMatchObject({
       status: "completed",
     });
-    expect(runner.resumeRequests[0]?.instructions).toContain(
-      "interrupted task",
-    );
+    expect(runner.initialResumeRequests).toEqual([
+      {
+        recovery: {
+          kind: "uncertain_initial_delivery",
+          request: { instructions: task.instructions, skills: [] },
+        },
+        session: { id: "runtime-old", resumeId: "provider-old" },
+      },
+    ]);
+    expect(runner.resumeRequests).toEqual([]);
   });
 
   it("pauses with a retry choice when an interrupted session cannot load", async () => {
     const test = fixture({
       preflight: () => Promise.resolve(),
+      resumeInitialSession: () =>
+        Promise.reject(new Error("provider session lost")),
       resumeSession: () => Promise.reject(new Error("provider session lost")),
       runInNewSession: () => {
         throw new Error("Unexpected fresh session");
@@ -246,11 +255,11 @@ describe("Dispatcher interrupted-attempt recovery", () => {
     await seedAttempt(test.journal, "running");
 
     await expect(test.dispatcher.resume()).resolves.toMatchObject({
-      reason: "session_resume_failed",
+      reason: "run_initialization_interrupted",
       status: "needs_attention",
     });
     expect(test.journal.snapshots.at(-1)?.attention?.detail).toContain(
-      "striker retry",
+      "striker resume",
     );
   });
 });

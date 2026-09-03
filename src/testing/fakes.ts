@@ -4,6 +4,7 @@ import type {
   AgentTurn,
   AgentSession,
   HarnessPreflightRequest,
+  InitialDeliveryRecovery,
   ImplementationTask,
   RunJournal,
   RunJournalEvent,
@@ -104,6 +105,10 @@ export class FakeAgentRunner implements AgentRunner {
     readonly instructions: string;
     readonly session: AgentSession;
   }[] = [];
+  readonly initialResumeRequests: {
+    readonly recovery: InitialDeliveryRecovery;
+    readonly session: AgentSession;
+  }[] = [];
   readonly #turns: AgentTurn[];
   readonly #reviewTurns: ReviewTurn[];
 
@@ -142,6 +147,16 @@ export class FakeAgentRunner implements AgentRunner {
     instructions: string,
   ): Promise<AgentTurn> {
     this.resumeRequests.push({ instructions, session });
+    const turn = this.#turns.shift();
+    if (turn === undefined) throw new Error("Missing fake agent turn");
+    return Promise.resolve(turn);
+  }
+
+  resumeInitialSession(
+    session: AgentSession,
+    recovery: InitialDeliveryRecovery,
+  ): Promise<AgentTurn> {
+    this.initialResumeRequests.push({ recovery, session });
     const turn = this.#turns.shift();
     if (turn === undefined) throw new Error("Missing fake agent turn");
     return Promise.resolve(turn);
