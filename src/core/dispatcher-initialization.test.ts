@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { InMemoryRunJournal, runPassingReview } from "../testing/fakes.js";
+import {
+  FakeAgentRunner,
+  InMemoryRunJournal,
+  InMemoryTaskSourceAdapter,
+  runPassingReview,
+} from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
@@ -9,6 +14,9 @@ import type {
   ImplementationTask,
   TaskCompletionResult,
   TaskIdentity,
+  RunJournal,
+  RunJournalEvent,
+  RunRecoveryState,
   TaskSource,
 } from "./contracts.js";
 import { Dispatcher } from "./dispatcher.js";
@@ -281,5 +289,164 @@ describe("Dispatcher retry initialization", () => {
       task: task.identity,
       type: "task_session_started",
     });
+  });
+});
+
+class OutcomeJournal implements RunJournal {
+  readonly events: RunJournalEvent[] = [];
+
+  constructor(private readonly recovery: RunRecoveryState) {}
+
+  append(event: RunJournalEvent): Promise<void> {
+    this.events.push(event);
+    return Promise.resolve();
+  }
+
+  load(): Promise<RunRecoveryState> {
+    return Promise.resolve(this.recovery);
+  }
+
+  loadActive(): Promise<null> {
+    return Promise.resolve(null);
+  }
+}
+
+function outcomeRecovery(): RunRecoveryState {
+  const source = { id: "tasks/01.md", revision: "source-revision" };
+  const routedTarget = { id: "tasks/02.md", revision: "target-revision" };
+  return {
+    completedTasks: [source],
+    lastEvent: {
+      planId: "outcome-plan",
+      request: { ...request, planId: "outcome-plan", runId: "source-run" },
+      runId: "source-run",
+      type: "run_started",
+    },
+    planId: "outcome-plan",
+    snapshot: null,
+    taskOutcomes: [
+      {
+        attempt: 1,
+        changedPaths: ["src/outcome.ts"],
+        facts: [
+          {
+            category: "public_contract",
+            evidence: {
+              commit: "source-commit",
+              kind: "code",
+              line: 4,
+              path: "src/outcome.ts",
+              text: "export const outcome = true;",
+            },
+            id: "F1",
+            relevantTo: [routedTarget],
+            statement: "The outcome contract is stable.",
+          },
+        ],
+        resultCommit: "source-commit",
+        runId: "source-run",
+        source,
+        transitions: [],
+        verification: { command: "pnpm check", exitCode: 0 },
+      },
+    ],
+  };
+}
+
+function outcomeDispatcher(isAncestor: boolean) {
+  const recovery = outcomeRecovery();
+  const source = recovery.completedTasks[0];
+  if (source === undefined) throw new Error("Missing source fixture");
+  const sourceTask: ImplementationTask = {
+    ...task,
+    identity: source,
+  };
+  const routedTask: ImplementationTask = {
+    ...task,
+    identity: { id: "tasks/02.md", revision: "target-revision" },
+    outcomePlanId: "outcome-plan",
+    outcomePlanRoutes: [
+      {
+        from: source,
+        to: [{ id: "tasks/02.md", revision: "target-revision" }],
+      },
+    ],
+    outcomeTaskOrder: [
+      source,
+      { id: "tasks/02.md", revision: "target-revision" },
+    ],
+  };
+  const adapters = new AdapterRegistry();
+  adapters.register(
+    new InMemoryTaskSourceAdapter("memory", [sourceTask, routedTask], {
+      [routedTask.identity.id]: { summary: "complete" },
+    }),
+  );
+  const runner = new FakeAgentRunner({
+    error: "stop after request capture",
+    session: { id: "target-session" },
+    status: "failed",
+  });
+  const journal = new OutcomeJournal(recovery);
+  const outcomeGit: GitRepository = {
+    ...git,
+    inspect: () => Promise.resolve(repositoryState),
+    isAncestor: () => Promise.resolve(isAncestor),
+  };
+  return {
+    dispatcher: new Dispatcher({
+      adapters,
+      git: outcomeGit,
+      journal,
+      runner,
+    }),
+    journal,
+    runner,
+  };
+}
+
+describe("Dispatcher Task Outcome delivery", () => {
+  it("persists and sends routed evidence before the target session starts", async () => {
+    const test = outcomeDispatcher(true);
+
+    await expect(
+      test.dispatcher.dispatchOne({
+        ...request,
+        planId: "outcome-plan",
+        runId: "target-run",
+      }),
+    ).resolves.toMatchObject({ status: "failed" });
+
+    expect(test.runner.lastRequest?.priorTaskEvidence).toEqual([
+      expect.objectContaining({
+        facts: [expect.objectContaining({ id: "F1" })],
+        source: { id: "tasks/01.md", revision: "source-revision" },
+      }),
+    ]);
+    expect(
+      test.journal.events.find(
+        (event) => event.type === "task_session_started",
+      ),
+    ).toMatchObject({ request: test.runner.lastRequest });
+  });
+
+  it("stops before session creation when ancestry conflicts", async () => {
+    const test = outcomeDispatcher(false);
+
+    await expect(
+      test.dispatcher.dispatchOne({
+        ...request,
+        planId: "outcome-plan",
+        runId: "target-run",
+      }),
+    ).resolves.toMatchObject({
+      reason: "task_outcome_conflict",
+      session: null,
+      status: "needs_attention",
+    });
+    expect(test.runner.requests).toEqual([]);
+    expect(test.journal.events).not.toContainEqual(
+      expect.objectContaining({ type: "task_session_started" }),
+    );
   });
 });

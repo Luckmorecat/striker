@@ -108,6 +108,19 @@ export class GitCliRepository implements GitRepository {
       .filter(Boolean);
   }
 
+  async isAncestor(
+    root: string,
+    ancestor: string,
+    descendant: string,
+  ): Promise<boolean> {
+    try {
+      await git(root, ["merge-base", "--is-ancestor", ancestor, descendant]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   async resolveRoot(location: string): Promise<string> {
     return (await git(location, ["rev-parse", "--show-toplevel"])).trim();
   }

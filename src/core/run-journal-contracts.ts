@@ -31,6 +31,8 @@ export type AttentionReason =
   | "session_resume_failed"
   | "standards_repair_interrupted"
   | "standards_review_interrupted"
+  | "task_outcome_conflict"
+  | "task_outcome_limit_exceeded"
   | "verification_failed";
 
 export interface RunAttention {

@@ -136,6 +136,8 @@ class StrikerPlanSource implements TaskSource {
     return {
       ...task,
       instructions: `${task.instructions}\n\n## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\n`,
+      outcomePlanId: this.plan.identity,
+      outcomePlanRoutes: this.plan.outcomeRoutes,
       outcomeRoutes,
       outcomeTaskOrder: this.plan.tasks.map((candidate) => candidate.identity),
       outcomeTargets: outcomeRoutes.map((identity) => {

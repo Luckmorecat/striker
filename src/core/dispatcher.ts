@@ -152,6 +152,9 @@ export class Dispatcher {
     await recordAttemptStart(this.dependencies.journal, request, task, 1);
     const turn = await runInFreshSession({
       attempt: 1,
+      ...(this.dependencies.git === undefined
+        ? {}
+        : { git: this.dependencies.git }),
       journal: this.dependencies.journal,
       request,
       runner: this.dependencies.runner,

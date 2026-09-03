@@ -9,27 +9,23 @@ import {
   resolvedOutcomeFactProposalsSchema,
 } from "../discovery-schema.js";
 import { discoveryDecisionSchema } from "../review-result-schema.js";
+import {
+  taskIdentitySchema,
+  verificationSchema,
+} from "./run-journal-common-schema.js";
+import { deliveredOutcomeSchema } from "./run-journal-outcome-schema.js";
 
 export const runJournalSchemaId = "striker.plan-journal.v6";
 
-const taskIdentitySchema = z
-  .object({ id: z.string().min(1), revision: z.string().min(1) })
-  .strict();
 const agentSessionSchema = z
   .object({ id: z.string().min(1), resumeId: z.string().min(1).optional() })
   .strict();
 const agentRequestSchema = z
   .object({
     instructions: z.string(),
+    priorTaskEvidence: z.array(deliveredOutcomeSchema).optional(),
     skills: z.array(z.string()),
     workflowInstructions: z.string().optional(),
-  })
-  .strict();
-const verificationSchema = z
-  .object({
-    command: z.string(),
-    exitCode: z.number().int(),
-    output: z.string(),
   })
   .strict();
 const completionEvidenceSchema = z
@@ -61,6 +57,14 @@ const implementationTaskSchema = z.object({
   execution: taskExecutionSchema.optional(),
   identity: taskIdentitySchema,
   instructions: z.string(),
+  outcomePlanId: z.string().min(1).optional(),
+  outcomePlanRoutes: z
+    .array(
+      z
+        .object({ from: taskIdentitySchema, to: z.array(taskIdentitySchema) })
+        .strict(),
+    )
+    .optional(),
   outcomeRoutes: z.array(taskIdentitySchema).optional(),
   outcomeTaskOrder: z.array(taskIdentitySchema).optional(),
   outcomeTargets: z
@@ -95,6 +99,8 @@ const attentionReasonSchema = z.enum([
   "session_resume_failed",
   "standards_repair_interrupted",
   "standards_review_interrupted",
+  "task_outcome_conflict",
+  "task_outcome_limit_exceeded",
   "verification_failed",
 ]);
 const runAttentionSchema = z

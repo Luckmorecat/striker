@@ -111,6 +111,7 @@ describe("Striker plan adapter", () => {
     expect(task?.execution?.workflowInstructions).not.toContain(
       "Sequential review",
     );
+    expect(task?.outcomePlanId).toMatch(/^[a-f\d]{64}$/u);
     expect(task?.instructions).toContain(`Plan root: ${fixture.planRoot}`);
   });
 });

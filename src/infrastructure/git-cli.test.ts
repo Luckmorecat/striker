@@ -54,6 +54,12 @@ describe("Git CLI repository", () => {
     await expect(
       repositoryAdapter.commitsBetween(root, before.head, after.head),
     ).resolves.toEqual([after.head]);
+    await expect(
+      repositoryAdapter.isAncestor(root, before.head, after.head),
+    ).resolves.toBe(true);
+    await expect(
+      repositoryAdapter.isAncestor(root, after.head, before.head),
+    ).resolves.toBe(false);
     const nested = path.join(root, "nested");
     await mkdir(nested);
     await expect(repositoryAdapter.resolveRoot(nested)).resolves.toBe(

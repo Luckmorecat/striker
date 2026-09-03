@@ -29,6 +29,7 @@ export type {
 } from "./execution-contracts.js";
 export type {
   CertifiedOutcomeFact,
+  DeliveredTaskOutcome,
   TaskOutcome,
   TaskOutcomeTransition,
 } from "./outcome-contracts.js";
@@ -138,6 +139,11 @@ export interface GitRepository {
     descendant: string,
   ): Promise<readonly string[]>;
   inspect(root: string): Promise<GitState>;
+  isAncestor?(
+    root: string,
+    ancestor: string,
+    descendant: string,
+  ): Promise<boolean>;
   readFileAtCommit?(
     root: string,
     commit: string,

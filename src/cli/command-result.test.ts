@@ -27,6 +27,27 @@ describe("CLI command result", () => {
     },
   );
 
+  it("gives actionable recovery guidance for outcome attention", () => {
+    expect(
+      commandResult({
+        reason: "task_outcome_conflict",
+        runId: "run-1",
+        session: null,
+        status: "needs_attention",
+        task,
+      }).message,
+    ).toContain("Restore compatible Git and plan state");
+    expect(
+      commandResult({
+        reason: "task_outcome_limit_exceeded",
+        runId: "run-1",
+        session: null,
+        status: "needs_attention",
+        task,
+      }).message,
+    ).toContain("`striker discard --force`");
+  });
+
   it("keeps completed-source conflict guidance unchanged", () => {
     expect(
       commandResult({

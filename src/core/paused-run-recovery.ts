@@ -235,6 +235,9 @@ export class PausedRunRecovery {
     );
     const turn = await runInFreshSession({
       attempt: nextAttempt,
+      ...(this.dependencies.git === undefined
+        ? {}
+        : { git: this.dependencies.git }),
       journal: this.dependencies.journal,
       request: run.request,
       runner: this.dependencies.runner,

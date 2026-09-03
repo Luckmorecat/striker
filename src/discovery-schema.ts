@@ -121,7 +121,7 @@ const resolvedLocatorSchema = z.union([
   verificationLocatorSchema,
 ]);
 
-const resolvedOutcomeLocatorSchema = z.union([
+export const resolvedOutcomeLocatorSchema = z.union([
   outcomeCodeEvidenceSchema.extend({ commit: nonblankText }),
   outcomeVerificationEvidenceSchema,
 ]);

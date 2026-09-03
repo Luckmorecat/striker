@@ -26,6 +26,28 @@ const request = {
   skills: [],
   taskSource: { location: "/repo/plan", type: "striker-plan" },
 } as const;
+const priorTaskEvidence = [
+  {
+    changedPaths: ["src/prior.ts"],
+    facts: [
+      {
+        category: "verified_default",
+        evidence: {
+          command: "pnpm check",
+          exitCode: 0,
+          kind: "verification",
+          output: "ok",
+        },
+        id: "F1",
+        statement: "The verified default is stable.",
+      },
+    ],
+    resultCommit: "prior-commit",
+    source: { id: "tasks/00.md", revision: "prior-revision" },
+    transitions: [],
+    verification: { command: "pnpm check", exitCode: 0 },
+  },
+] as const;
 
 async function appendCompletedRun(journal: FileRunJournal): Promise<void> {
   const session = { id: "runtime-session" };
@@ -56,7 +78,11 @@ async function appendCompletedRun(journal: FileRunJournal): Promise<void> {
   });
   await journal.append({
     attempt: 1,
-    request: { instructions: task.instructions, skills: [] },
+    request: {
+      instructions: task.instructions,
+      priorTaskEvidence,
+      skills: [],
+    },
     runId: request.runId,
     session,
     task: identity,
@@ -103,7 +129,7 @@ it("retains completed plan history and rebuilds a missing projection", async () 
   await expect(journal.loadActive()).resolves.toBeNull();
   expect(
     await readFile(path.join(planRoot, "events.ndjson"), "utf8"),
-  ).toContain('"type":"task_completed"');
+  ).toContain('"statement":"The verified default is stable."');
 });
 
 it("rebuilds missing, stale, and corrupt Task Outcome projections", async () => {

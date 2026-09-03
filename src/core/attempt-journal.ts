@@ -76,3 +76,31 @@ export async function recordInitializationInterruption(
     task,
   };
 }
+
+export async function recordPreSessionAttention(
+  journal: RunJournal,
+  request: DispatchRequest,
+  task: ImplementationTask,
+  attention: RunAttention,
+): Promise<
+  Extract<
+    DispatchResult,
+    { status: "needs_attention"; task: ImplementationTask }
+  >
+> {
+  transitionRun("running", "request_attention");
+  await journal.append({
+    attention,
+    runId: request.runId,
+    session: null,
+    task: task.identity,
+    type: "run_needs_attention",
+  });
+  return {
+    reason: attention.reason,
+    runId: request.runId,
+    session: null,
+    status: "needs_attention",
+    task,
+  };
+}

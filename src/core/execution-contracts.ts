@@ -12,6 +12,8 @@ export interface TaskExecution {
 
 export interface ImplementationTask {
   readonly identity: TaskIdentity;
+  readonly outcomePlanId?: string;
+  readonly outcomePlanRoutes?: readonly import("./outcome-contracts.js").OutcomeRoute[];
   readonly outcomeRoutes?: readonly TaskIdentity[];
   readonly outcomeTaskOrder?: readonly TaskIdentity[];
   readonly outcomeTargets?: readonly import("./outcome-contracts.js").OutcomeTarget[];
@@ -27,6 +29,7 @@ export interface AgentSession {
 
 export interface AgentRequest {
   readonly instructions: string;
+  readonly priorTaskEvidence?: readonly import("./outcome-contracts.js").DeliveredTaskOutcome[];
   readonly skills: readonly string[];
   readonly workflowInstructions?: string;
 }

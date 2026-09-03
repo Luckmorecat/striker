@@ -84,6 +84,21 @@ export interface TaskOutcome {
   readonly verification: Omit<VerificationResult, "output">;
 }
 
+export type DeliveredOutcomeFact = Omit<CertifiedOutcomeFact, "relevantTo">;
+export type DeliveredOutcomeTransition = Omit<
+  TaskOutcomeTransition,
+  "relevantTo"
+>;
+
+export interface DeliveredTaskOutcome {
+  readonly changedPaths: readonly string[];
+  readonly facts: readonly DeliveredOutcomeFact[];
+  readonly resultCommit: string;
+  readonly source: TaskIdentity;
+  readonly transitions: readonly DeliveredOutcomeTransition[];
+  readonly verification: Omit<VerificationResult, "output">;
+}
+
 function hasExactKeys(value: object, expected: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
   return (

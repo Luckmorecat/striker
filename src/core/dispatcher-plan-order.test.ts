@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapter.js";
+import { parseStrikerPlan } from "../adapters/striker-plan/plan-parser.js";
 import { InMemoryRunJournal, runPassingReview } from "../testing/fakes.js";
 import { AdapterRegistry, Dispatcher } from "../index.js";
 import type {
@@ -48,6 +49,10 @@ class FakeGit implements GitRepository {
     this.index += 1;
     if (value === undefined) throw new Error("Missing fake Git state");
     return Promise.resolve(value);
+  }
+
+  isAncestor(): Promise<boolean> {
+    return Promise.resolve(true);
   }
 
   resolvePrivatePath(): Promise<string> {
@@ -108,7 +113,12 @@ async function createOrderedPlan() {
       manifest(["tasks/01.md", "tasks/02.md"]),
     ),
   ]);
-  return { planRoot, root, workflowRoot };
+  return {
+    planId: (await parseStrikerPlan(planRoot)).identity,
+    planRoot,
+    root,
+    workflowRoot,
+  };
 }
 
 class OrderedPlanRunner implements AgentRunner {
@@ -147,7 +157,7 @@ class OrderedPlanRunner implements AgentRunner {
 
 describe("Dispatcher with an immutable Striker plan", () => {
   it("runs declared task order without overlapping task sessions", async () => {
-    const { planRoot, root, workflowRoot } = await createOrderedPlan();
+    const { planId, planRoot, root, workflowRoot } = await createOrderedPlan();
     const runner = new OrderedPlanRunner();
     const registry = new AdapterRegistry();
     registry.register(
@@ -165,7 +175,7 @@ describe("Dispatcher with an immutable Striker plan", () => {
       verifier: verifier(),
     }).dispatch({
       completedTasks: [],
-      planId: "changing",
+      planId,
       runId: "changing",
       skills: [],
       taskSource: { location: planRoot, type: "striker-plan" },
