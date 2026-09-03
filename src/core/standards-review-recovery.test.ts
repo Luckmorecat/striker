@@ -129,6 +129,7 @@ async function seedImplementation(journal: InMemoryRunJournal): Promise<void> {
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: request.runId,
     session: implementor,
     task: task.identity,

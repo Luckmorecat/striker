@@ -30,17 +30,18 @@ export async function runInFreshSession(
   input: FreshSessionRequest,
 ): Promise<FreshSessionResult> {
   const callback = { entered: false };
+  const preparedRequest = {
+    instructions: input.task.instructions,
+    skills: input.request.skills,
+    ...(input.task.execution === undefined
+      ? {}
+      : {
+          workflowInstructions: input.task.execution.workflowInstructions,
+        }),
+  };
   try {
     return await input.runner.runInNewSession(
-      {
-        instructions: input.task.instructions,
-        skills: input.request.skills,
-        ...(input.task.execution === undefined
-          ? {}
-          : {
-              workflowInstructions: input.task.execution.workflowInstructions,
-            }),
-      },
+      preparedRequest,
       async (session) => {
         callback.entered = true;
         await recordAttemptSession(
@@ -49,6 +50,7 @@ export async function runInFreshSession(
           input.task,
           input.attempt,
           session,
+          preparedRequest,
         );
       },
     );

@@ -18,13 +18,14 @@ const validManifest = {
       statement: "Use the existing option naming pattern.",
     },
   },
+  outcomeRoutes: [{ from: "01-bootstrap.md", to: ["nested/02-finish.md"] }],
   taskSource: "striker-plan" as const,
   tasks: ["01-bootstrap.md", "nested/02-finish.md"],
-  version: 2 as const,
+  version: 3 as const,
 };
 
 describe("parsePlanManifest valid plans", () => {
-  it("accepts a version 2 plan with typed ledger definitions", () => {
+  it("accepts a version 3 plan with immutable forward outcome routes", () => {
     expect(
       parsePlanManifest({
         $schema: "./node_modules/@useless_mob/striker/plan.schema.json",
@@ -50,7 +51,7 @@ describe("parsePlanManifest valid plans", () => {
 describe("parsePlanManifest invalid plans", () => {
   it.each([
     ["an empty task list", { ...validManifest, tasks: [] }],
-    ["version 1", { ...validManifest, version: 1 }],
+    ["version 2", { ...validManifest, version: 2 }],
     ["an unsupported source", { ...validManifest, taskSource: "markdown" }],
     ["an absolute task path", { ...validManifest, tasks: ["/tmp/01.md"] }],
     ["a traversing task path", { ...validManifest, tasks: ["tasks/../01.md"] }],
@@ -89,6 +90,7 @@ describe("parsePlanManifest invalid plans", () => {
       "a missing assumption ledger",
       {
         defaults: validManifest.defaults,
+        outcomeRoutes: validManifest.outcomeRoutes,
         taskSource: validManifest.taskSource,
         tasks: validManifest.tasks,
         version: validManifest.version,
@@ -98,6 +100,7 @@ describe("parsePlanManifest invalid plans", () => {
       "a missing default ledger",
       {
         assumptions: validManifest.assumptions,
+        outcomeRoutes: validManifest.outcomeRoutes,
         taskSource: validManifest.taskSource,
         tasks: validManifest.tasks,
         version: validManifest.version,
@@ -115,6 +118,43 @@ describe("parsePlanManifest invalid plans", () => {
     ],
   ])("rejects %s", (_description, manifest) => {
     expect(() => parsePlanManifest(manifest)).toThrow();
+  });
+});
+
+describe("parsePlanManifest outcome routes", () => {
+  it.each([
+    [
+      "a duplicate source",
+      [
+        ...validManifest.outcomeRoutes,
+        { from: "01-bootstrap.md", to: ["nested/02-finish.md"] },
+      ],
+    ],
+    [
+      "a duplicate target",
+      [
+        {
+          from: "01-bootstrap.md",
+          to: ["nested/02-finish.md", "nested/02-finish.md"],
+        },
+      ],
+    ],
+    [
+      "an unknown source",
+      [{ from: "00-missing.md", to: ["nested/02-finish.md"] }],
+    ],
+    [
+      "an unknown target",
+      [{ from: "01-bootstrap.md", to: ["nested/03-missing.md"] }],
+    ],
+    [
+      "a backward target",
+      [{ from: "nested/02-finish.md", to: ["01-bootstrap.md"] }],
+    ],
+  ])("rejects %s", (_description, outcomeRoutes) => {
+    expect(() =>
+      parsePlanManifest({ ...validManifest, outcomeRoutes }),
+    ).toThrow();
   });
 });
 
@@ -199,6 +239,7 @@ describe("planManifestJsonSchema", () => {
           propertyNames: { pattern: "^D[1-9]\\d*$" },
           type: "object",
         },
+        version: { const: 3, type: "number" },
       },
     });
   });

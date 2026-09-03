@@ -101,6 +101,7 @@ async function startedJournal(): Promise<InMemoryRunJournal> {
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: request.runId,
     session: implementor,
     task: task.identity,
@@ -297,7 +298,7 @@ describe("repairPlanComplianceFindings", () => {
     });
     const runner = new FakeAgentRunner({
       output:
-        '{"discoveries":[],"kind":"implementation","summary":"Repaired recovery."}',
+        '{"discoveries":[],"kind":"implementation","outcomeFacts":[],"summary":"Repaired recovery."}',
       session: implementor,
       status: "returned",
     });

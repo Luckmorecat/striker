@@ -82,9 +82,10 @@ async function createOrderedPlan() {
     JSON.stringify({
       assumptions: {},
       defaults: {},
+      outcomeRoutes: [],
       taskSource: "striker-plan",
       tasks,
-      version: 2,
+      version: 3,
     });
   await Promise.all([
     writeFile(path.join(planRoot, "spine.md"), "# Spine\n"),
@@ -137,7 +138,7 @@ class OrderedPlanRunner implements AgentRunner {
     await sessionStarted?.(session);
     return {
       output:
-        '{"discoveries":[],"kind":"implementation","summary":"Task complete."}',
+        '{"discoveries":[],"kind":"implementation","outcomeFacts":[],"summary":"Task complete."}',
       session,
       status: "returned" as const,
     };

@@ -83,6 +83,10 @@ result, fit one fresh agent context, and define:
 Use a separate mechanical prerequisite only when it has its own complete green
 boundary.
 
+Declare an Outcome Route only when a later task needs certified factual evidence
+from an earlier task. Route paths follow task order and authorize evidence flow;
+they do not create dependencies or change scheduling.
+
 For an unavoidable wide change, expand first, migrate callers in green batches,
 then contract by removing the old form. Keep Striker's strict dispatch order.
 Do not create an external tracker or separate dependency graph.
@@ -92,6 +96,7 @@ Do not create an external tracker or separate dependency graph.
 Before presenting the plan, check:
 
 - requirement coverage in both directions;
+- Outcome Routes cover only approved forward evidence flow;
 - task granularity and order;
 - paths and shared-file sequencing;
 - test seams and fake boundaries;
@@ -100,8 +105,8 @@ Before presenting the plan, check:
 Fix every gap found.
 
 Present the specification path and SHA-256, scope, exclusions, decisions,
-typed assumptions and evidence, typed defaults, requirement mapping, ordered
-tasks, and test contracts.
+typed assumptions and evidence, typed defaults, immutable Outcome Routes,
+requirement mapping, ordered tasks, and test contracts.
 
 Obtain explicit approval of the task boundaries and test contracts. Apply
 requested changes and present the changed preview again. Write no plan artifacts
@@ -110,9 +115,9 @@ before approval.
 ## Write and validate the plan
 
 After unambiguous approval, read [PLAN-FORMAT.md](PLAN-FORMAT.md) and write the
-immutable version 2 plan in its required location. Serialize the assumption and
-default ledgers plus requirement traceability as that format requires. Do not
-create `log.md` or any other mutable plan-local state.
+immutable version 3 plan in its required location. Serialize the assumption and
+default ledgers, Outcome Routes, and requirement traceability as that format
+requires. Do not create `log.md` or any other mutable plan-local state.
 
 If the target directory exists, show it and obtain approval before replacing any
 file.

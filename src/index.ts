@@ -17,7 +17,17 @@ export type {
   PlanCodeEvidence,
   PlanDefault,
   PlanManifest,
+  PlanOutcomeRoute,
 } from "./adapters/striker-plan/plan-manifest.js";
+export {
+  outcomeFactCategories,
+  outcomeProtocolLimits,
+} from "./core/outcome-contracts.js";
+export type {
+  OutcomeFactCategory,
+  OutcomeFactProposal,
+  OutcomeRoute,
+} from "./core/outcome-contracts.js";
 export type {
   StrikerPlan,
   StrikerPlanTask,

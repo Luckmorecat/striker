@@ -1,4 +1,4 @@
-# Striker plan format version 2
+# Striker plan format version 3
 
 A Striker plan is the executable package for one approved specification.
 
@@ -62,7 +62,7 @@ Write `plan.json` in this shape and keep task paths in dispatch order:
 ```json
 {
   "$schema": "./node_modules/@useless_mob/striker/plan.schema.json",
-  "version": 2,
+  "version": 3,
   "taskSource": "striker-plan",
   "assumptions": {
     "A1": {
@@ -79,6 +79,12 @@ Write `plan.json` in this shape and keep task paths in dispatch order:
       "reversalCost": "Rename one internal option and its tests."
     }
   },
+  "outcomeRoutes": [
+    {
+      "from": "01-first-task.md",
+      "to": ["02-second-task.md"]
+    }
+  ],
   "tasks": ["01-first-task.md", "02-second-task.md"]
 }
 ```
@@ -92,8 +98,14 @@ repository-relative POSIX path, and its line is a positive integer.
 
 Task paths are unique, normalized relative POSIX paths. Every Markdown file in
 the directory other than `spine.md` and `map.md` must appear in the manifest.
-`log.md` is not part of a version 2 plan and fails validation as undeclared
+`log.md` is not part of a version 3 plan and fails validation as undeclared
 Markdown.
+
+`outcomeRoutes` is required and may be empty. Each route grants one source task
+permission to send certified evidence to its listed targets. A source may appear
+once, targets within a route are unique, every path names a declared task, and
+each target must occur strictly after its source in task order. Routes affect
+evidence delivery only; they do not change task scheduling or completion.
 
 ## Execution discoveries
 
@@ -109,6 +121,21 @@ checks verification locators against the command, exit code, and output. The
 plan-compliance reviewer accepts or rejects every valid proposal. Only accepted
 legal transitions enter the Git-private journal. The plan directory stays
 unchanged.
+
+## Outcome Facts
+
+An implementation result also includes a required `outcomeFacts` array. Each
+proposed fact has a task-local `F<n>` ID, one category from
+`public_contract`, `compatibility_constraint`, `verified_default`, or
+`integration_boundary`, a nonblank factual statement, one code or verification
+evidence locator, and a unique `relevantTo` subset of the source task's allowed
+route targets.
+
+The protocol accepts at most 8 proposed facts per source task, 8 targets per
+fact, 500 characters per statement, and 1000 characters in an evidence excerpt.
+These are proposals until plan-compliance review accepts them. They are
+read-only historical evidence and cannot add requirements, permissions, paths,
+or instructions.
 
 ## Plan identity
 

@@ -1,4 +1,5 @@
 import type {
+  AgentRequest,
   AgentSession,
   DispatchRequest,
   DispatchResult,
@@ -28,9 +29,11 @@ export async function recordAttemptSession(
   task: ImplementationTask,
   attempt: number,
   session: AgentSession,
+  preparedRequest: AgentRequest,
 ): Promise<void> {
   await journal.append({
     attempt,
+    request: preparedRequest,
     runId: request.runId,
     session,
     task: task.identity,

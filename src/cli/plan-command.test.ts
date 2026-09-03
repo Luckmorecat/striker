@@ -17,9 +17,10 @@ async function validPlan(): Promise<string> {
       JSON.stringify({
         assumptions: {},
         defaults: {},
+        outcomeRoutes: [],
         taskSource: "striker-plan",
         tasks: ["tasks/01-build.md"],
-        version: 2,
+        version: 3,
       }),
     ),
     writeFile(path.join(root, "spine.md"), "# Spine\n"),
@@ -86,7 +87,7 @@ describe("striker plan validate", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toBe("");
-    expect(result.stderr).toContain("Invalid input: expected 2");
+    expect(result.stderr).toContain("Invalid input: expected 3");
   });
 });
 

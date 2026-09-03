@@ -54,6 +54,31 @@
         "additionalProperties": false
       }
     },
+    "outcomeRoutes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^(?!(?:spine|map|log)\\.md$)(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))(?!.*(?:^|\\/)\\.(?:\\/|$))(?!.*\\/\\/).+\\.md$"
+          },
+          "to": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(?!(?:spine|map|log)\\.md$)(?!\\/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|\\/)\\.\\.(?:\\/|$))(?!.*(?:^|\\/)\\.(?:\\/|$))(?!.*\\/\\/).+\\.md$"
+            },
+            "uniqueItems": true
+          }
+        },
+        "required": ["from", "to"],
+        "additionalProperties": false
+      }
+    },
     "taskSource": { "type": "string", "const": "striker-plan" },
     "tasks": {
       "minItems": 1,
@@ -65,9 +90,16 @@
       },
       "uniqueItems": true
     },
-    "version": { "type": "number", "const": 2 }
+    "version": { "type": "number", "const": 3 }
   },
-  "required": ["assumptions", "defaults", "taskSource", "tasks", "version"],
+  "required": [
+    "assumptions",
+    "defaults",
+    "outcomeRoutes",
+    "taskSource",
+    "tasks",
+    "version"
+  ],
   "additionalProperties": false,
   "title": "Striker plan manifest"
 }

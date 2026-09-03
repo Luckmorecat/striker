@@ -117,6 +117,7 @@ async function seedAttempt(
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: request.runId,
     session,
     task: task.identity,
@@ -167,6 +168,11 @@ async function expectFreshRetry(
   });
   expect(test.journal.events).toContainEqual({
     attempt: 2,
+    request: {
+      instructions: task.instructions,
+      skills: request.skills,
+      workflowInstructions: task.execution?.workflowInstructions,
+    },
     runId: request.runId,
     session: { id: "runtime-new", resumeId: "provider-new" },
     task: task.identity,
@@ -200,6 +206,11 @@ describe("Dispatcher interrupted-attempt recovery", () => {
     });
     expect(test.journal.events).toContainEqual({
       attempt: 1,
+      request: {
+        instructions: task.instructions,
+        skills: request.skills,
+        workflowInstructions: task.execution?.workflowInstructions,
+      },
       runId: request.runId,
       session,
       task: task.identity,

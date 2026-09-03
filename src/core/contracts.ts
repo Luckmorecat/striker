@@ -4,6 +4,7 @@ import type {
   RunStatus,
 } from "./run-journal-contracts.js";
 import type {
+  AgentRequest,
   AgentSession,
   GitState,
   ImplementationTask,
@@ -15,6 +16,7 @@ import type {
 import type { ReviewRequest, ReviewTurn } from "./review-contracts.js";
 
 export type {
+  AgentRequest,
   AgentSession,
   GitState,
   ImplementationTask,
@@ -58,6 +60,7 @@ export interface TaskSourceConflict {
 export interface ImplementationResult {
   readonly discoveries: readonly import("./discovery-contracts.js").DiscoveryProposal[];
   readonly kind: "implementation";
+  readonly outcomeFacts: readonly import("./outcome-contracts.js").OutcomeFactProposal[];
   readonly summary: string;
 }
 
@@ -79,12 +82,6 @@ export interface PermissionConfig {
 
 export interface HarnessPreflightRequest {
   readonly skills: readonly string[];
-}
-
-export interface AgentRequest {
-  readonly instructions: string;
-  readonly skills: readonly string[];
-  readonly workflowInstructions?: string;
 }
 
 export type AgentTurn =

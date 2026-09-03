@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -6,7 +6,6 @@ import { expect, it } from "vitest";
 
 import { appendPassedStandardsReview } from "../testing/fakes.js";
 import { FileRunJournal } from "./file-run-journal.js";
-import { legacyRunJournalSchemaId } from "./run-journal-schema.js";
 
 const identity = { id: "tasks/01.md", revision: "revision-1" };
 const task = {
@@ -57,6 +56,7 @@ async function appendCompletedRun(journal: FileRunJournal): Promise<void> {
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: request.runId,
     session,
     task: identity,
@@ -87,34 +87,6 @@ async function appendCompletedRun(journal: FileRunJournal): Promise<void> {
   await journal.append({ runId: request.runId, type: "run_completed" });
 }
 
-function legacyHistory(content: string): string {
-  const lines = content.trim().split("\n");
-  const envelopes = lines.map(
-    (line) =>
-      JSON.parse(line) as {
-        event: Record<string, unknown>;
-        schema: string;
-      },
-  );
-  return `${envelopes
-    .filter(({ event }) => !String(event.type).startsWith("standards_"))
-    .map(({ event }) => {
-      Reflect.deleteProperty(event, "certification");
-      return JSON.stringify({ event, schema: legacyRunJournalSchemaId });
-    })
-    .join("\n")}\n`;
-}
-
-function legacySnapshot(content: string, eventCount: number): string {
-  const envelope = JSON.parse(content) as {
-    eventCount: number;
-    schema: string;
-    snapshot: Record<string, unknown>;
-  };
-  Reflect.deleteProperty(envelope.snapshot, "standardsReview");
-  return `${JSON.stringify({ ...envelope, eventCount, schema: legacyRunJournalSchemaId })}\n`;
-}
-
 it("retains completed plan history and rebuilds a missing projection", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "striker-plan-history-"));
   const journal = new FileRunJournal(root);
@@ -132,27 +104,4 @@ it("retains completed plan history and rebuilds a missing projection", async () 
   expect(
     await readFile(path.join(planRoot, "events.ndjson"), "utf8"),
   ).toContain('"type":"task_completed"');
-});
-
-it("loads completed history from the prior journal schema", async () => {
-  const root = await mkdtemp(path.join(tmpdir(), "striker-plan-legacy-"));
-  const journal = new FileRunJournal(root);
-  await appendCompletedRun(journal);
-  const planRoot = path.join(root, "plans/plan-1");
-  const eventsPath = path.join(planRoot, "events.ndjson");
-  const history = legacyHistory(await readFile(eventsPath, "utf8"));
-  await writeFile(eventsPath, history);
-  const snapshotPath = path.join(planRoot, "snapshot.json");
-  await writeFile(
-    snapshotPath,
-    legacySnapshot(
-      await readFile(snapshotPath, "utf8"),
-      history.trim().split("\n").length,
-    ),
-  );
-
-  await expect(journal.load("plan-1")).resolves.toMatchObject({
-    completedTasks: [identity],
-    snapshot: { status: "completed" },
-  });
 });

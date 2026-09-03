@@ -4,7 +4,8 @@ import path from "node:path";
 
 import { fromMarkdown } from "mdast-util-from-markdown";
 
-import type { ImplementationTask } from "../../core/contracts.js";
+import type { ImplementationTask, TaskIdentity } from "../../core/contracts.js";
+import type { OutcomeRoute } from "../../core/outcome-contracts.js";
 import { rejectDuplicateJsonKeys } from "./json-object-keys.js";
 import { parsePlanManifest, type PlanManifest } from "./plan-manifest.js";
 
@@ -71,7 +72,23 @@ function parseAffectedPaths(
 export interface StrikerPlan {
   readonly identity: string;
   readonly manifest: PlanManifest;
+  readonly outcomeRoutes: readonly OutcomeRoute[];
   readonly tasks: readonly StrikerPlanTask[];
+}
+
+function resolveOutcomeRoutes(
+  manifest: PlanManifest,
+  tasks: readonly StrikerPlanTask[],
+): readonly OutcomeRoute[] {
+  const identities = new Map(tasks.map((task) => [task.path, task.identity]));
+  return manifest.outcomeRoutes.map((route) => {
+    const from = identities.get(route.from);
+    const to = route.to.map((target) => identities.get(target));
+    if (from === undefined || to.some((target) => target === undefined)) {
+      throw new PlanValidationError("Outcome Route contains an unknown task");
+    }
+    return { from, to: to as TaskIdentity[] };
+  });
 }
 
 export class PlanValidationError extends Error {
@@ -317,6 +334,7 @@ export async function parseStrikerPlan(root: string): Promise<StrikerPlan> {
   return {
     identity: planIdentity(immutablePaths, files),
     manifest,
+    outcomeRoutes: resolveOutcomeRoutes(manifest, tasks),
     tasks,
   };
 }

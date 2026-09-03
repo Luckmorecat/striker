@@ -118,6 +118,7 @@ class StrikerPlanSource implements TaskSource {
     return Promise.resolve({
       evidence: {
         discoveries: result.discoveries,
+        outcomeFacts: result.outcomeFacts,
         summary: result.summary,
         verification: execution.verification,
       },
@@ -129,6 +130,10 @@ class StrikerPlanSource implements TaskSource {
     return {
       ...task,
       instructions: `${task.instructions}\n\n## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\n`,
+      outcomeRoutes:
+        this.plan.outcomeRoutes.find(
+          (route) => route.from.id === task.identity.id,
+        )?.to ?? [],
       execution: {
         affectedPaths: task.affectedPaths,
         cwd: this.projectRoot,

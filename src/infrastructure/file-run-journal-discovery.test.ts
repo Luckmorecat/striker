@@ -79,6 +79,7 @@ async function appendAttempt(journal: RunJournal): Promise<void> {
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: request.runId,
     session,
     task: identity,
@@ -218,6 +219,7 @@ async function appendRepeatedAttempt(journal: RunJournal): Promise<void> {
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: secondTask.instructions, skills: [] },
     runId,
     session,
     task: secondIdentity,

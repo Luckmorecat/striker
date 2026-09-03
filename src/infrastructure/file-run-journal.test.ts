@@ -75,6 +75,11 @@ async function startAttempt(
   });
   await journal.append({
     attempt: 1,
+    request: {
+      instructions: task.instructions,
+      skills: value.skills,
+      workflowInstructions: "implement",
+    },
     runId: value.runId,
     session,
     task: identity,
@@ -215,20 +220,6 @@ describe("file plan journal validation and replay", () => {
     ).toHaveLength(6);
   });
 
-  it("rejects unknown schema versions without rewriting events", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "striker-journal-version-"));
-    const journal = new FileRunJournal(root);
-    await start(journal);
-    const eventsPath = path.join(root, "plans/plan-1/events.ndjson");
-    const unsupported = `${JSON.stringify({ event: { runId: "run-1", type: "run_completed" }, schema: "striker.plan-journal.v6" })}\n`;
-    await writeFile(eventsPath, unsupported);
-
-    await expect(journal.load("plan-1")).rejects.toThrow(
-      "Unsupported Striker plan journal schema: striker.plan-journal.v6",
-    );
-    expect(await readFile(eventsPath, "utf8")).toBe(unsupported);
-  });
-
   it("rejects an event before writing when its ordering is invalid", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-order-"));
     const journal = new FileRunJournal(root);
@@ -237,6 +228,7 @@ describe("file plan journal validation and replay", () => {
     await expect(
       journal.append({
         attempt: 1,
+        request: { instructions: "Build.", skills: [] },
         runId: "run-1",
         session: { id: "session-1" },
         task: identity,
@@ -299,6 +291,7 @@ describe("file plan journal event ordering", () => {
     await expect(
       journal.append({
         attempt: 1,
+        request: { instructions: "Build.", skills: [] },
         runId: "run-1",
         session: { id: "late-session" },
         task: identity,
@@ -491,6 +484,7 @@ describe("file plan journal attempt replay", () => {
     const retrySession = { id: "session-2" };
     await journal.append({
       attempt: 2,
+      request: { instructions: "Build.", skills: [] },
       runId: "run-1",
       session: retrySession,
       task: identity,

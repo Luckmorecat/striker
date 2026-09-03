@@ -12,6 +12,7 @@ export interface TaskExecution {
 
 export interface ImplementationTask {
   readonly identity: TaskIdentity;
+  readonly outcomeRoutes?: readonly TaskIdentity[];
   readonly title: string;
   readonly instructions: string;
   readonly execution?: TaskExecution;
@@ -20,6 +21,12 @@ export interface ImplementationTask {
 export interface AgentSession {
   readonly id: string;
   readonly resumeId?: string;
+}
+
+export interface AgentRequest {
+  readonly instructions: string;
+  readonly skills: readonly string[];
+  readonly workflowInstructions?: string;
 }
 
 export interface VerificationResult {
@@ -38,6 +45,7 @@ export interface GitState {
 
 export interface TaskCompletionEvidence {
   readonly discoveries?: readonly import("./discovery-contracts.js").DiscoveryProposal[];
+  readonly outcomeFacts?: readonly import("./outcome-contracts.js").OutcomeFactProposal[];
   readonly summary: string;
   readonly verification?: VerificationResult;
 }

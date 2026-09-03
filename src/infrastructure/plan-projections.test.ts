@@ -77,6 +77,7 @@ async function appendAttempt(journal: FileRunJournal): Promise<void> {
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: request.runId,
     session,
     task: task.identity,

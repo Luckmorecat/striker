@@ -136,14 +136,14 @@ authorization.
 
 The plan directory uses the first 12 hexadecimal characters of the SHA-256 of
 the exact approved specification bytes. `spine.md` records the specification
-path and full hash and embeds an immutable copy of the specification. Version 2
+path and full hash and embeds an immutable copy of the specification. Version 3
 plans contain no mutable log. The manifest declares typed planning assumptions,
-local defaults, and strict task order:
+local defaults, immutable Outcome Routes, and strict task order:
 
 ```json
 {
   "$schema": "./node_modules/@useless_mob/striker/plan.schema.json",
-  "version": 2,
+  "version": 3,
   "taskSource": "striker-plan",
   "assumptions": {
     "A1": {
@@ -158,6 +158,9 @@ local defaults, and strict task order:
       "reversalCost": "Rename one internal option and its tests."
     }
   },
+  "outcomeRoutes": [
+    { "from": "01-first-task.md", "to": ["02-second-task.md"] }
+  ],
   "tasks": ["01-first-task.md", "02-second-task.md"]
 }
 ```
@@ -165,7 +168,8 @@ local defaults, and strict task order:
 The ledger objects are required and may be empty. Assumptions use `A<n>`
 property names and one or more repository file and line citations. Defaults use
 `D<n>` property names and record a reason and reversal cost. Object keys make
-ledger IDs unique. Version 1 plans are rejected.
+ledger IDs unique. Outcome Routes use declared task paths, have unique sources
+and targets, and point strictly forward. Only version 3 plans are accepted.
 
 The complete plan is the executable package for one approved specification.
 Striker derives its identity from the exact bytes and relative paths of
@@ -205,10 +209,16 @@ pnpm exec striker run path/to/plan --allow-dirty
 
 After each task, Striker requires one strict implementation-result JSON object,
 one descendant commit, an unchanged allowed dirty baseline, and the exact
-verification result. The result has a required `discoveries` array. Each item
-proposes a transition for one manifest `A<n>` assumption or `D<n>` default and
-cites either an exact candidate-commit line or a checked verification excerpt.
-An empty array means the task found no ledger change.
+verification result. The result has required `discoveries` and `outcomeFacts`
+arrays. Each discovery proposes a transition for one manifest `A<n>` assumption
+or `D<n>` default and cites either an exact candidate-commit line or a checked
+verification excerpt. An empty array means the task found no ledger change.
+
+Each Outcome Fact has a task-local `F<n>` ID, a closed factual category, a
+bounded statement, exact code or verification evidence, and a `relevantTo`
+selection from the source task's immutable Outcome Route. Facts are proposals
+until plan-compliance review accepts them; they are read-only historical
+evidence and cannot introduce requirements or instructions.
 
 Striker rejects unknown IDs and citations that do not match the exact candidate
 or stored verification before review. It then starts fresh read-only standards
@@ -227,16 +237,20 @@ before `task_completed`. The journal records each review and repair stage for
 recovery. The implementation session reads plan context but never updates the
 plan directory or reviews its own work.
 
-Striker keys one persistent event journal by the immutable plan identity under
-Git-private checkout storage. The journal records each run, task selection,
-baseline, attempt, session, continuation, failure, attention state, completion,
-source conflict, discovery decision, ledger transition, discard, and terminal
-completion. The active-run file is only a lock and lookup index. Successful
-completion and explicit discard release that claim without deleting plan
-history. `snapshot.json`, `task-state.json`, and `log.md` are rebuildable
+Striker keys one version 6 persistent event journal by the immutable plan
+identity under Git-private checkout storage. The journal records each run, task
+selection, baseline, attempt, session, continuation, failure, attention state,
+completion, source conflict, discovery decision, ledger transition, discard, and
+terminal completion. The active-run file is only a lock and lookup index.
+Successful completion and explicit discard release that claim without deleting
+plan history. `snapshot.json`, `task-state.json`, and `log.md` are rebuildable
 projections. Striker repairs or recreates them from `events.ndjson` after an
 interrupted projection write, without rerunning a completed implementation
 session.
+
+The `task_session_started` event stores the exact prepared implementation
+request before its first turn begins. Journal versions 2 through 5 are not
+accepted.
 
 One nonterminal run may exist per checkout. Inspect or operate it with:
 

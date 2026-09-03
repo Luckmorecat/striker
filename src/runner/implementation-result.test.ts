@@ -7,6 +7,7 @@ describe("parseImplementationResult", () => {
     const result = {
       discoveries: [],
       kind: "implementation",
+      outcomeFacts: [],
       summary: "Added the command and its public integration test.",
     } as const;
 
@@ -17,6 +18,7 @@ describe("parseImplementationResult", () => {
     const result = {
       discoveries: [],
       kind: "implementation",
+      outcomeFacts: [],
       summary: "Task complete.",
     };
 
@@ -66,6 +68,7 @@ describe("implementation discovery results", () => {
         },
       ],
       kind: "implementation",
+      outcomeFacts: [],
       summary: "Implemented the transition.",
     } as const;
 
@@ -90,6 +93,7 @@ describe("implementation discovery results", () => {
         JSON.stringify({
           discoveries: [proposal],
           kind: "implementation",
+          outcomeFacts: [],
           summary: "done",
         }),
       ),
@@ -102,9 +106,102 @@ describe("implementation discovery results", () => {
             { ...proposal, locator: { ...proposal.locator, path: "src/b.ts" } },
           ],
           kind: "implementation",
+          outcomeFacts: [],
           summary: "done",
         }),
       ),
     ).toThrow("one proposal per ledger entry");
+  });
+});
+
+const outcomeFact = {
+  category: "public_contract",
+  evidence: {
+    command: "pnpm check",
+    exitCode: 0,
+    kind: "verification",
+    output: "ok",
+  },
+  id: "F1",
+  relevantTo: ["tasks/02.md"],
+  statement: "The verification contract is stable.",
+} as const;
+
+function parseFacts(outcomeFacts: unknown[]) {
+  return parseImplementationResult(
+    JSON.stringify({
+      discoveries: [],
+      kind: "implementation",
+      outcomeFacts,
+      summary: "done",
+    }),
+  );
+}
+
+describe("implementation outcome facts", () => {
+  it("accepts bounded typed facts with task-local IDs and selected targets", () => {
+    expect(
+      parseFacts([
+        {
+          ...outcomeFact,
+          evidence: {
+            kind: "code",
+            line: 12,
+            path: "src/core/task.ts",
+            text: "export const publicContract = true;",
+          },
+        },
+      ]).outcomeFacts,
+    ).toHaveLength(1);
+  });
+
+  it("rejects invalid IDs, categories, and target selections", () => {
+    expect(() => parseFacts([{ ...outcomeFact, id: "F0" }])).toThrow();
+    expect(() =>
+      parseFacts([{ ...outcomeFact, category: "advice" }]),
+    ).toThrow();
+    expect(() => parseFacts([{ ...outcomeFact, relevantTo: [] }])).toThrow();
+    expect(() =>
+      parseFacts([
+        { ...outcomeFact, relevantTo: ["tasks/02.md", "tasks/02.md"] },
+      ]),
+    ).toThrow();
+    expect(() =>
+      parseFacts([{ ...outcomeFact, relevantTo: ["src/task.ts"] }]),
+    ).toThrow();
+  });
+
+  it("rejects every Outcome Fact protocol overflow", () => {
+    expect(() =>
+      parseFacts([
+        {
+          ...outcomeFact,
+          relevantTo: Array.from(
+            { length: 9 },
+            (_, index) => `tasks/${String(index + 2)}.md`,
+          ),
+        },
+      ]),
+    ).toThrow();
+    expect(() =>
+      parseFacts([{ ...outcomeFact, statement: "x".repeat(501) }]),
+    ).toThrow();
+    expect(() =>
+      parseFacts([
+        {
+          ...outcomeFact,
+          evidence: { ...outcomeFact.evidence, output: "x".repeat(1_001) },
+        },
+      ]),
+    ).toThrow();
+    expect(() => parseFacts([outcomeFact, outcomeFact])).toThrow();
+    expect(() =>
+      parseFacts(
+        Array.from({ length: 9 }, (_, id) => ({
+          ...outcomeFact,
+          id: `F${String(id + 1)}`,
+        })),
+      ),
+    ).toThrow();
   });
 });

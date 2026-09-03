@@ -99,9 +99,10 @@ async function planFixture(options: PlanFixtureOptions) {
       JSON.stringify({
         assumptions: {},
         defaults: {},
+        outcomeRoutes: [],
         taskSource: "striker-plan",
         tasks: options.tasks.map((task) => task.path),
-        version: 2,
+        version: 3,
       }),
     ),
     ...options.tasks.map((task) =>
@@ -205,6 +206,7 @@ async function appendCompletedAttempt(
     },
     {
       attempt: 1,
+      request: { instructions: task.instructions, skills: [] },
       runId: request.runId,
       session,
       task: task.identity,
@@ -375,7 +377,7 @@ describe("Dispatcher immutable multi-task plans", () => {
           `complete task ${String(sessionCount)}`,
         );
         return {
-          output: `{"discoveries":[],"kind":"implementation","summary":"Completed task ${String(sessionCount)}."}`,
+          output: `{"discoveries":[],"kind":"implementation","outcomeFacts":[],"summary":"Completed task ${String(sessionCount)}."}`,
           session,
           status: "returned",
         };

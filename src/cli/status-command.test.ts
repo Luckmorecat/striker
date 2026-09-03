@@ -83,6 +83,7 @@ async function pausedFileJournal(): Promise<FileRunJournal> {
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: "run-file",
     session,
     task: task.identity,

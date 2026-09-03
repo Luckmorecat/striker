@@ -46,9 +46,11 @@ const ledger = {
 function manifest(tasks = ["tasks/01-bootstrap.md"]): string {
   return JSON.stringify({
     ...ledger,
+    outcomeRoutes:
+      tasks.length > 1 ? [{ from: tasks[0], to: tasks.slice(1) }] : [],
     taskSource: "striker-plan",
     tasks,
-    version: 2,
+    version: 3,
   });
 }
 
@@ -84,6 +86,22 @@ describe("parseStrikerPlan task extraction", () => {
       verifyCommand: "pnpm test",
     });
     expect(plan.tasks[0]?.identity.revision).toMatch(/^[a-f\d]{64}$/);
+  });
+
+  it("resolves route paths to exact task identities", async () => {
+    const root = await createPlan();
+    const secondTask = "tasks/02-finish.md";
+    await writeFile(path.join(root, secondTask), completeTask);
+    await writeFile(
+      path.join(root, "plan.json"),
+      manifest(["tasks/01-bootstrap.md", secondTask]),
+    );
+
+    const plan = await parseStrikerPlan(root);
+
+    expect(plan.outcomeRoutes).toEqual([
+      { from: plan.tasks[0]?.identity, to: [plan.tasks[1]?.identity] },
+    ]);
   });
 
   it("derives a stable identity from every immutable file", async () => {
@@ -135,12 +153,12 @@ describe("parseStrikerPlan file validation", () => {
   it.each([
     [
       "assumption",
-      `{"assumptions":{"A1":${JSON.stringify(ledger.assumptions.A1)},"A\\u0031":${JSON.stringify(ledger.assumptions.A1)}},"defaults":{},"taskSource":"striker-plan","tasks":["tasks/01-bootstrap.md"],"version":2}`,
+      `{"assumptions":{"A1":${JSON.stringify(ledger.assumptions.A1)},"A\\u0031":${JSON.stringify(ledger.assumptions.A1)}},"defaults":{},"outcomeRoutes":[],"taskSource":"striker-plan","tasks":["tasks/01-bootstrap.md"],"version":3}`,
       "duplicate JSON object key: assumptions.A1",
     ],
     [
       "default",
-      `{"assumptions":{},"defaults":{"D1":${JSON.stringify(ledger.defaults.D1)},"D1":${JSON.stringify(ledger.defaults.D1)}},"taskSource":"striker-plan","tasks":["tasks/01-bootstrap.md"],"version":2}`,
+      `{"assumptions":{},"defaults":{"D1":${JSON.stringify(ledger.defaults.D1)},"D1":${JSON.stringify(ledger.defaults.D1)}},"outcomeRoutes":[],"taskSource":"striker-plan","tasks":["tasks/01-bootstrap.md"],"version":3}`,
       "duplicate JSON object key: defaults.D1",
     ],
   ])("rejects duplicate %s IDs in raw plan JSON", async (_kind, raw, error) => {

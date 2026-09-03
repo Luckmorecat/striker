@@ -64,6 +64,7 @@ async function seedFailedJournal(
   });
   await journal.append({
     attempt: 1,
+    request: { instructions: task.instructions, skills: [] },
     runId: fileRequest.runId,
     session,
     task: task.identity,

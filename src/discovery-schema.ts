@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  outcomeFactCategories,
+  outcomeProtocolLimits,
+  planTaskPathPattern,
+} from "./core/outcome-contracts.js";
+
 const nonblankText = z.string().min(1).regex(/\S/u);
 const repositoryPath = z
   .string()
@@ -35,6 +41,48 @@ export const discoveryLocatorSchema = z.discriminatedUnion("kind", [
   codeLocatorSchema,
   verificationLocatorSchema,
 ]);
+
+const outcomeCodeEvidenceSchema = codeLocatorSchema.extend({
+  text: nonblankText.max(outcomeProtocolLimits.evidenceExcerptCharacters),
+});
+const outcomeVerificationEvidenceSchema = verificationLocatorSchema.extend({
+  output: nonblankText.max(outcomeProtocolLimits.evidenceExcerptCharacters),
+});
+const outcomeFactSchema = z
+  .object({
+    category: z.enum(outcomeFactCategories),
+    evidence: z.discriminatedUnion("kind", [
+      outcomeCodeEvidenceSchema,
+      outcomeVerificationEvidenceSchema,
+    ]),
+    id: z.string().regex(/^F[1-9]\d*$/u),
+    relevantTo: z
+      .array(z.string().min(1).regex(planTaskPathPattern))
+      .min(1)
+      .max(outcomeProtocolLimits.targetsPerFact)
+      .refine((targets) => new Set(targets).size === targets.length, {
+        message: "Outcome Fact targets must be unique",
+      }),
+    statement: nonblankText.max(outcomeProtocolLimits.statementCharacters),
+  })
+  .strict();
+
+export const outcomeFactProposalsSchema = z
+  .array(outcomeFactSchema)
+  .max(outcomeProtocolLimits.factsPerSourceTask)
+  .superRefine((facts, context) => {
+    const ids = new Set<string>();
+    for (const [index, fact] of facts.entries()) {
+      if (ids.has(fact.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Implementation result permits one Outcome Fact per ID",
+          path: [index],
+        });
+      }
+      ids.add(fact.id);
+    }
+  });
 
 const assumptionProposalSchema = z
   .object({

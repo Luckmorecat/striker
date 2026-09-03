@@ -47,6 +47,11 @@ const request = {
   skills: [],
   taskSource: { location: "memory://plan", type: "memory" },
 } as const;
+const preparedRequest = {
+  instructions: task.instructions,
+  skills: request.skills,
+  workflowInstructions: "Implement the task.",
+} as const;
 
 class CompletingSource implements TaskSource {
   completionEvidence(): Promise<TaskCompletionResult> {
@@ -112,6 +117,7 @@ async function seedFailedAttempt(journal: InMemoryRunJournal): Promise<void> {
   });
   await journal.append({
     attempt: 1,
+    request: preparedRequest,
     runId: request.runId,
     session,
     task: task.identity,
@@ -269,6 +275,7 @@ describe("Dispatcher retry initialization", () => {
     ).toEqual([1, 2, 3]);
     expect(test.journal.events).toContainEqual({
       attempt: 4,
+      request: preparedRequest,
       runId: request.runId,
       session,
       task: task.identity,

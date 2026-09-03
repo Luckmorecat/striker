@@ -3,21 +3,26 @@ import { z } from "zod";
 import { createRunJournalReviewSchemas } from "./run-journal-review-schema.js";
 import {
   discoveryProposalsSchema,
+  outcomeFactProposalsSchema,
   resolvedDiscoveryProposalSchema,
   resolvedDiscoveryProposalsSchema,
 } from "../discovery-schema.js";
 import { discoveryDecisionSchema } from "../review-result-schema.js";
 
-export const legacyRunJournalSchemaId = "striker.plan-journal.v2";
-export const standardsRunJournalSchemaId = "striker.plan-journal.v3";
-export const independentRunJournalSchemaId = "striker.plan-journal.v4";
-export const runJournalSchemaId = "striker.plan-journal.v5";
+export const runJournalSchemaId = "striker.plan-journal.v6";
 
 const taskIdentitySchema = z
   .object({ id: z.string().min(1), revision: z.string().min(1) })
   .strict();
 const agentSessionSchema = z
   .object({ id: z.string().min(1), resumeId: z.string().min(1).optional() })
+  .strict();
+const agentRequestSchema = z
+  .object({
+    instructions: z.string(),
+    skills: z.array(z.string()),
+    workflowInstructions: z.string().optional(),
+  })
   .strict();
 const verificationSchema = z
   .object({
@@ -29,6 +34,7 @@ const verificationSchema = z
 const completionEvidenceSchema = z
   .object({
     discoveries: discoveryProposalsSchema.optional(),
+    outcomeFacts: outcomeFactProposalsSchema.optional(),
     summary: z.string(),
     verification: verificationSchema.optional(),
   })
@@ -54,6 +60,7 @@ const implementationTaskSchema = z.object({
   execution: taskExecutionSchema.optional(),
   identity: taskIdentitySchema,
   instructions: z.string(),
+  outcomeRoutes: z.array(taskIdentitySchema).optional(),
   title: z.string(),
 });
 const dispatchRequestSchema = z
@@ -153,6 +160,7 @@ const taskAttemptStartedSchema = z
 const taskSessionStartedSchema = z
   .object({
     attempt: z.number().int().positive(),
+    request: agentRequestSchema,
     runId: z.string().min(1),
     session: agentSessionSchema,
     task: taskIdentitySchema,
@@ -182,9 +190,6 @@ const taskCompletedSchema = z
     verification: verificationSchema,
   })
   .strict();
-const legacyTaskCompletedSchema = taskCompletedSchema
-  .omit({ certification: true })
-  .transform((event) => ({ ...event, certification: "legacy" as const }));
 const runNeedsAttentionSchema = z
   .object({
     attention: runAttentionSchema,
@@ -308,27 +313,6 @@ export const eventEnvelopeSchema = z
   })
   .strict();
 
-export const legacyEventEnvelopeSchema = z
-  .object({
-    event: z.union([legacyTaskCompletedSchema, runJournalEventSchema]),
-    schema: z.literal(legacyRunJournalSchemaId),
-  })
-  .strict();
-
-export const standardsEventEnvelopeSchema = z
-  .object({
-    event: runJournalEventSchema,
-    schema: z.literal(standardsRunJournalSchemaId),
-  })
-  .strict();
-
-export const independentEventEnvelopeSchema = z
-  .object({
-    event: runJournalEventSchema,
-    schema: z.literal(independentRunJournalSchemaId),
-  })
-  .strict();
-
 export const snapshotEnvelopeSchema = z
   .object({
     eventCount: z.number().int().nonnegative().optional(),
@@ -336,15 +320,3 @@ export const snapshotEnvelopeSchema = z
     snapshot: runSnapshotSchema,
   })
   .strict();
-
-export const legacySnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
-  schema: z.literal(legacyRunJournalSchemaId),
-});
-
-export const standardsSnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
-  schema: z.literal(standardsRunJournalSchemaId),
-});
-
-export const independentSnapshotEnvelopeSchema = snapshotEnvelopeSchema.extend({
-  schema: z.literal(independentRunJournalSchemaId),
-});

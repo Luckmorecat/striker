@@ -1,4 +1,5 @@
 import type {
+  AgentRequest,
   AgentSession,
   GitState,
   ImplementationTask,
@@ -151,6 +152,7 @@ export type RunJournalEvent =
   | {
       readonly type: "task_session_started";
       readonly attempt: number;
+      readonly request: AgentRequest;
       readonly runId: string;
       readonly session: AgentSession;
       readonly task: TaskIdentity;
@@ -163,8 +165,7 @@ export type RunJournalEvent =
     }
   | {
       readonly attempt: number;
-      readonly certification:
-        "independent_reviews" | "legacy" | "standards_review";
+      readonly certification: "independent_reviews" | "standards_review";
       readonly changedPaths: readonly string[];
       readonly completedAt: string;
       readonly resultCommit: string;

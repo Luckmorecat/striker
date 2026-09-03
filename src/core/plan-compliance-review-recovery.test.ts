@@ -227,13 +227,13 @@ function repairFixture(
       },
       {
         output:
-          '{"discoveries":[],"kind":"implementation","summary":"Repaired."}',
+          '{"discoveries":[],"kind":"implementation","outcomeFacts":[],"summary":"Repaired."}',
         session: { id: "implementor" },
         status: "returned",
       },
       {
         output:
-          '{"discoveries":[],"kind":"implementation","summary":"Amended."}',
+          '{"discoveries":[],"kind":"implementation","outcomeFacts":[],"summary":"Amended."}',
         session: { id: "implementor" },
         status: "returned",
       },

@@ -44,9 +44,10 @@ function manifest(tasks = ["tasks/01.md"]): string {
         statement: "Retain the command name.",
       },
     },
+    outcomeRoutes: [],
     taskSource: "striker-plan",
     tasks,
-    version: 2,
+    version: 3,
   });
 }
 
@@ -139,7 +140,7 @@ describe("Striker plan completion evidence", () => {
       resumedSource.completionEvidence(
         task,
         execution,
-        '{"discoveries":[],"kind":"implementation","summary":"done"} but more prose',
+        '{"discoveries":[],"kind":"implementation","outcomeFacts":[],"summary":"done"} but more prose',
       ),
     ).resolves.toMatchObject({
       attention: { reason: "completion_evidence_missing" },
@@ -148,7 +149,7 @@ describe("Striker plan completion evidence", () => {
     const result = await resumedSource.completionEvidence(
       task,
       execution,
-      '{"discoveries":[],"kind":"implementation","summary":"Added the command."}',
+      '{"discoveries":[],"kind":"implementation","outcomeFacts":[],"summary":"Added the command."}',
     );
     expect(result.status).toBe("completed");
     if (result.status !== "completed")
@@ -188,17 +189,25 @@ describe("Striker plan discovery evidence", () => {
       reason: "The CLI owns registration.",
       state: "confirmed",
     } as const;
+    const outcomeFact = {
+      category: "integration_boundary",
+      evidence: proposal.locator,
+      id: "F1",
+      relevantTo: ["tasks/02.md"],
+      statement: "The CLI owns registration.",
+    } as const;
     const accepted = await source.completionEvidence(
       task,
       execution,
       JSON.stringify({
         discoveries: [proposal],
         kind: "implementation",
+        outcomeFacts: [outcomeFact],
         summary: "Added the command.",
       }),
     );
     expect(accepted).toMatchObject({
-      evidence: { discoveries: [proposal] },
+      evidence: { discoveries: [proposal], outcomeFacts: [outcomeFact] },
       status: "completed",
     });
 
@@ -208,6 +217,7 @@ describe("Striker plan discovery evidence", () => {
       JSON.stringify({
         discoveries: [{ ...proposal, id: "A2" }],
         kind: "implementation",
+        outcomeFacts: [],
         summary: "Added the command.",
       }),
     );
