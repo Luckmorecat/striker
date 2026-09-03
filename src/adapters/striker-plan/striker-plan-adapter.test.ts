@@ -29,7 +29,13 @@ pnpm test
 \`\`\`
 `;
 
-function manifest(tasks = ["tasks/01.md"]): string {
+function manifest(
+  tasks = ["tasks/01.md"],
+  outcomeRoutes: readonly {
+    readonly from: string;
+    readonly to: string[];
+  }[] = [],
+): string {
   return JSON.stringify({
     assumptions: {
       A1: {
@@ -44,7 +50,7 @@ function manifest(tasks = ["tasks/01.md"]): string {
         statement: "Retain the command name.",
       },
     },
-    outcomeRoutes: [],
+    outcomeRoutes,
     taskSource: "striker-plan",
     tasks,
     version: 3,
@@ -164,6 +170,16 @@ describe("Striker plan completion evidence", () => {
 describe("Striker plan discovery evidence", () => {
   it("accepts proposals only for ledger entries in the immutable plan", async () => {
     const fixture = await createFixture();
+    await Promise.all([
+      writeFile(path.join(fixture.planRoot, "tasks/02.md"), taskText),
+      writeFile(
+        path.join(fixture.planRoot, "plan.json"),
+        manifest(
+          ["tasks/01.md", "tasks/02.md"],
+          [{ from: "tasks/01.md", to: ["tasks/02.md"] }],
+        ),
+      ),
+    ]);
     const source = await new StrikerPlanAdapter({
       projectRoot: fixture.root,
       workflowRoot: fixture.workflowRoot,
@@ -228,6 +244,85 @@ describe("Striker plan discovery evidence", () => {
       },
       status: "needs_attention",
     });
+  });
+});
+
+describe("Striker plan Outcome Fact routes", () => {
+  it("rejects unknown, backward, and undeclared targets", async () => {
+    const fixture = await createFixture();
+    await Promise.all([
+      writeFile(path.join(fixture.planRoot, "tasks/02.md"), taskText),
+      writeFile(path.join(fixture.planRoot, "tasks/03.md"), taskText),
+      writeFile(
+        path.join(fixture.planRoot, "plan.json"),
+        manifest(
+          ["tasks/01.md", "tasks/02.md", "tasks/03.md"],
+          [{ from: "tasks/01.md", to: ["tasks/03.md"] }],
+        ),
+      ),
+    ]);
+    const source = await new StrikerPlanAdapter({
+      projectRoot: fixture.root,
+      workflowRoot: fixture.workflowRoot,
+    }).open(fixture.planRoot);
+    const first = await source.nextTask([]);
+    if (first === null) throw new Error("Expected the first task");
+    const execution: TaskExecutionEvidence = {
+      after: gitState(fixture.root, "after"),
+      before: gitState(fixture.root, "before"),
+      changedPaths: ["src/cli.ts"],
+      commits: ["after"],
+      verification: { command: "pnpm test", exitCode: 0, output: "ok" },
+    };
+    const fact = {
+      category: "integration_boundary",
+      evidence: {
+        command: "pnpm test",
+        exitCode: 0,
+        kind: "verification",
+        output: "ok",
+      },
+      id: "F1",
+      relevantTo: ["tasks/02.md"],
+      statement: "The CLI owns registration.",
+    } as const;
+    const output = (relevantTo: readonly string[]) =>
+      JSON.stringify({
+        discoveries: [],
+        kind: "implementation",
+        outcomeFacts: [{ ...fact, relevantTo }],
+        summary: "done",
+      });
+
+    await expect(
+      source.completionEvidence(first, execution, output(["tasks/99.md"])),
+    ).resolves.toMatchObject({
+      attention: { detail: "Unknown Outcome Fact target: tasks/99.md" },
+      status: "needs_attention",
+    });
+    await expect(
+      source.completionEvidence(first, execution, output(["tasks/02.md"])),
+    ).resolves.toMatchObject({
+      attention: {
+        detail: "Outcome Fact target is outside the source route: tasks/02.md",
+      },
+      status: "needs_attention",
+    });
+
+    const second = await source.nextTask([first.identity]);
+    if (second === null) throw new Error("Expected the second task");
+    await expect(
+      source.completionEvidence(second, execution, output(["tasks/01.md"])),
+    ).resolves.toMatchObject({
+      attention: { detail: "Outcome Fact target is backward: tasks/01.md" },
+      status: "needs_attention",
+    });
+    expect(
+      first.outcomeTargets?.map((target) => ({
+        contract: target.contract,
+        id: target.identity.id,
+      })),
+    ).toEqual([{ contract: taskText, id: "tasks/03.md" }]);
   });
 });
 

@@ -264,6 +264,7 @@ export type {
 } from "./run-journal-contracts.js";
 export type {
   DiscoveryDecision,
+  OutcomeFactDecision,
   PlanComplianceReviewResult,
   ReviewFinding,
   ReviewRequest,

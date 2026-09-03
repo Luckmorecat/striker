@@ -6,6 +6,7 @@ import {
   outcomeFactProposalsSchema,
   resolvedDiscoveryProposalSchema,
   resolvedDiscoveryProposalsSchema,
+  resolvedOutcomeFactProposalsSchema,
 } from "../discovery-schema.js";
 import { discoveryDecisionSchema } from "../review-result-schema.js";
 
@@ -61,6 +62,12 @@ const implementationTaskSchema = z.object({
   identity: taskIdentitySchema,
   instructions: z.string(),
   outcomeRoutes: z.array(taskIdentitySchema).optional(),
+  outcomeTaskOrder: z.array(taskIdentitySchema).optional(),
+  outcomeTargets: z
+    .array(
+      z.object({ contract: z.string(), identity: taskIdentitySchema }).strict(),
+    )
+    .optional(),
   title: z.string(),
 });
 const dispatchRequestSchema = z
@@ -97,6 +104,7 @@ const reviewSchemas = createRunJournalReviewSchemas({
   agentSession: agentSessionSchema,
   completion: completionEvidenceSchema,
   discoveries: resolvedDiscoveryProposalsSchema.default([]),
+  outcomeFacts: resolvedOutcomeFactProposalsSchema.default([]),
   runAttention: runAttentionSchema,
   taskIdentity: taskIdentitySchema,
   verification: verificationSchema,

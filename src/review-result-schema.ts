@@ -85,6 +85,31 @@ const discoveryDecisionsSchema = z
     }
   });
 
+export const outcomeFactDecisionSchema = z
+  .object({
+    decision: z.enum(["accepted", "rejected"]),
+    id: z.string().regex(/^F[1-9]\d*$/u),
+    reason: z.string().min(1).regex(/\S/u),
+  })
+  .strict();
+
+const outcomeFactDecisionsSchema = z
+  .array(outcomeFactDecisionSchema)
+  .default([])
+  .superRefine((decisions, context) => {
+    const ids = new Set<string>();
+    for (const [index, decision] of decisions.entries()) {
+      if (ids.has(decision.id)) {
+        context.addIssue({
+          code: "custom",
+          message: "Plan review permits one decision per Outcome Fact proposal",
+          path: [index],
+        });
+      }
+      ids.add(decision.id);
+    }
+  });
+
 export const standardsReviewResultSchema = z
   .object({ ...resultFields, kind: z.literal("standards") })
   .strict()
@@ -106,6 +131,7 @@ export const planComplianceReviewResultSchema = z
     ...resultFields,
     discoveryDecisions: discoveryDecisionsSchema,
     kind: z.literal("plan_compliance"),
+    outcomeFactDecisions: outcomeFactDecisionsSchema,
   })
   .strict()
   .refine(

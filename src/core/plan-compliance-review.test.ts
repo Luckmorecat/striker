@@ -27,6 +27,13 @@ const task = {
   identity: { id: "tasks/06.md", revision: "revision-6" },
   instructions:
     "# Review the plan\n\n## Build\n\nAdd plan review.\n\n## Paths\n\n- Create `src/task.ts`\n\n## Test contract\n\n- Test the public review boundary.\n\n## Verify\n\n```sh\npnpm check\n```\n\n## Striker plan context\n\nSpine: /plan/spine.md\nMap: /plan/map.md\n",
+  outcomeRoutes: [{ id: "tasks/07.md", revision: "revision-7" }],
+  outcomeTargets: [
+    {
+      contract: "# Consume reviewed facts\n\n## Build\n\nUse prior evidence.",
+      identity: { id: "tasks/07.md", revision: "revision-7" },
+    },
+  ],
   title: "Review the plan",
 } as const;
 const request = {
@@ -71,6 +78,7 @@ function result(
     discoveryDecisions: [],
     findings: [],
     kind: "plan_compliance",
+    outcomeFactDecisions: [],
     resultCommit: "candidate",
     startCommit: "baseline",
     verdict: "passed",
@@ -139,6 +147,7 @@ class ReviewRunner extends FakeAgentRunner {
 async function reviewWith(
   turn: ReviewTurn,
   discoveries: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[] = [],
+  outcomeFacts: readonly import("./outcome-contracts.js").ResolvedOutcomeFactProposal[] = [],
 ) {
   const journal = await startedJournal();
   const runner = new ReviewRunner(turn);
@@ -148,6 +157,7 @@ async function reviewWith(
     discoveries,
     execution,
     journal,
+    outcomeFacts,
     request,
     runner,
     standards,
@@ -256,6 +266,68 @@ describe("plan-compliance discovery review", () => {
       attention: { reason: "plan_compliance_review_interrupted" },
       status: "interrupted",
     });
+  });
+});
+
+describe("plan-compliance Outcome Fact review", () => {
+  it("provides routed facts and requires one decision for every fact", async () => {
+    const fact = {
+      category: "integration_boundary",
+      evidence: {
+        command: "pnpm check",
+        exitCode: 0,
+        kind: "verification",
+        output: "ok",
+      },
+      id: "F1",
+      relevantTo: ["tasks/07.md"],
+      statement: "Core owns Task Outcome certification.",
+    } as const;
+    const decision = {
+      decision: "accepted",
+      id: "F1",
+      reason: "The evidence and immutable route support the fact.",
+    } as const;
+    const accepted = await reviewWith(
+      {
+        result: result({ outcomeFactDecisions: [decision] }),
+        session: { id: "plan-reviewer" },
+        status: "returned",
+      },
+      [],
+      [fact],
+    );
+
+    expect(accepted.outcome).toMatchObject({ status: "passed" });
+    expect(accepted.runner.reviewInstructions).toContain(
+      '"contract": "# Consume reviewed facts',
+    );
+    expect(accepted.runner.reviewInstructions).toContain('"id": "F1"');
+    expect(accepted.journal.events.at(-2)).toMatchObject({
+      outcomeFacts: [fact],
+      type: "plan_compliance_review_started",
+    });
+
+    const invalidResults = [
+      result(),
+      result({ outcomeFactDecisions: [decision, decision] }),
+      result({ outcomeFactDecisions: [{ ...decision, id: "F2" }] }),
+    ];
+    for (const invalid of invalidResults) {
+      const rejected = await reviewWith(
+        {
+          result: invalid,
+          session: { id: "plan-reviewer" },
+          status: "returned",
+        },
+        [],
+        [fact],
+      );
+      expect(rejected.outcome).toMatchObject({
+        attention: { reason: "plan_compliance_review_interrupted" },
+        status: "interrupted",
+      });
+    }
   });
 });
 

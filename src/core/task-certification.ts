@@ -23,6 +23,11 @@ import {
 import { reviewedCandidateAttention } from "./dispatch-evidence.js";
 import { reconcileReviewedDiscoveries } from "./discovery-reconciliation.js";
 import { resolveDiscoveryProposals } from "./discovery-proposal.js";
+import { resolveOutcomeFactProposals } from "./outcome-contracts.js";
+import {
+  appendTaskCompletion,
+  certificationAttentionResult,
+} from "./task-certification-result.js";
 
 interface CertificationDependencies {
   readonly git?: import("./contracts.js").GitRepository;
@@ -35,6 +40,7 @@ interface TaskCertificationRequest {
   readonly completion: TaskCompletionEvidence;
   readonly discoveries: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
   readonly execution: TaskExecutionEvidence;
+  readonly outcomeFacts: readonly import("./outcome-contracts.js").ResolvedOutcomeFactProposal[];
   readonly recheck: (
     output: string,
     rejectedCommit: string,
@@ -42,59 +48,6 @@ interface TaskCertificationRequest {
   readonly request: DispatchRequest;
   readonly session: AgentSession;
   readonly task: ImplementationTask;
-}
-
-interface CompletionCandidate {
-  readonly attempt: number;
-  readonly changedPaths: readonly string[];
-  readonly completion: TaskCompletionEvidence;
-  readonly resultCommit: string;
-  readonly startCommit: string;
-  readonly verification: TaskExecutionEvidence["verification"];
-}
-
-function attentionResult(
-  request: DispatchRequest,
-  task: ImplementationTask,
-  session: AgentSession,
-  attention: RunAttention,
-): DispatchResult {
-  return {
-    reason: attention.reason,
-    runId: request.runId,
-    session,
-    status: "needs_attention",
-    task,
-  };
-}
-
-async function appendCompletion(
-  journal: RunJournal,
-  request: DispatchRequest,
-  task: ImplementationTask,
-  session: AgentSession,
-  candidate: CompletionCandidate,
-): Promise<DispatchResult> {
-  await journal.append({
-    attempt: candidate.attempt,
-    certification: "independent_reviews",
-    changedPaths: candidate.changedPaths,
-    completedAt: new Date().toISOString(),
-    resultCommit: candidate.resultCommit,
-    runId: request.runId,
-    session,
-    startCommit: candidate.startCommit,
-    task: task.identity,
-    type: "task_completed",
-    verification: candidate.verification,
-  });
-  return {
-    evidence: candidate.completion,
-    runId: request.runId,
-    session,
-    status: "completed",
-    task,
-  };
 }
 
 async function completePassedReview(
@@ -121,7 +74,12 @@ async function completePassedReview(
       task: input.task.identity,
       type: "run_needs_attention",
     });
-    return attentionResult(input.request, input.task, input.session, attention);
+    return certificationAttentionResult(
+      input.request,
+      input.task,
+      input.session,
+      attention,
+    );
   }
   const discoveryAttention = await reconcileReviewedDiscoveries(
     dependencies.journal,
@@ -131,7 +89,7 @@ async function completePassedReview(
     input.discoveries,
     review,
   );
-  const completed = await appendCompletion(
+  const completed = await appendTaskCompletion(
     dependencies.journal,
     input.request,
     input.task,
@@ -145,7 +103,7 @@ async function completePassedReview(
   );
   return discoveryAttention === null
     ? completed
-    : attentionResult(
+    : certificationAttentionResult(
         input.request,
         input.task,
         input.session,
@@ -164,13 +122,14 @@ async function certifyPlanCompliance(
     discoveries: input.discoveries,
     execution: input.execution,
     journal: dependencies.journal,
+    outcomeFacts: input.outcomeFacts,
     request: input.request,
     runner: dependencies.runner,
     standards,
     task: input.task,
   });
   if (review.status === "interrupted") {
-    return attentionResult(
+    return certificationAttentionResult(
       input.request,
       input.task,
       input.session,
@@ -189,7 +148,7 @@ async function certifyPlanCompliance(
     task: input.task,
   });
   return repair.status === "interrupted"
-    ? attentionResult(
+    ? certificationAttentionResult(
         input.request,
         input.task,
         input.session,
@@ -198,7 +157,7 @@ async function certifyPlanCompliance(
     : input.recheck(repair.output, review.result.resultCommit);
 }
 
-export async function certifyTask(
+async function certifyResolvedTask(
   dependencies: CertificationDependencies,
   input: TaskCertificationRequest,
 ): Promise<DispatchResult> {
@@ -212,7 +171,7 @@ export async function certifyTask(
     task: input.task,
   });
   if (review.status === "interrupted") {
-    return attentionResult(
+    return certificationAttentionResult(
       input.request,
       input.task,
       input.session,
@@ -231,13 +190,47 @@ export async function certifyTask(
     task: input.task,
   });
   return repair.status === "interrupted"
-    ? attentionResult(
+    ? certificationAttentionResult(
         input.request,
         input.task,
         input.session,
         repair.attention,
       )
     : input.recheck(repair.output, review.result.resultCommit);
+}
+
+export async function certifyTask(
+  dependencies: CertificationDependencies,
+  input: Omit<TaskCertificationRequest, "outcomeFacts">,
+): Promise<DispatchResult> {
+  let outcomeFacts;
+  try {
+    outcomeFacts = await resolveOutcomeFactProposals(
+      input.completion.outcomeFacts ?? [],
+      input.task,
+      input.execution,
+      dependencies.git,
+    );
+  } catch (error) {
+    const attention: RunAttention = {
+      detail: error instanceof Error ? error.message : String(error),
+      reason: "completion_evidence_missing",
+    };
+    await dependencies.journal.append({
+      attention,
+      runId: input.request.runId,
+      session: input.session,
+      task: input.task.identity,
+      type: "run_needs_attention",
+    });
+    return certificationAttentionResult(
+      input.request,
+      input.task,
+      input.session,
+      attention,
+    );
+  }
+  return certifyResolvedTask(dependencies, { ...input, outcomeFacts });
 }
 
 export function completeReviewedTask(
@@ -276,17 +269,23 @@ async function completeRecoveredReview(
     review.discoveries ?? [],
     result,
   );
-  const completed = await appendCompletion(journal, request, task, session, {
-    attempt: review.attempt,
-    changedPaths: review.changedPaths,
-    completion: review.completion,
-    resultCommit: review.resultCommit,
-    startCommit: review.startCommit,
-    verification: review.verification,
-  });
+  const completed = await appendTaskCompletion(
+    journal,
+    request,
+    task,
+    session,
+    {
+      attempt: review.attempt,
+      changedPaths: review.changedPaths,
+      completion: review.completion,
+      resultCommit: review.resultCommit,
+      startCommit: review.startCommit,
+      verification: review.verification,
+    },
+  );
   return attention === null
     ? completed
-    : attentionResult(request, task, session, attention);
+    : certificationAttentionResult(request, task, session, attention);
 }
 
 export function continueAfterStandardsReview(
@@ -311,11 +310,19 @@ export function continueAfterStandardsReview(
     commits: [input.review.resultCommit],
     verification: input.review.verification,
   };
-  return resolveDiscoveryProposals(
-    input.review.completion.discoveries ?? [],
-    execution,
-    dependencies.git,
-  ).then((discoveries) =>
+  return Promise.all([
+    resolveDiscoveryProposals(
+      input.review.completion.discoveries ?? [],
+      execution,
+      dependencies.git,
+    ),
+    resolveOutcomeFactProposals(
+      input.review.completion.outcomeFacts ?? [],
+      input.task,
+      execution,
+      dependencies.git,
+    ),
+  ]).then(([discoveries, outcomeFacts]) =>
     certifyPlanCompliance(
       dependencies,
       {
@@ -323,6 +330,7 @@ export function continueAfterStandardsReview(
         completion: input.review.completion,
         discoveries,
         execution,
+        outcomeFacts,
         recheck: input.recheck,
         request: input.request,
         session: input.session,

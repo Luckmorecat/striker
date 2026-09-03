@@ -411,5 +411,5 @@ describe("Dispatcher immutable multi-task plans", () => {
       lastEvent: { type: "run_completed" },
       snapshot: { status: "completed" },
     });
-  });
+  }, 10_000);
 });

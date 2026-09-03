@@ -11,6 +11,7 @@ import type {
   TaskCompletionEvidence,
   TaskExecutionEvidence,
 } from "./contracts.js";
+import { validatePlanReviewDecisions } from "./plan-review-decision-validation.js";
 
 interface PlanReviewRequest {
   readonly attempt: number;
@@ -18,6 +19,7 @@ interface PlanReviewRequest {
   readonly discoveries: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
   readonly execution: TaskExecutionEvidence;
   readonly journal: RunJournal;
+  readonly outcomeFacts: readonly import("./outcome-contracts.js").ResolvedOutcomeFactProposal[];
   readonly request: DispatchRequest;
   readonly runner: AgentRunner;
   readonly standards: StandardsReviewResult;
@@ -45,9 +47,17 @@ export type PlanRepairOutcome =
   | { readonly attention: RunAttention; readonly status: "interrupted" };
 
 function reviewInstructions(input: PlanReviewRequest): string {
+  const selectedTargetIds = new Set(
+    input.outcomeFacts.flatMap((fact) => fact.relevantTo),
+  );
   const evidence = {
     changedPaths: input.execution.changedPaths,
     discoveries: input.discoveries,
+    outcomeFacts: input.outcomeFacts,
+    outcomeRoutes: input.task.outcomeRoutes ?? [],
+    outcomeTargets: (input.task.outcomeTargets ?? []).filter((target) =>
+      selectedTargetIds.has(target.identity.id),
+    ),
     resultCommit: input.execution.after.head,
     standardsResult: input.standards,
     startCommit: input.execution.before.head,
@@ -64,7 +74,7 @@ function reviewInstructions(input: PlanReviewRequest): string {
     "",
     JSON.stringify(evidence, null, 2),
     "",
-    "Return one strict JSON object and no other text. Use kind `plan_compliance`, repeat the exact commits, set verdict to `passed` or `changes_required`, and include findings plus `discoveryDecisions`. Return exactly one accepted or rejected decision for each discovery, identified by its kind and id, with a reason. Each finding needs kind (`plan_violation` or `defect`), severity, repository-relative changed path, location, rule, message, and fix. A changes_required verdict needs a blocking finding; passed permits no blocking findings.",
+    "Return one strict JSON object and no other text. Use kind `plan_compliance`, repeat the exact commits, set verdict to `passed` or `changes_required`, and include findings, `discoveryDecisions`, and `outcomeFactDecisions`. Return exactly one accepted or rejected decision for each discovery and Outcome Fact, identified by its ID, with a reason. Certify each fact's statement, evidence, and selected targets against the allowed Outcome Routes and exact target contracts. Rejected facts are omitted from Task Outcomes and do not require a blocking finding. Each finding needs kind (`plan_violation` or `defect`), severity, repository-relative changed path, location, rule, message, and fix. A changes_required verdict needs a blocking finding; passed permits no blocking findings.",
   ].join("\n");
 }
 
@@ -86,6 +96,7 @@ function validateResult(
   result: PlanComplianceReviewResult,
   execution: TaskExecutionEvidence,
   discoveries: PlanReviewRequest["discoveries"],
+  outcomeFacts: PlanReviewRequest["outcomeFacts"],
 ): void {
   if (
     result.startCommit !== execution.before.head ||
@@ -101,20 +112,7 @@ function validateResult(
       `Plan-compliance finding names unchanged path: ${invalid.path}`,
     );
   }
-  const expected = new Set(
-    discoveries.map((proposal) => `${proposal.kind}:${proposal.id}`),
-  );
-  const actual = new Set(
-    result.discoveryDecisions.map(
-      (decision) => `${decision.kind}:${decision.id}`,
-    ),
-  );
-  if (
-    expected.size !== actual.size ||
-    [...expected].some((key) => !actual.has(key))
-  ) {
-    throw new Error("Plan-compliance decisions do not match discoveries");
-  }
+  validatePlanReviewDecisions(result, discoveries, outcomeFacts);
 }
 
 async function appendInterruption(
@@ -129,6 +127,7 @@ async function appendInterruption(
     changedPaths: input.execution.changedPaths,
     completion: input.completion,
     discoveries: input.discoveries,
+    outcomeFacts: input.outcomeFacts,
     resultCommit: input.execution.after.head,
     runId: input.request.runId,
     session,
@@ -167,6 +166,7 @@ export async function runPlanComplianceReview(
         changedPaths: input.execution.changedPaths,
         completion: input.completion,
         discoveries: input.discoveries,
+        outcomeFacts: input.outcomeFacts,
         resultCommit: input.execution.after.head,
         runId: input.request.runId,
         session,
@@ -186,7 +186,12 @@ export async function runPlanComplianceReview(
     if (turn.result.kind !== "plan_compliance") {
       throw new Error("Plan-compliance reviewer returned the wrong kind");
     }
-    validateResult(turn.result, input.execution, input.discoveries);
+    validateResult(
+      turn.result,
+      input.execution,
+      input.discoveries,
+      input.outcomeFacts,
+    );
   } catch (error) {
     return appendInterruption(input, startedSession, error);
   }

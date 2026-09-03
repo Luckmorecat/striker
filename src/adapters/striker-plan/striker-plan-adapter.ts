@@ -16,6 +16,7 @@ import {
 import { loadImplementorWorkflow } from "./workflow-loader.js";
 import { parseImplementationResult } from "../../runner/implementation-result.js";
 import type { DiscoveryProposal } from "../../core/discovery-contracts.js";
+import { validateOutcomeFactProposals } from "../../core/outcome-contracts.js";
 
 interface AdapterOptions {
   readonly projectRoot: string;
@@ -106,6 +107,7 @@ class StrikerPlanSource implements TaskSource {
       for (const proposal of result.discoveries) {
         validateDiscovery(this.plan, proposal);
       }
+      validateOutcomeFactProposals(result.outcomeFacts, task);
     } catch (error) {
       return Promise.resolve({
         attention: {
@@ -127,13 +129,26 @@ class StrikerPlanSource implements TaskSource {
   }
 
   private withExecution(task: StrikerPlanTask): ImplementationTask {
+    const outcomeRoutes =
+      this.plan.outcomeRoutes.find(
+        (route) => route.from.id === task.identity.id,
+      )?.to ?? [];
     return {
       ...task,
       instructions: `${task.instructions}\n\n## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\n`,
-      outcomeRoutes:
-        this.plan.outcomeRoutes.find(
-          (route) => route.from.id === task.identity.id,
-        )?.to ?? [],
+      outcomeRoutes,
+      outcomeTaskOrder: this.plan.tasks.map((candidate) => candidate.identity),
+      outcomeTargets: outcomeRoutes.map((identity) => {
+        const target = this.plan.tasks.find(
+          (candidate) => candidate.identity.id === identity.id,
+        );
+        if (target === undefined) {
+          throw new Error(
+            `Outcome Route target is unavailable: ${identity.id}`,
+          );
+        }
+        return { contract: target.instructions, identity };
+      }),
       execution: {
         affectedPaths: task.affectedPaths,
         cwd: this.projectRoot,

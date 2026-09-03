@@ -6,8 +6,14 @@ import {
   InMemoryTaskSourceAdapter,
 } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
-import type { GitRepository, GitState, Verifier } from "./contracts.js";
+import type {
+  GitRepository,
+  GitState,
+  ImplementationTask,
+  Verifier,
+} from "./contracts.js";
 import { Dispatcher } from "./dispatcher.js";
+import type { OutcomeFactProposal } from "./outcome-contracts.js";
 
 const task = {
   execution: {
@@ -51,6 +57,10 @@ class FakeGit implements GitRepository {
     this.index += 1;
     if (value === undefined) throw new Error("Missing fake Git state");
     return Promise.resolve(value);
+  }
+
+  readFileAtCommit(): Promise<string | null> {
+    return Promise.resolve("export const outcome = true;");
   }
 
   resolvePrivatePath(): Promise<string> {
@@ -186,4 +196,269 @@ it("rejects a checkout that changes while its review is running", async () => {
   expect(journal.events.some((event) => event.type === "task_completed")).toBe(
     false,
   );
+});
+
+const outcomeTarget = { id: "tasks/02.md", revision: "target-revision" };
+const outcomeTask = {
+  ...task,
+  identity: { id: "tasks/01.md", revision: "source-revision" },
+  outcomeRoutes: [outcomeTarget],
+  outcomeTaskOrder: [
+    { id: "tasks/01.md", revision: "source-revision" },
+    outcomeTarget,
+  ],
+  outcomeTargets: [
+    {
+      contract: "# Consume evidence\n\nImplement the target.",
+      identity: outcomeTarget,
+    },
+  ],
+};
+const outcomeFacts = [
+  {
+    category: "public_contract",
+    evidence: {
+      kind: "code",
+      line: 1,
+      path: "src/cli.ts",
+      text: "export const outcome = true;",
+    },
+    id: "F1",
+    relevantTo: [outcomeTarget.id],
+    statement: "The public command returns success.",
+  },
+  {
+    category: "verified_default",
+    evidence: {
+      command: "pnpm test",
+      exitCode: 0,
+      kind: "verification",
+      output: "ok",
+    },
+    id: "F2",
+    relevantTo: [outcomeTarget.id],
+    statement: "The command uses the default mode.",
+  },
+] as const;
+const outcomePlanResult = {
+  discoveryDecisions: [],
+  findings: [],
+  kind: "plan_compliance" as const,
+  outcomeFactDecisions: [
+    {
+      decision: "accepted" as const,
+      id: "F1",
+      reason: "Supported.",
+    },
+    {
+      decision: "rejected" as const,
+      id: "F2",
+      reason: "Not proven.",
+    },
+  ],
+  resultCommit: "after",
+  startCommit: "before",
+  verdict: "passed" as const,
+};
+
+function outcomeFixture() {
+  const adapters = new AdapterRegistry();
+  adapters.register(
+    new InMemoryTaskSourceAdapter("memory", [outcomeTask], {
+      [outcomeTask.identity.id]: {
+        outcomeFacts,
+        summary: "complete",
+      },
+    }),
+  );
+  const runner = new FakeAgentRunner(
+    {
+      output: "done",
+      session: { id: "implementation" },
+      status: "returned",
+    },
+    [
+      {
+        result: {
+          findings: [],
+          kind: "standards",
+          resultCommit: "after",
+          startCommit: "before",
+          verdict: "passed",
+        },
+        session: { id: "standards" },
+        status: "returned",
+      },
+      {
+        result: outcomePlanResult,
+        session: { id: "plan" },
+        status: "returned",
+      },
+    ],
+  );
+  const journal = new InMemoryRunJournal();
+  return {
+    dispatcher: new Dispatcher({
+      adapters,
+      git: new FakeGit(),
+      journal,
+      runner,
+      verifier: verifier(0),
+    }),
+    journal,
+    runner,
+  };
+}
+
+it("certifies routed Outcome Facts and permits rejected facts", async () => {
+  const { dispatcher, journal, runner } = outcomeFixture();
+
+  await expect(
+    dispatcher.dispatchOne({
+      completedTasks: [],
+      planId: "outcomes",
+      runId: "outcomes",
+      skills: [],
+      taskSource: { location: "memory://plan", type: "memory" },
+    }),
+  ).resolves.toMatchObject({ status: "completed" });
+  const resolvedFacts = [
+    {
+      ...outcomeFacts[0],
+      evidence: { ...outcomeFacts[0].evidence, commit: "after" },
+    },
+    outcomeFacts[1],
+  ];
+  expect(
+    journal.events.find(
+      (event) => event.type === "plan_compliance_review_started",
+    ),
+  ).toMatchObject({ outcomeFacts: resolvedFacts });
+  expect(
+    journal.events.find(
+      (event) => event.type === "plan_compliance_review_completed",
+    ),
+  ).toMatchObject({ result: outcomePlanResult });
+  expect(runner.reviewRequests[0]?.instructions).not.toContain(
+    '"outcomeFacts"',
+  );
+  expect(runner.reviewRequests[1]?.instructions).toContain('"outcomeFacts"');
+});
+
+const verificationFact: OutcomeFactProposal = {
+  category: "public_contract",
+  evidence: {
+    command: "pnpm test",
+    exitCode: 0,
+    kind: "verification",
+    output: "ok",
+  },
+  id: "F1",
+  relevantTo: ["tasks/02.md"],
+  statement: "The public command returns success.",
+};
+
+async function dispatchInvalidOutcome(
+  selectedTask: ImplementationTask,
+  fact: OutcomeFactProposal,
+) {
+  const adapters = new AdapterRegistry();
+  adapters.register(
+    new InMemoryTaskSourceAdapter("memory", [selectedTask], {
+      [selectedTask.identity.id]: {
+        outcomeFacts: [fact],
+        summary: "complete",
+      },
+    }),
+  );
+  const runner = new FakeAgentRunner({
+    output: "done",
+    session: { id: "implementation" },
+    status: "returned",
+  });
+  const result = await new Dispatcher({
+    adapters,
+    git: new FakeGit(),
+    journal: new InMemoryRunJournal(),
+    runner,
+    verifier: verifier(0),
+  }).dispatchOne({
+    completedTasks: [],
+    planId: "invalid-outcome",
+    runId: "invalid-outcome",
+    skills: [],
+    taskSource: { location: "memory://plan", type: "memory" },
+  });
+  return { result, reviewRequests: runner.reviewRequests };
+}
+
+it("rejects Outcome Facts outside the source route before review", async () => {
+  const selectedTask = {
+    ...outcomeTask,
+    outcomeRoutes: [],
+    outcomeTargets: [],
+  };
+  const test = await dispatchInvalidOutcome(selectedTask, verificationFact);
+
+  expect(test.result).toMatchObject({
+    reason: "completion_evidence_missing",
+    status: "needs_attention",
+  });
+  expect(test.reviewRequests).toHaveLength(0);
+});
+
+it("rejects malformed Outcome Fact evidence before review", async () => {
+  const fact = {
+    ...verificationFact,
+    evidence: {
+      command: "pnpm test",
+      exitCode: 0,
+      kind: "invalid",
+      output: "ok",
+    },
+  } as unknown as OutcomeFactProposal;
+  const test = await dispatchInvalidOutcome(outcomeTask, fact);
+
+  expect(test.result).toMatchObject({
+    reason: "completion_evidence_missing",
+    status: "needs_attention",
+  });
+  expect(test.reviewRequests).toHaveLength(0);
+});
+
+it("rejects unknown and backward Outcome Fact routes in core", async () => {
+  const unknownTarget = { id: "tasks/99.md", revision: "unknown" };
+  const unknownTask = {
+    ...outcomeTask,
+    outcomeRoutes: [unknownTarget],
+    outcomeTargets: [{ contract: "# Unknown", identity: unknownTarget }],
+  };
+  const backwardTarget = { id: "tasks/01.md", revision: "target" };
+  const backwardTask = {
+    ...outcomeTask,
+    identity: { id: "tasks/02.md", revision: "source" },
+    outcomeRoutes: [backwardTarget],
+    outcomeTaskOrder: [
+      backwardTarget,
+      { id: "tasks/02.md", revision: "source" },
+    ],
+    outcomeTargets: [{ contract: "# Earlier task", identity: backwardTarget }],
+  };
+  const unknown = await dispatchInvalidOutcome(unknownTask, {
+    ...verificationFact,
+    relevantTo: [unknownTarget.id],
+  });
+  const backward = await dispatchInvalidOutcome(backwardTask, {
+    ...verificationFact,
+    relevantTo: [backwardTarget.id],
+  });
+
+  expect(unknown.result).toMatchObject({
+    reason: "completion_evidence_missing",
+  });
+  expect(backward.result).toMatchObject({
+    reason: "completion_evidence_missing",
+  });
+  expect(unknown.reviewRequests).toHaveLength(0);
+  expect(backward.reviewRequests).toHaveLength(0);
 });

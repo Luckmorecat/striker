@@ -13,6 +13,8 @@ export interface TaskExecution {
 export interface ImplementationTask {
   readonly identity: TaskIdentity;
   readonly outcomeRoutes?: readonly TaskIdentity[];
+  readonly outcomeTaskOrder?: readonly TaskIdentity[];
+  readonly outcomeTargets?: readonly import("./outcome-contracts.js").OutcomeTarget[];
   readonly title: string;
   readonly instructions: string;
   readonly execution?: TaskExecution;

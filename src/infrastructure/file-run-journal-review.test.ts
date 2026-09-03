@@ -5,6 +5,7 @@ import path from "node:path";
 import { expect, it } from "vitest";
 
 import type { DispatchRequest, ImplementationTask } from "../core/contracts.js";
+import type { ResolvedOutcomeFactProposal } from "../core/outcome-contracts.js";
 import { appendPassedStandardsReview } from "../testing/fakes.js";
 import { FileRunJournal } from "./file-run-journal.js";
 
@@ -63,6 +64,63 @@ async function startAttempt(journal: FileRunJournal): Promise<void> {
     task: identity,
     type: "task_session_started",
   });
+}
+
+const passedStandards = {
+  findings: [],
+  kind: "standards",
+  resultCommit: "after",
+  startCommit: "before",
+  verdict: "passed",
+} as const;
+
+async function preparePlanReviewJournal(prefix: string) {
+  const root = await mkdtemp(path.join(tmpdir(), prefix));
+  const journal = new FileRunJournal(root);
+  await startAttempt(journal);
+  await appendPassedStandardsReview(journal, {
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    resultCommit: "after",
+    runId: request.runId,
+    startCommit: "before",
+    task: identity,
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  });
+  return journal;
+}
+
+const persistedFact = {
+  category: "integration_boundary",
+  evidence: {
+    commit: "after",
+    kind: "code",
+    line: 1,
+    path: "src/task.ts",
+    text: "export const owner = core;",
+  },
+  id: "F1",
+  relevantTo: ["tasks/06.md"],
+  statement: "Core owns certification.",
+} as const;
+
+function planReviewStarted(
+  outcomeFacts: readonly ResolvedOutcomeFactProposal[],
+) {
+  return {
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    completion: { summary: "implementation complete" },
+    outcomeFacts,
+    resultCommit: "after",
+    runId: request.runId,
+    session: { id: "plan-reviewer" },
+    standards: passedStandards,
+    startCommit: "before",
+    task: identity,
+    type: "plan_compliance_review_started" as const,
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  };
 }
 
 it("reloads an interrupted standards review with its exact candidate", async () => {
@@ -140,6 +198,20 @@ it("reloads an interrupted plan-compliance review after standards passed", async
     startCommit: "before",
     verdict: "passed",
   } as const;
+  const outcomeFacts = [
+    {
+      category: "public_contract",
+      evidence: {
+        command: "pnpm check",
+        exitCode: 0,
+        kind: "verification",
+        output: "ok",
+      },
+      id: "F1",
+      relevantTo: ["tasks/06.md"],
+      statement: "The review input is durable.",
+    },
+  ] as const;
 
   await journal.append({
     attempt: 1,
@@ -149,6 +221,7 @@ it("reloads an interrupted plan-compliance review after standards passed", async
     },
     changedPaths: ["src/task.ts"],
     completion: { summary: "implementation complete" },
+    outcomeFacts,
     resultCommit: "after",
     runId: request.runId,
     session: null,
@@ -162,6 +235,7 @@ it("reloads an interrupted plan-compliance review after standards passed", async
   await expect(new FileRunJournal(root).loadActive()).resolves.toMatchObject({
     snapshot: {
       planComplianceReview: {
+        outcomeFacts,
         resultCommit: "after",
         stage: "interrupted",
         standards,
@@ -170,4 +244,114 @@ it("reloads an interrupted plan-compliance review after standards passed", async
       status: "needs_attention",
     },
   });
+});
+
+it("reloads Outcome Fact proposals and decisions from journal v6", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "striker-outcome-review-"));
+  const journal = new FileRunJournal(root);
+  await startAttempt(journal);
+  await appendPassedStandardsReview(journal, {
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    resultCommit: "after",
+    runId: request.runId,
+    startCommit: "before",
+    task: identity,
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  });
+  const standards = {
+    findings: [],
+    kind: "standards",
+    resultCommit: "after",
+    startCommit: "before",
+    verdict: "passed",
+  } as const;
+  const outcomeFacts = [
+    {
+      category: "integration_boundary",
+      evidence: {
+        commit: "after",
+        kind: "code",
+        line: 1,
+        path: "src/task.ts",
+        text: "export const owner = core;",
+      },
+      id: "F1",
+      relevantTo: ["tasks/06.md"],
+      statement: "Core owns certification.",
+    },
+  ] as const;
+  await journal.append({
+    attempt: 1,
+    changedPaths: ["src/task.ts"],
+    completion: { summary: "implementation complete" },
+    outcomeFacts,
+    resultCommit: "after",
+    runId: request.runId,
+    session: { id: "plan-reviewer" },
+    standards,
+    startCommit: "before",
+    task: identity,
+    type: "plan_compliance_review_started",
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  });
+  const outcomeFactDecisions = [
+    { decision: "accepted", id: "F1", reason: "Supported by the route." },
+  ] as const;
+  await journal.append({
+    result: {
+      discoveryDecisions: [],
+      findings: [],
+      kind: "plan_compliance",
+      outcomeFactDecisions,
+      resultCommit: "after",
+      startCommit: "before",
+      verdict: "passed",
+    },
+    runId: request.runId,
+    session: { id: "plan-reviewer" },
+    task: identity,
+    type: "plan_compliance_review_completed",
+  });
+
+  await expect(new FileRunJournal(root).loadActive()).resolves.toMatchObject({
+    snapshot: {
+      planComplianceReview: {
+        outcomeFacts,
+        result: { outcomeFactDecisions },
+        stage: "passed",
+      },
+    },
+  });
+});
+
+it("rejects malformed resolved Outcome Facts in journal v6", async () => {
+  const journal = await preparePlanReviewJournal("striker-invalid-outcome-");
+
+  await expect(
+    journal.append(planReviewStarted([{ ...persistedFact, id: "F0" }])),
+  ).rejects.toThrow("Invalid Outcome Fact ID");
+});
+
+it("rejects mismatched Outcome Fact decisions during replay", async () => {
+  const journal = await preparePlanReviewJournal("striker-outcome-decisions-");
+  await journal.append(planReviewStarted([persistedFact]));
+
+  await expect(
+    journal.append({
+      result: {
+        discoveryDecisions: [],
+        findings: [],
+        kind: "plan_compliance",
+        outcomeFactDecisions: [],
+        resultCommit: "after",
+        startCommit: "before",
+        verdict: "passed",
+      },
+      runId: request.runId,
+      session: { id: "plan-reviewer" },
+      task: identity,
+      type: "plan_compliance_review_completed",
+    }),
+  ).rejects.toThrow("decisions do not match Outcome Facts");
 });

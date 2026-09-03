@@ -76,7 +76,10 @@ class GitSequence implements GitRepository {
   }
 }
 
-function passed(kind: "plan_compliance" | "standards"): ReviewTurn {
+function passed(
+  kind: "plan_compliance" | "standards",
+  outcomeFactDecisions: readonly import("./contracts.js").OutcomeFactDecision[] = [],
+): ReviewTurn {
   const common = {
     findings: [],
     resultCommit: "candidate",
@@ -86,7 +89,7 @@ function passed(kind: "plan_compliance" | "standards"): ReviewTurn {
   return {
     result:
       kind === "plan_compliance"
-        ? { ...common, discoveryDecisions: [], kind }
+        ? { ...common, discoveryDecisions: [], kind, outcomeFactDecisions }
         : { ...common, kind },
     session: { id: `${kind}-reviewer` },
     status: "returned",
@@ -98,11 +101,44 @@ const verifier: Verifier = {
     Promise.resolve({ command, exitCode: 0, output: "ok" }),
 };
 
+const outcomeTarget = { id: "tasks/07.md", revision: "revision-7" };
+const outcomeTask = {
+  ...task,
+  outcomeRoutes: [outcomeTarget],
+  outcomeTaskOrder: [task.identity, outcomeTarget],
+  outcomeTargets: [
+    {
+      contract: "# Consume evidence\n\nUse the certified fact.",
+      identity: outcomeTarget,
+    },
+  ],
+};
+const outcomeFact = {
+  category: "integration_boundary",
+  evidence: {
+    command: "pnpm check",
+    exitCode: 0,
+    kind: "verification",
+    output: "ok",
+  },
+  id: "F1",
+  relevantTo: [outcomeTarget.id],
+  statement: "Core owns certification.",
+} as const;
+const outcomeDecision = {
+  decision: "accepted" as const,
+  id: outcomeFact.id,
+  reason: "The evidence and route are valid.",
+};
+
 it("recovers an interrupted plan review without rerunning standards", async () => {
   const registry = new AdapterRegistry();
   registry.register(
-    new InMemoryTaskSourceAdapter("memory", [task], {
-      [task.identity.id]: { summary: "implementation complete" },
+    new InMemoryTaskSourceAdapter("memory", [outcomeTask], {
+      [outcomeTask.identity.id]: {
+        outcomeFacts: [outcomeFact],
+        summary: "implementation complete",
+      },
     }),
   );
   const journal = new InMemoryRunJournal();
@@ -119,7 +155,7 @@ it("recovers an interrupted plan review without rerunning standards", async () =
         session: { id: "plan-reviewer-1" },
         status: "failed",
       },
-      passed("plan_compliance"),
+      passed("plan_compliance", [outcomeDecision]),
     ],
   );
   const dispatcher = new Dispatcher({
@@ -152,6 +188,12 @@ it("recovers an interrupted plan review without rerunning standards", async () =
       review.instructions.includes("# Independent plan-compliance review"),
     ),
   ).toHaveLength(2);
+  expect(runner.reviewRequests.at(-1)?.instructions).toContain('"id": "F1"');
+  expect(
+    journal.events.findLast(
+      (event) => event.type === "plan_compliance_review_started",
+    ),
+  ).toMatchObject({ outcomeFacts: [outcomeFact] });
   expect(journal.events.at(-2)).toMatchObject({
     certification: "independent_reviews",
     type: "task_completed",
@@ -173,6 +215,7 @@ const blockingPlanReview: ReviewTurn = {
       },
     ],
     kind: "plan_compliance",
+    outcomeFactDecisions: [],
     resultCommit: "candidate",
     startCommit: "baseline",
     verdict: "changes_required",
@@ -191,7 +234,7 @@ function passedAmended(kind: "plan_compliance" | "standards"): ReviewTurn {
   return {
     result:
       kind === "plan_compliance"
-        ? { ...common, discoveryDecisions: [], kind }
+        ? { ...common, discoveryDecisions: [], kind, outcomeFactDecisions: [] }
         : { ...common, kind },
     session: { id: `${kind}-reviewer-2` },
     status: "returned",

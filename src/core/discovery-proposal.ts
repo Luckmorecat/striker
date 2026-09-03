@@ -1,11 +1,12 @@
 import type {
   CodeDiscoveryLocator,
+  DiscoveryLocator,
   DiscoveryProposal,
   ResolvedDiscoveryProposal,
   VerificationDiscoveryLocator,
 } from "./discovery-contracts.js";
 
-interface DiscoveryExecutionEvidence {
+export interface DiscoveryExecutionEvidence {
   readonly after: { readonly head: string; readonly root: string };
   readonly verification: {
     readonly command: string;
@@ -14,7 +15,7 @@ interface DiscoveryExecutionEvidence {
   };
 }
 
-interface DiscoveryEvidenceRepository {
+export interface DiscoveryEvidenceRepository {
   readFileAtCommit?(
     root: string,
     commit: string,
@@ -62,6 +63,16 @@ function resolveVerificationLocator(
   return locator;
 }
 
+export function resolveDiscoveryLocator(
+  locator: DiscoveryLocator,
+  execution: DiscoveryExecutionEvidence,
+  git: DiscoveryEvidenceRepository | undefined,
+): Promise<ResolvedDiscoveryProposal["locator"]> {
+  return locator.kind === "code"
+    ? resolveCodeLocator(locator, execution, git)
+    : Promise.resolve(resolveVerificationLocator(locator, execution));
+}
+
 export async function resolveDiscoveryProposals(
   proposals: readonly DiscoveryProposal[],
   execution: DiscoveryExecutionEvidence,
@@ -70,10 +81,7 @@ export async function resolveDiscoveryProposals(
   return Promise.all(
     proposals.map(async (proposal) => ({
       ...proposal,
-      locator:
-        proposal.locator.kind === "code"
-          ? await resolveCodeLocator(proposal.locator, execution, git)
-          : resolveVerificationLocator(proposal.locator, execution),
+      locator: await resolveDiscoveryLocator(proposal.locator, execution, git),
     })),
   );
 }

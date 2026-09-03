@@ -78,6 +78,7 @@ export interface PlanComplianceReviewState {
   readonly changedPaths: readonly string[];
   readonly completion: TaskCompletionEvidence;
   readonly discoveries?: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
+  readonly outcomeFacts?: readonly import("./outcome-contracts.js").ResolvedOutcomeFactProposal[];
   readonly result:
     import("./review-contracts.js").PlanComplianceReviewResult | null;
   readonly resultCommit: string;
@@ -193,6 +194,7 @@ export type RunJournalEvent =
       readonly changedPaths: readonly string[];
       readonly completion: TaskCompletionEvidence;
       readonly discoveries?: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
+      readonly outcomeFacts?: readonly import("./outcome-contracts.js").ResolvedOutcomeFactProposal[];
       readonly resultCommit: string;
       readonly runId: string;
       readonly session: AgentSession;
@@ -215,6 +217,7 @@ export type RunJournalEvent =
       readonly changedPaths: readonly string[];
       readonly completion: TaskCompletionEvidence;
       readonly discoveries?: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
+      readonly outcomeFacts?: readonly import("./outcome-contracts.js").ResolvedOutcomeFactProposal[];
       readonly resultCommit: string;
       readonly runId: string;
       readonly session: AgentSession | null;

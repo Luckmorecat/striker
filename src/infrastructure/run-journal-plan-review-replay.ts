@@ -6,6 +6,7 @@ import type {
   RunSnapshot,
   TaskIdentity,
 } from "../core/contracts.js";
+import { validatePlanReviewDecisions } from "../core/plan-review-decision-validation.js";
 import { transitionRun } from "../core/run-state.js";
 
 export type PlanReviewEvent = Extract<
@@ -91,6 +92,7 @@ function startReview(
       changedPaths: event.changedPaths,
       completion: event.completion,
       discoveries: event.discoveries ?? [],
+      outcomeFacts: event.outcomeFacts ?? [],
       result: null,
       resultCommit: event.resultCommit,
       repairOutput: null,
@@ -121,6 +123,11 @@ function completeReview(
   ) {
     throw new Error("Plan-compliance result contradicts its candidate");
   }
+  validatePlanReviewDecisions(
+    event.result,
+    review.discoveries ?? [],
+    review.outcomeFacts ?? [],
+  );
   return {
     ...snapshot,
     planComplianceReview: {
@@ -159,6 +166,7 @@ function interruptReview(
       changedPaths: event.changedPaths,
       completion: event.completion,
       discoveries: event.discoveries ?? [],
+      outcomeFacts: event.outcomeFacts ?? [],
       result: null,
       resultCommit: event.resultCommit,
       repairOutput: null,

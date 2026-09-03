@@ -2,8 +2,8 @@ import { z } from "zod";
 
 import {
   outcomeFactCategories,
-  outcomeProtocolLimits,
-  planTaskPathPattern,
+  validateResolvedOutcomeFactShapes,
+  validateOutcomeFactShapes,
 } from "./core/outcome-contracts.js";
 
 const nonblankText = z.string().min(1).regex(/\S/u);
@@ -42,12 +42,8 @@ export const discoveryLocatorSchema = z.discriminatedUnion("kind", [
   verificationLocatorSchema,
 ]);
 
-const outcomeCodeEvidenceSchema = codeLocatorSchema.extend({
-  text: nonblankText.max(outcomeProtocolLimits.evidenceExcerptCharacters),
-});
-const outcomeVerificationEvidenceSchema = verificationLocatorSchema.extend({
-  output: nonblankText.max(outcomeProtocolLimits.evidenceExcerptCharacters),
-});
+const outcomeCodeEvidenceSchema = codeLocatorSchema;
+const outcomeVerificationEvidenceSchema = verificationLocatorSchema;
 const outcomeFactSchema = z
   .object({
     category: z.enum(outcomeFactCategories),
@@ -55,32 +51,22 @@ const outcomeFactSchema = z
       outcomeCodeEvidenceSchema,
       outcomeVerificationEvidenceSchema,
     ]),
-    id: z.string().regex(/^F[1-9]\d*$/u),
-    relevantTo: z
-      .array(z.string().min(1).regex(planTaskPathPattern))
-      .min(1)
-      .max(outcomeProtocolLimits.targetsPerFact)
-      .refine((targets) => new Set(targets).size === targets.length, {
-        message: "Outcome Fact targets must be unique",
-      }),
-    statement: nonblankText.max(outcomeProtocolLimits.statementCharacters),
+    id: z.string(),
+    relevantTo: z.array(z.string()),
+    statement: z.string(),
   })
   .strict();
 
 export const outcomeFactProposalsSchema = z
   .array(outcomeFactSchema)
-  .max(outcomeProtocolLimits.factsPerSourceTask)
   .superRefine((facts, context) => {
-    const ids = new Set<string>();
-    for (const [index, fact] of facts.entries()) {
-      if (ids.has(fact.id)) {
-        context.addIssue({
-          code: "custom",
-          message: "Implementation result permits one Outcome Fact per ID",
-          path: [index],
-        });
-      }
-      ids.add(fact.id);
+    try {
+      validateOutcomeFactShapes(facts);
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   });
 
@@ -134,6 +120,24 @@ const resolvedLocatorSchema = z.union([
   resolvedCodeLocatorSchema,
   verificationLocatorSchema,
 ]);
+
+const resolvedOutcomeLocatorSchema = z.union([
+  outcomeCodeEvidenceSchema.extend({ commit: nonblankText }),
+  outcomeVerificationEvidenceSchema,
+]);
+
+export const resolvedOutcomeFactProposalsSchema = z
+  .array(outcomeFactSchema.extend({ evidence: resolvedOutcomeLocatorSchema }))
+  .superRefine((facts, context) => {
+    try {
+      validateResolvedOutcomeFactShapes(facts);
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
 
 export const resolvedDiscoveryProposalSchema = z.union([
   assumptionProposalSchema.extend({ locator: resolvedLocatorSchema }),

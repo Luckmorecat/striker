@@ -26,6 +26,13 @@ describe("parseReviewResult", () => {
           reason: "The resolved candidate line proves the proposal.",
         },
       ],
+      outcomeFactDecisions: [
+        {
+          decision: "accepted",
+          id: "F1",
+          reason: "The fact and its selected targets follow the plan.",
+        },
+      ],
       kind: "plan_compliance",
     } as const;
 
@@ -56,6 +63,36 @@ describe("plan review discovery decisions", () => {
           ...passed,
           discoveryDecisions: [{ ...decision, id: "A1" }],
           kind: "plan_compliance",
+        }),
+      ),
+    ).toThrow();
+  });
+});
+
+describe("plan review Outcome Fact decisions", () => {
+  it("rejects duplicate or malformed Outcome Fact decisions", () => {
+    const decision = {
+      decision: "accepted",
+      id: "F1",
+      reason: "The exact candidate evidence supports the fact.",
+    } as const;
+    expect(() =>
+      parseReviewResult(
+        JSON.stringify({
+          ...passed,
+          discoveryDecisions: [],
+          kind: "plan_compliance",
+          outcomeFactDecisions: [decision, decision],
+        }),
+      ),
+    ).toThrow("one decision per Outcome Fact proposal");
+    expect(() =>
+      parseReviewResult(
+        JSON.stringify({
+          ...passed,
+          discoveryDecisions: [],
+          kind: "plan_compliance",
+          outcomeFactDecisions: [{ ...decision, id: "F0" }],
         }),
       ),
     ).toThrow();

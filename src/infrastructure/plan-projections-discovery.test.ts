@@ -66,6 +66,7 @@ function events(): readonly RunJournalEvent[] {
         discoveryDecisions: [decision],
         findings: [],
         kind: "plan_compliance",
+        outcomeFactDecisions: [],
         resultCommit: "result-commit",
         startCommit: "start-commit",
         verdict: "passed",
