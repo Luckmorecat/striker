@@ -3,7 +3,11 @@ import type {
   DiscoveryLocator,
   VerificationDiscoveryLocator,
 } from "./discovery-contracts.js";
-import type { TaskIdentity } from "./execution-contracts.js";
+import type {
+  TaskIdentity,
+  VerificationResult,
+} from "./execution-contracts.js";
+import type { PlanLedgerTransition } from "./ledger-state.js";
 import {
   resolveDiscoveryLocator,
   type DiscoveryEvidenceRepository,
@@ -56,6 +60,28 @@ export interface OutcomeTarget {
 export interface OutcomeRoute {
   readonly from: TaskIdentity;
   readonly to: readonly TaskIdentity[];
+}
+
+export type CertifiedOutcomeFact = Omit<
+  ResolvedOutcomeFactProposal,
+  "relevantTo"
+> & {
+  readonly relevantTo: readonly TaskIdentity[];
+};
+
+export type TaskOutcomeTransition = PlanLedgerTransition & {
+  readonly relevantTo: readonly TaskIdentity[];
+};
+
+export interface TaskOutcome {
+  readonly attempt: number;
+  readonly changedPaths: readonly string[];
+  readonly facts: readonly CertifiedOutcomeFact[];
+  readonly resultCommit: string;
+  readonly runId: string;
+  readonly source: TaskIdentity;
+  readonly transitions: readonly TaskOutcomeTransition[];
+  readonly verification: Omit<VerificationResult, "output">;
 }
 
 function hasExactKeys(value: object, expected: readonly string[]): boolean {

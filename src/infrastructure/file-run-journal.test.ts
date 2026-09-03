@@ -134,6 +134,9 @@ describe("file plan journal storage", () => {
     expect(
       (await stat(path.join(planRoot, "snapshot.json"))).mode & 0o777,
     ).toBe(0o600);
+    expect(
+      (await stat(path.join(planRoot, "task-outcomes.json"))).mode & 0o777,
+    ).toBe(0o600);
   });
 
   it("allows one active run and releases only its claim at completion", async () => {

@@ -9,6 +9,11 @@ import type {
 import { createLedgerState, transitionLedger } from "../core/ledger-state.js";
 import { projectDiscoveryReviews } from "./discovery-review-history.js";
 import { replayEvent, startSnapshot } from "./run-journal-replay.js";
+import {
+  orderTaskOutcomes,
+  projectTaskOutcome,
+  type ProjectedTaskOutcome,
+} from "./task-outcome-projection.js";
 
 export interface ReplayedPlanJournal extends RunRecoveryState {
   readonly planId: string;
@@ -66,6 +71,7 @@ export function replayPlanJournal(
     RunJournalEvent,
     { type: "ledger_transition_recorded" }
   >[] = [];
+  const taskOutcomes: ProjectedTaskOutcome[] = [];
   const allTransitions = events.filter(
     (
       event,
@@ -90,6 +96,10 @@ export function replayPlanJournal(
     if (snapshot === undefined) {
       throw new Error("Striker plan journal does not start with run_started");
     }
+    const outcome =
+      event.type === "task_completed"
+        ? projectTaskOutcome(snapshot, event, ledgerTransitions)
+        : null;
     const replayed = replayJournalEvent(snapshot, event, ledger);
     snapshot = replayed.snapshot;
     ledger = replayed.ledger;
@@ -102,6 +112,7 @@ export function replayPlanJournal(
         throw new Error("Striker plan journal completes one task twice");
       }
       completed.set(key, event.task);
+      if (outcome !== null) taskOutcomes.push(outcome);
     }
   }
   const lastEvent = events.at(-1);
@@ -115,6 +126,7 @@ export function replayPlanJournal(
     ledgerTransitions,
     planId,
     snapshot,
+    taskOutcomes: orderTaskOutcomes(taskOutcomes),
   };
 }
 

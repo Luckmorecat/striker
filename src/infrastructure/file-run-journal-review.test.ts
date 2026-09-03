@@ -10,6 +10,7 @@ import { appendPassedStandardsReview } from "../testing/fakes.js";
 import { FileRunJournal } from "./file-run-journal.js";
 
 const identity = { id: "tasks/05.md", revision: "revision-5" };
+const outcomeTarget = { id: "tasks/06.md", revision: "revision-6" };
 const task: ImplementationTask = {
   execution: {
     affectedPaths: ["src/task.ts"],
@@ -19,6 +20,8 @@ const task: ImplementationTask = {
   },
   identity,
   instructions: "Build review orchestration.",
+  outcomeRoutes: [outcomeTarget],
+  outcomeTaskOrder: [identity, outcomeTarget],
   title: "Review the candidate",
 };
 const request: DispatchRequest = {
@@ -35,6 +38,7 @@ const baseline = {
   trackedPatch: "",
   untrackedHashes: {},
 };
+const implementationCompletion = { summary: "implementation complete" };
 
 async function startAttempt(journal: FileRunJournal): Promise<void> {
   await journal.append({
@@ -81,6 +85,7 @@ async function preparePlanReviewJournal(prefix: string) {
   await appendPassedStandardsReview(journal, {
     attempt: 1,
     changedPaths: ["src/task.ts"],
+    completion: implementationCompletion,
     resultCommit: "after",
     runId: request.runId,
     startCommit: "before",
@@ -110,7 +115,7 @@ function planReviewStarted(
   return {
     attempt: 1,
     changedPaths: ["src/task.ts"],
-    completion: { summary: "implementation complete" },
+    completion: implementationCompletion,
     outcomeFacts,
     resultCommit: "after",
     runId: request.runId,
@@ -121,6 +126,22 @@ function planReviewStarted(
     type: "plan_compliance_review_started" as const,
     verification: { command: "pnpm check", exitCode: 0, output: "ok" },
   };
+}
+
+function appendIndependentCompletion(journal: FileRunJournal): Promise<void> {
+  return journal.append({
+    attempt: 1,
+    certification: "independent_reviews",
+    changedPaths: ["src/task.ts"],
+    completedAt: "2026-09-03T12:00:00.000Z",
+    resultCommit: "after",
+    runId: request.runId,
+    session: { id: "implementor" },
+    startCommit: "before",
+    task: identity,
+    type: "task_completed",
+    verification: { command: "pnpm check", exitCode: 0, output: "ok" },
+  });
 }
 
 it("reloads an interrupted standards review with its exact candidate", async () => {
@@ -185,19 +206,13 @@ it("reloads an interrupted plan-compliance review after standards passed", async
   await appendPassedStandardsReview(journal, {
     attempt: 1,
     changedPaths: ["src/task.ts"],
+    completion: implementationCompletion,
     resultCommit: "after",
     runId: request.runId,
     startCommit: "before",
     task: identity,
     verification: { command: "pnpm check", exitCode: 0, output: "ok" },
   });
-  const standards = {
-    findings: [],
-    kind: "standards",
-    resultCommit: "after",
-    startCommit: "before",
-    verdict: "passed",
-  } as const;
   const outcomeFacts = [
     {
       category: "public_contract",
@@ -220,12 +235,12 @@ it("reloads an interrupted plan-compliance review after standards passed", async
       reason: "plan_compliance_review_interrupted",
     },
     changedPaths: ["src/task.ts"],
-    completion: { summary: "implementation complete" },
+    completion: implementationCompletion,
     outcomeFacts,
     resultCommit: "after",
     runId: request.runId,
     session: null,
-    standards,
+    standards: passedStandards,
     startCommit: "before",
     task: identity,
     type: "plan_compliance_review_interrupted",
@@ -238,7 +253,7 @@ it("reloads an interrupted plan-compliance review after standards passed", async
         outcomeFacts,
         resultCommit: "after",
         stage: "interrupted",
-        standards,
+        standards: passedStandards,
       },
       standardsReview: { stage: "passed" },
       status: "needs_attention",
@@ -246,26 +261,20 @@ it("reloads an interrupted plan-compliance review after standards passed", async
   });
 });
 
-it("reloads Outcome Fact proposals and decisions from journal v6", async () => {
+it("derives a certified Task Outcome from journal v6 review evidence", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "striker-outcome-review-"));
   const journal = new FileRunJournal(root);
   await startAttempt(journal);
   await appendPassedStandardsReview(journal, {
     attempt: 1,
     changedPaths: ["src/task.ts"],
+    completion: implementationCompletion,
     resultCommit: "after",
     runId: request.runId,
     startCommit: "before",
     task: identity,
     verification: { command: "pnpm check", exitCode: 0, output: "ok" },
   });
-  const standards = {
-    findings: [],
-    kind: "standards",
-    resultCommit: "after",
-    startCommit: "before",
-    verdict: "passed",
-  } as const;
   const outcomeFacts = [
     {
       category: "integration_boundary",
@@ -284,12 +293,12 @@ it("reloads Outcome Fact proposals and decisions from journal v6", async () => {
   await journal.append({
     attempt: 1,
     changedPaths: ["src/task.ts"],
-    completion: { summary: "implementation complete" },
+    completion: implementationCompletion,
     outcomeFacts,
     resultCommit: "after",
     runId: request.runId,
     session: { id: "plan-reviewer" },
-    standards,
+    standards: passedStandards,
     startCommit: "before",
     task: identity,
     type: "plan_compliance_review_started",
@@ -314,14 +323,19 @@ it("reloads Outcome Fact proposals and decisions from journal v6", async () => {
     type: "plan_compliance_review_completed",
   });
 
+  await appendIndependentCompletion(journal);
+
   await expect(new FileRunJournal(root).loadActive()).resolves.toMatchObject({
     snapshot: {
-      planComplianceReview: {
-        outcomeFacts,
-        result: { outcomeFactDecisions },
-        stage: "passed",
-      },
+      planComplianceReview: null,
     },
+    taskOutcomes: [
+      {
+        facts: [{ ...outcomeFacts[0], relevantTo: [outcomeTarget] }],
+        source: identity,
+        verification: { command: "pnpm check", exitCode: 0 },
+      },
+    ],
   });
 });
 

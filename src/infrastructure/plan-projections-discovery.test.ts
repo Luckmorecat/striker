@@ -122,7 +122,7 @@ it("logs discovery proposals, decisions, transitions, and pause reasons", async 
     status: "needs_attention",
     task: null,
   };
-  await writePlanProjections(planRoot, request.planId, snapshot, events());
+  await writePlanProjections(planRoot, request.planId, snapshot, events(), []);
 
   const log = await new FilePlanLogReader(root).read(request.planId);
   expect(log).toContain("### Discovery A1");
@@ -155,16 +155,22 @@ it("does not attribute a later review transition to an earlier review", async ()
       verdict: "changes_required",
     },
   };
-  await writePlanProjections(planRoot, request.planId, {} as RunSnapshot, [
-    started,
-    firstCompleted,
-    { ...started, session: { id: "plan-review-2" } },
-    {
-      ...completed,
-      session: { id: "plan-review-2" },
-    },
-    transition,
-  ]);
+  await writePlanProjections(
+    planRoot,
+    request.planId,
+    {} as RunSnapshot,
+    [
+      started,
+      firstCompleted,
+      { ...started, session: { id: "plan-review-2" } },
+      {
+        ...completed,
+        session: { id: "plan-review-2" },
+      },
+      transition,
+    ],
+    [],
+  );
 
   const log = await new FilePlanLogReader(root).read(request.planId);
   const discoveries = log.split("### Discovery A1").slice(1);
@@ -180,11 +186,17 @@ it("keeps a task discovery ahead of later task completions", async () => {
   const planRoot = path.join(root, "plans", request.planId);
   await mkdir(planRoot, { recursive: true });
   const secondTask = { id: "tasks/02.md", revision: "revision-2" };
-  await writePlanProjections(planRoot, request.planId, {} as RunSnapshot, [
-    ...events(),
-    completionEvent(task, "2026-08-22T12:00:00.000Z"),
-    completionEvent(secondTask, "2026-08-22T13:00:00.000Z"),
-  ]);
+  await writePlanProjections(
+    planRoot,
+    request.planId,
+    {} as RunSnapshot,
+    [
+      ...events(),
+      completionEvent(task, "2026-08-22T12:00:00.000Z"),
+      completionEvent(secondTask, "2026-08-22T13:00:00.000Z"),
+    ],
+    [],
+  );
 
   const log = await new FilePlanLogReader(root).read(request.planId);
   expect(log.indexOf("### Discovery A1")).toBeLessThan(

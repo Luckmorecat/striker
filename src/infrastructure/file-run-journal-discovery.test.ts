@@ -31,6 +31,8 @@ const session = { id: "session-1" };
 const secondIdentity = { id: "tasks/02.md", revision: "revision-2" };
 const secondTask = { ...task, identity: secondIdentity, title: "Second" };
 const verification = { command: "pnpm check", exitCode: 0, output: "ok" };
+const completion = { summary: "done" };
+const repeatedCompletion = { summary: "done again" };
 const proposal = {
   id: "A1",
   kind: "assumption",
@@ -98,6 +100,7 @@ async function appendReviews(journal: RunJournal): Promise<void> {
   await appendPassedStandardsReview(journal, {
     attempt: 1,
     changedPaths: ["src/task.ts"],
+    completion,
     resultCommit: "after",
     runId: request.runId,
     startCommit: "before",
@@ -107,7 +110,7 @@ async function appendReviews(journal: RunJournal): Promise<void> {
   await journal.append({
     attempt: 1,
     changedPaths: ["src/task.ts"],
-    completion: { summary: "done" },
+    completion,
     discoveries: [proposal],
     resultCommit: "after",
     runId: request.runId,
@@ -229,6 +232,7 @@ async function appendRepeatedAttempt(journal: RunJournal): Promise<void> {
   await appendPassedStandardsReview(journal, {
     attempt: 1,
     changedPaths: ["src/task.ts"],
+    completion: repeatedCompletion,
     resultCommit: "after-2",
     runId,
     startCommit: "before-2",
@@ -249,7 +253,7 @@ async function appendRepeatedReview(journal: RunJournal): Promise<void> {
   await journal.append({
     attempt: 1,
     changedPaths: ["src/task.ts"],
-    completion: { summary: "done again" },
+    completion: repeatedCompletion,
     discoveries: [proposal],
     resultCommit: "after-2",
     runId,

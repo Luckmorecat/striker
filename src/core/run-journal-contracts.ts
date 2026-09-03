@@ -353,4 +353,5 @@ export interface RunRecoveryState {
   >[];
   readonly planId: string;
   readonly snapshot: RunSnapshot | null;
+  readonly taskOutcomes: readonly import("./outcome-contracts.js").TaskOutcome[];
 }

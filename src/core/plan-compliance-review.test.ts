@@ -70,6 +70,7 @@ const standards: StandardsReviewResult = {
   startCommit: "baseline",
   verdict: "passed",
 };
+const completion = { summary: "implementation complete" };
 
 function result(
   overrides: Partial<PlanComplianceReviewResult> = {},
@@ -118,6 +119,7 @@ async function startedJournal(): Promise<InMemoryRunJournal> {
   await appendPassedStandardsReview(journal, {
     attempt: 1,
     changedPaths: execution.changedPaths,
+    completion,
     resultCommit: execution.after.head,
     runId: request.runId,
     startCommit: execution.before.head,
@@ -153,7 +155,7 @@ async function reviewWith(
   const runner = new ReviewRunner(turn);
   const outcome = await runPlanComplianceReview({
     attempt: 1,
-    completion: { summary: "implementation complete" },
+    completion,
     discoveries,
     execution,
     journal,
@@ -351,7 +353,7 @@ describe("repairPlanComplianceFindings", () => {
     await journal.append({
       attempt: 1,
       changedPaths: execution.changedPaths,
-      completion: { summary: "implementation complete" },
+      completion,
       resultCommit: execution.after.head,
       runId: request.runId,
       session: reviewer,

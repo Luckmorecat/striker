@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, unlink } from "node:fs/promises";
+import { mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -104,4 +104,28 @@ it("retains completed plan history and rebuilds a missing projection", async () 
   expect(
     await readFile(path.join(planRoot, "events.ndjson"), "utf8"),
   ).toContain('"type":"task_completed"');
+});
+
+it("rebuilds missing, stale, and corrupt Task Outcome projections", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "striker-outcome-rebuild-"));
+  const journal = new FileRunJournal(root);
+  await appendCompletedRun(journal);
+  const outcomePath = path.join(root, "plans/plan-1/task-outcomes.json");
+  const expected = {
+    outcomes: [],
+    planId: "plan-1",
+    schema: "striker.task-outcomes.v1",
+  };
+
+  await unlink(outcomePath);
+  await journal.load("plan-1");
+  expect(JSON.parse(await readFile(outcomePath, "utf8"))).toEqual(expected);
+
+  await writeFile(outcomePath, '{"schema":"stale","outcomes":[{}]}\n');
+  await journal.load("plan-1");
+  expect(JSON.parse(await readFile(outcomePath, "utf8"))).toEqual(expected);
+
+  await writeFile(outcomePath, "not json\n");
+  await journal.load("plan-1");
+  expect(JSON.parse(await readFile(outcomePath, "utf8"))).toEqual(expected);
 });

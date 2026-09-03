@@ -86,6 +86,18 @@ async function appendAttempt(journal: FileRunJournal): Promise<void> {
   await appendPassedStandardsReview(journal, completion);
 }
 
+async function expectEmptyTaskOutcomes(planRoot: string): Promise<void> {
+  expect(
+    JSON.parse(
+      await readFile(path.join(planRoot, "task-outcomes.json"), "utf8"),
+    ),
+  ).toEqual({
+    outcomes: [],
+    planId: "plan-1",
+    schema: "striker.task-outcomes.v1",
+  });
+}
+
 describe("plan projections", () => {
   it("generates task state and a human log from completion events", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-projections-"));
@@ -119,6 +131,7 @@ describe("plan projections", () => {
       planId: "plan-1",
       schema: "striker.plan-task-state.v1",
     });
+    await expectEmptyTaskOutcomes(planRoot);
     const log = await readFile(path.join(planRoot, "log.md"), "utf8");
     expect(log).toContain("## Build task state");
     expect(log).toContain("`start-commit` -> `result-commit`");

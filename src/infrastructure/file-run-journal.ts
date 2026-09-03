@@ -147,6 +147,7 @@ export class FileRunJournal implements RunJournal {
         claim.planId,
         recovery.snapshot,
         events,
+        recovery.taskOutcomes,
       );
       if (terminalRunStatus(normalized) !== null) await this.releaseRun(claim);
     } catch (error) {
@@ -165,6 +166,7 @@ export class FileRunJournal implements RunJournal {
       planId,
       recovery.snapshot,
       events,
+      recovery.taskOutcomes,
     );
     return recovery;
   }

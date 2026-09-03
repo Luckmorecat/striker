@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { RunJournalEvent, RunSnapshot } from "../core/contracts.js";
 import { transitionRun } from "../core/run-state.js";
 
-function matchesCompletion(
+export function matchesCompletion(
   review: RunSnapshot["planComplianceReview"] | RunSnapshot["standardsReview"],
   event: Extract<RunJournalEvent, { type: "task_completed" }>,
 ): boolean {
@@ -26,6 +26,54 @@ function matchesCompletion(
   );
 }
 
+export function matchesPlanReviewCandidate(
+  standards: RunSnapshot["standardsReview"],
+  event: Extract<
+    RunJournalEvent,
+    {
+      type:
+        "plan_compliance_review_interrupted" | "plan_compliance_review_started";
+    }
+  >,
+): boolean {
+  if (standards?.stage !== "passed") return false;
+  return isDeepStrictEqual(
+    {
+      attempt: standards.attempt,
+      changedPaths: standards.changedPaths,
+      completion: standards.completion,
+      result: standards.result,
+      resultCommit: standards.resultCommit,
+      startCommit: standards.startCommit,
+      verification: standards.verification,
+    },
+    {
+      attempt: event.attempt,
+      changedPaths: event.changedPaths,
+      completion: event.completion,
+      result: event.standards,
+      resultCommit: event.resultCommit,
+      startCommit: event.startCommit,
+      verification: event.verification,
+    },
+  );
+}
+
+export function matchesIndependentCompletion(
+  snapshot: RunSnapshot,
+  event: Extract<RunJournalEvent, { type: "task_completed" }>,
+): boolean {
+  return (
+    event.certification === "independent_reviews" &&
+    matchesCompletion(snapshot.standardsReview, event) &&
+    matchesCompletion(snapshot.planComplianceReview, event) &&
+    isDeepStrictEqual(
+      snapshot.standardsReview?.completion,
+      snapshot.planComplianceReview?.completion,
+    )
+  );
+}
+
 export function completeTask(
   snapshot: RunSnapshot,
   event: Extract<RunJournalEvent, { type: "task_completed" }>,
@@ -40,7 +88,6 @@ export function completeTask(
   const status = transitionRun(snapshot.status, "complete_task");
   const attention = snapshot.attention ?? null;
   const standards = snapshot.standardsReview;
-  const plan = snapshot.planComplianceReview;
   if (
     event.certification === "standards_review" &&
     !matchesCompletion(standards, event)
@@ -51,7 +98,7 @@ export function completeTask(
   }
   if (
     event.certification === "independent_reviews" &&
-    (!matchesCompletion(standards, event) || !matchesCompletion(plan, event))
+    !matchesIndependentCompletion(snapshot, event)
   ) {
     throw new Error("Task completion requires two matching passed reviews");
   }

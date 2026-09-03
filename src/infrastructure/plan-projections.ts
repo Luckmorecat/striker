@@ -7,11 +7,13 @@ import type {
   RunJournalEvent,
   RunSnapshot,
 } from "../core/contracts.js";
+import type { TaskOutcome } from "../core/outcome-contracts.js";
 import { ledgerTransitionPause } from "../core/ledger-state.js";
 import { projectDiscoveryReviewEntries } from "./discovery-review-history.js";
 import { runJournalSchemaId } from "./run-journal-schema.js";
 
 export const taskStateSchemaId = "striker.plan-task-state.v1";
+export const taskOutcomesSchemaId = "striker.task-outcomes.v1";
 
 export class FilePlanLogReader implements PlanLogReader {
   constructor(private readonly stateRoot: string) {}
@@ -166,40 +168,52 @@ function humanLog(events: readonly RunJournalEvent[]): string {
   );
 }
 
+function formattedJson(value: object): string {
+  return `${JSON.stringify(value, null, 2)}\n`;
+}
+
 export async function writePlanProjections(
   planRoot: string,
   planId: string,
   snapshot: RunSnapshot,
   events: readonly RunJournalEvent[],
+  taskOutcomes: readonly TaskOutcome[],
 ): Promise<void> {
   const completions = events.filter(
     (event): event is CompletionEvent => event.type === "task_completed",
   );
-  await replaceFile(
-    planRoot,
-    "snapshot.json",
-    `${JSON.stringify(
-      {
+  const writes = await Promise.allSettled([
+    replaceFile(
+      planRoot,
+      "snapshot.json",
+      formattedJson({
         eventCount: events.length,
         schema: runJournalSchemaId,
         snapshot,
-      },
-      null,
-      2,
-    )}\n`,
-  );
-  await replaceFile(
-    planRoot,
-    "task-state.json",
-    `${JSON.stringify(
-      {
+      }),
+    ),
+    replaceFile(
+      planRoot,
+      "task-state.json",
+      formattedJson({
         completedTasks: completions.map(completionRecord),
         planId,
         schema: taskStateSchemaId,
-      },
-      null,
-      2,
-    )}\n`,
+      }),
+    ),
+    replaceFile(
+      planRoot,
+      "task-outcomes.json",
+      formattedJson({
+        outcomes: taskOutcomes,
+        planId,
+        schema: taskOutcomesSchemaId,
+      }),
+    ),
+    replaceFile(planRoot, "log.md", humanLog(events)),
+  ]);
+  const failure = writes.find(
+    (result): result is PromiseRejectedResult => result.status === "rejected",
   );
-  await replaceFile(planRoot, "log.md", humanLog(events));
+  if (failure !== undefined) throw failure.reason;
 }

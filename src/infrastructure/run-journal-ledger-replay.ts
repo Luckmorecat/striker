@@ -29,7 +29,7 @@ function requireSelectedTask(
   }
 }
 
-function acceptedEvidence(
+export function hasAcceptedLedgerEvidence(
   snapshot: RunSnapshot,
   event: Extract<LedgerEvent, { type: "ledger_transition_recorded" }>,
 ): boolean {
@@ -64,7 +64,7 @@ function replayTransition(
   applied: boolean,
 ): RunSnapshot {
   requireSelectedTask(snapshot, event);
-  if (!acceptedEvidence(snapshot, event)) {
+  if (!hasAcceptedLedgerEvidence(snapshot, event)) {
     throw new Error("Ledger transition lacks accepted review evidence");
   }
   if (!applied) return snapshot;

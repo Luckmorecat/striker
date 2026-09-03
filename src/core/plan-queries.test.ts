@@ -61,6 +61,7 @@ function pausedRecovery(): RunRecoveryState {
       type: "run_needs_attention",
     },
     planId: plan.planId,
+    taskOutcomes: [],
     snapshot: {
       attempt: 2,
       attention,

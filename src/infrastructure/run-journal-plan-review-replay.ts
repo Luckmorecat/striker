@@ -8,6 +8,7 @@ import type {
 } from "../core/contracts.js";
 import { validatePlanReviewDecisions } from "../core/plan-review-decision-validation.js";
 import { transitionRun } from "../core/run-state.js";
+import { matchesPlanReviewCandidate } from "./run-journal-completion.js";
 
 export type PlanReviewEvent = Extract<
   RunJournalEvent,
@@ -78,8 +79,7 @@ function startReview(
     snapshot.session === null ||
     snapshot.attempt !== event.attempt ||
     snapshot.before?.head !== event.startCommit ||
-    standards?.stage !== "passed" ||
-    !isDeepStrictEqual(standards.result, event.standards) ||
+    !matchesPlanReviewCandidate(standards, event) ||
     !["running", "needs_attention"].includes(snapshot.status)
   ) {
     throw new Error("Plan-compliance review has invalid candidate evidence");
@@ -149,8 +149,7 @@ function interruptReview(
   const review = snapshot.planComplianceReview;
   if (
     snapshot.status !== "running" ||
-    standards?.stage !== "passed" ||
-    !isDeepStrictEqual(standards.result, event.standards) ||
+    !matchesPlanReviewCandidate(standards, event) ||
     (review?.stage === "reviewing" &&
       (event.session === null ||
         review.reviewSession === null ||

@@ -27,6 +27,11 @@ export type {
   TaskSourceReference,
   VerificationResult,
 } from "./execution-contracts.js";
+export type {
+  CertifiedOutcomeFact,
+  TaskOutcome,
+  TaskOutcomeTransition,
+} from "./outcome-contracts.js";
 
 export type TaskCompletionResult =
   | {
