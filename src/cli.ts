@@ -21,6 +21,7 @@ import { RunOperations } from "./core/run-operations.js";
 import type { Dispatcher } from "./core/dispatcher.js";
 import { PlanQueries } from "./core/plan-queries.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
+import { createEnvironmentPreparer } from "./infrastructure/docker/environment-preparer.js";
 import { LocalExecutionEnvironment } from "./infrastructure/local-execution-environment.js";
 import { FilePlanLogReader } from "./infrastructure/plan-projections.js";
 import { LocalPermissionConfig } from "./permissions/local-permission-config.js";
@@ -122,6 +123,16 @@ async function openPlanQueries(source: string) {
 }
 
 process.exitCode = await runCli(process.argv.slice(2), {
+  environmentPreparer: {
+    prepare: async (approveImage) => {
+      const root = await git.resolveRoot(cwd);
+      const stateRoot = await git.resolvePrivatePath(root, "striker");
+      return createEnvironmentPreparer({
+        projectRoot: root,
+        stateRoot,
+      }).prepare(approveImage);
+    },
+  },
   answerReader: createAnswerReader(cwd, terminal),
   interaction: {
     get interactive() {

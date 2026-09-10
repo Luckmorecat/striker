@@ -65,3 +65,18 @@ describe("Striker project configuration", () => {
     expect(packaged).not.toHaveProperty("$id");
   });
 });
+
+it("accepts local image selection but never tracked image approval", () => {
+  expect(
+    parseProjectConfig({
+      taskSource: "striker-plan",
+      image: "my-striker:local",
+    }),
+  ).toMatchObject({ image: "my-striker:local" });
+  expect(() =>
+    parseProjectConfig({
+      taskSource: "striker-plan",
+      approvedImages: ["anything"],
+    }),
+  ).toThrow();
+});

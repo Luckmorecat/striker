@@ -21,6 +21,8 @@ import {
   AnswerCancelled,
   type AnswerReader,
 } from "./answer-command.js";
+import type { EnvironmentPreparer } from "../core/environment-preparation.js";
+import { addEnvironmentCommand } from "./environment-command.js";
 import { addDiscardCommand } from "./discard-command.js";
 import { addPlanCommand } from "./plan-command.js";
 import { addPermissionsCommand } from "./permissions-command.js";
@@ -36,6 +38,7 @@ export interface CliWriter {
 
 export interface CliDependencies {
   readonly interaction?: RecoveryInteraction;
+  readonly environmentPreparer?: EnvironmentPreparer;
   readonly answerReader?: AnswerReader;
   readonly recoveryInspector?: RecoveryInspector;
   readonly cwd: string;
@@ -121,6 +124,10 @@ export function createProgram(dependencies: CliDependencies): Command {
       writeOut: (text) => dependencies.stdout.write(text),
     });
   }
+  if (dependencies.environmentPreparer)
+    addEnvironmentCommand(program, dependencies.environmentPreparer, (text) =>
+      dependencies.stdout.write(text),
+    );
   addSkillsCommand(program, dependencies);
   return program;
 }

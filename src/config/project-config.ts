@@ -9,6 +9,11 @@ export const projectConfigSchema = z
   .object({
     $schema: z.string().min(1).optional(),
     harness: z.enum(agentHarnesses).optional(),
+    image: z
+      .string()
+      .min(1)
+      .regex(/^[^-\s][^\s]*$/)
+      .optional(),
     skills: z.array(z.string().min(1)).optional(),
     taskSource: z.literal("striker-plan"),
   })
@@ -24,6 +29,7 @@ export const projectConfigJsonSchema = z.toJSONSchema(projectConfigSchema, {
 export interface ProjectConfig {
   readonly $schema?: string;
   readonly harness: AgentHarness;
+  readonly image?: string;
   readonly skills: readonly string[];
   readonly taskSource: "striker-plan";
 }
@@ -33,6 +39,7 @@ export function parseProjectConfig(value: unknown): ProjectConfig {
   return {
     ...(parsed.$schema === undefined ? {} : { $schema: parsed.$schema }),
     harness: parsed.harness ?? "codex",
+    ...(parsed.image === undefined ? {} : { image: parsed.image }),
     skills: parsed.skills ?? [],
     taskSource: parsed.taskSource,
   };

@@ -24,7 +24,8 @@
     "schema.json",
     "skills",
     "!dist/**/*.test.*",
-    "!dist/testing"
+    "!dist/testing",
+    "runtime"
   ],
   "bin": {
     "striker": "./dist/cli.js"
@@ -58,7 +59,8 @@
     "pretest": "pnpm build",
     "test": "vitest run",
     "test:global-install": "node test-global-install.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:docker": "node test-docker.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

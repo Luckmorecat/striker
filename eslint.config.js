@@ -11,7 +11,7 @@ export default tseslint.config(
   ...tseslint.configs.strictTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
   {
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -43,7 +43,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/**/*.test.ts"],
+    files: ["src/**/*.test.ts", "tests/**/*.test.ts"],
     rules: {
       "max-lines": [
         "error",
@@ -52,7 +52,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.js", "vitest.config.ts"],
+    files: ["*.js", "*.mjs", "runtime/*.mjs", "vitest*.config.ts"],
     ...tseslint.configs.disableTypeChecked,
   },
 );

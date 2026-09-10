@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "baseImage": "node:22.19.0-bookworm-slim",
+  "packages": {
+    "pnpm": "11.18.0",
+    "acpx": "0.13.1",
+    "@openai/codex": "0.154.0",
+    "@agentclientprotocol/codex-acp": "1.11.0",
+    "@mariozechner/pi-coding-agent": "0.73.1",
+    "pi-acp": "0.0.33"
+  },
+  "commands": [
+    "node",
+    "pnpm",
+    "git",
+    "bash",
+    "rg",
+    "curl",
+    "make",
+    "g++",
+    "python3",
+    "acpx",
+    "codex",
+    "codex-acp",
+    "pi",
+    "pi-acp"
+  ]
+}
