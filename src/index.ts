@@ -96,4 +96,6 @@ export type { DispatcherDependencies } from "./core/dispatcher.js";
 export type {
   ActiveRunStatus,
   RecoveryOperationHandler,
+  RecoveryInspection,
+  RecoveryInspector,
 } from "./core/recovery-operations.js";

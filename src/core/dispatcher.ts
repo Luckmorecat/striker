@@ -90,6 +90,10 @@ export class Dispatcher {
     return this.recovery().retry();
   }
 
+  inspectRecovery() {
+    return new RunOperations(this.dependencies.journal).inspectRecovery();
+  }
+
   status() {
     return new RunOperations(this.dependencies.journal).status();
   }

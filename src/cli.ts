@@ -2,20 +2,20 @@
 /// <reference types="node" />
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
-import { createInterface } from "node:readline/promises";
+import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-
-import type { AcpPermissionRequest } from "acpx/runtime";
 
 import { StrikerPlanAdapter } from "./adapters/striker-plan/striker-plan-adapter.js";
 import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
 import { commandResult } from "./cli/command-result.js";
+import { createAnswerReader } from "./cli/terminal/answer-reader.js";
+import { TerminalSession } from "./cli/terminal/terminal-session.js";
 import { runCli } from "./cli/program.js";
 import { loadProjectConfig } from "./config/project-config.js";
 import { AdapterRegistry } from "./core/adapter-registry.js";
 import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
+import { RunOperations } from "./core/run-operations.js";
 import { Dispatcher } from "./core/dispatcher.js";
 import { PlanQueries } from "./core/plan-queries.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
@@ -30,23 +30,7 @@ const cwd = process.cwd();
 const skillsRoot = fileURLToPath(new URL("../skills", import.meta.url));
 const git = new GitCliRepository();
 
-async function relayPermission(request: AcpPermissionRequest) {
-  if (!process.stdin.isTTY) return { outcome: "reject_once" } as const;
-  const prompt = createInterface({
-    input: process.stdin,
-    output: process.stderr,
-  });
-  try {
-    const answer = await prompt.question(
-      `Codex requests permission: ${JSON.stringify(request.raw)}\nAllow once? [y/N] `,
-    );
-    return answer.trim().toLowerCase() === "y"
-      ? ({ outcome: "allow_once" } as const)
-      : ({ outcome: "reject_once" } as const);
-  } finally {
-    prompt.close();
-  }
-}
+const terminal = new TerminalSession(process.stdin, process.stderr);
 
 async function permissionFilePath(): Promise<string> {
   const root = await git.resolveRoot(cwd);
@@ -83,7 +67,7 @@ async function createDispatcher(
       approvalMode,
       cwd: root,
       harness: config.harness,
-      permissionRelay: relayPermission,
+      permissionRelay: (request) => terminal.permission(request.raw),
       stateDir: path.join(stateRoot, "acpx"),
     }),
     verifier: new ShellVerifier(),
@@ -137,15 +121,15 @@ async function openPlanQueries(source: string) {
   };
 }
 
-async function readAnswer(file: string | undefined): Promise<string> {
-  if (file !== undefined) return readFile(path.resolve(cwd, file), "utf8");
-  let answer = "";
-  for await (const chunk of process.stdin) answer += String(chunk);
-  return answer;
-}
-
 process.exitCode = await runCli(process.argv.slice(2), {
-  answerReader: { read: readAnswer },
+  answerReader: createAnswerReader(cwd, terminal),
+  recoveryInspector: {
+    inspectRecovery: async () => {
+      const root = await git.resolveRoot(cwd);
+      const stateRoot = await git.resolvePrivatePath(root, "striker");
+      return new RunOperations(new FileRunJournal(stateRoot)).inspectRecovery();
+    },
+  },
   cwd,
   permissionConfig,
   planQueryHandler: {

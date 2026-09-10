@@ -22,3 +22,23 @@ export interface RecoveryOperationHandler {
   retry(): Promise<RunCommandResult>;
   status(): Promise<ActiveRunStatus | null>;
 }
+
+export interface RecoveryInspection {
+  readonly runId: string;
+  readonly status: RunStatus;
+  readonly task: {
+    readonly identity: TaskIdentity;
+    readonly title: string;
+  } | null;
+  readonly attention: {
+    readonly reason: string;
+    readonly detail: string;
+  } | null;
+  readonly availability: Readonly<
+    Record<import("./recovery-policy.js").RecoveryAction, string | null>
+  >;
+}
+
+export interface RecoveryInspector {
+  inspectRecovery(): Promise<RecoveryInspection | null>;
+}

@@ -465,3 +465,25 @@ describe("Dispatcher recovery discard", () => {
     expect(test.journal.releasedRunIds).toEqual([]);
   });
 });
+
+describe("Dispatcher recovery inspection", () => {
+  it("exposes persisted context and actions without changing the run", async () => {
+    const test = fixture(
+      new FakeAgentRunner({
+        output: "unused",
+        session: { id: "unused" },
+        status: "returned",
+      }),
+    );
+    expect(await test.dispatcher.inspectRecovery()).toBeNull();
+    await seedAttempt(test.journal, "needs_attention");
+    const count = test.journal.events.length;
+    expect(await test.dispatcher.inspectRecovery()).toMatchObject({
+      runId: request.runId,
+      task: { identity: task.identity, title: task.title },
+      attention: { reason: "verification_failed", detail: "Needs repair." },
+      availability: { answer: null, resume: null, retry: null },
+    });
+    expect(test.journal.events).toHaveLength(count);
+  });
+});

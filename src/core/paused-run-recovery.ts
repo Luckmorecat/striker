@@ -1,3 +1,4 @@
+import { validateRecovery } from "./recovery-policy.js";
 import type { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
@@ -40,10 +41,7 @@ import {
   reviewOwnsRecovery,
   type RecoverableRun,
 } from "./recovery-context.js";
-import {
-  answerDiscoveryPause,
-  isCompletedDiscoveryPause,
-} from "./discovery-reconciliation.js";
+import { answerDiscoveryPause } from "./discovery-reconciliation.js";
 
 interface RecoveryDependencies {
   readonly adapters: AdapterRegistry;
@@ -92,11 +90,7 @@ export class PausedRunRecovery {
     if (answer.length === 0)
       throw new Error("Developer answer cannot be empty");
     const recovery = await this.requireActiveRecovery();
-    if (reviewOwnsRecovery(recovery.snapshot)) {
-      throw new Error(
-        "Standards review recovery does not accept developer answers",
-      );
-    }
+    validateRecovery(recovery, "answer");
     const ledgerRequest = await answerDiscoveryPause(
       this.dependencies.journal,
       recovery.snapshot,
@@ -104,9 +98,6 @@ export class PausedRunRecovery {
     );
     if (ledgerRequest !== null) return this.host.continueRun(ledgerRequest);
     const run = recoverableRun(recovery, ["needs_attention"]);
-    if (run.session === null) {
-      throw new Error("Paused Striker run has no session to answer");
-    }
     return this.continue(
       run as ContinuedRun,
       "answer",
@@ -117,9 +108,7 @@ export class PausedRunRecovery {
 
   async resume(): Promise<DispatchResult> {
     const recovery = await this.requireActiveRecovery();
-    if (isCompletedDiscoveryPause(recovery.snapshot)) {
-      throw new Error("Discovery attention requires a developer answer");
-    }
+    validateRecovery(recovery, "resume");
     const request = completedTaskRequest(recovery);
     if (request !== null) return this.host.continueRun(request);
     if (reviewOwnsRecovery(recovery.snapshot)) {
@@ -211,16 +200,8 @@ export class PausedRunRecovery {
 
   async retry(): Promise<DispatchResult> {
     const recovery = await this.requireActiveRecovery();
+    validateRecovery(recovery, "retry");
     const run = recoverableRun(recovery, ["failed", "needs_attention"]);
-    if (
-      recovery.completedTasks.some(
-        (identity) =>
-          identity.id === run.task.identity.id &&
-          identity.revision === run.task.identity.revision,
-      )
-    ) {
-      throw new Error("Cannot retry a completed Striker task");
-    }
     await this.dependencies.runner.preflight({ skills: run.request.skills });
     const before = run.baselineRecorded
       ? run.before

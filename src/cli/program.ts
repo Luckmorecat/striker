@@ -8,8 +8,15 @@ import type {
   RecoveryCommandHandler,
   RunCommandHandler,
 } from "../core/contracts.js";
-import type { RecoveryOperationHandler } from "../core/recovery-operations.js";
-import { addAnswerCommand, type AnswerReader } from "./answer-command.js";
+import type {
+  RecoveryInspector,
+  RecoveryOperationHandler,
+} from "../core/recovery-operations.js";
+import {
+  addAnswerCommand,
+  AnswerCancelled,
+  type AnswerReader,
+} from "./answer-command.js";
 import { addDiscardCommand } from "./discard-command.js";
 import { addPlanCommand } from "./plan-command.js";
 import { addPermissionsCommand } from "./permissions-command.js";
@@ -25,6 +32,7 @@ export interface CliWriter {
 
 export interface CliDependencies {
   readonly answerReader?: AnswerReader;
+  readonly recoveryInspector?: RecoveryInspector;
   readonly cwd: string;
   readonly permissionConfig: PermissionConfig;
   readonly planQueryHandler?: PlanQueryHandler;
@@ -75,6 +83,9 @@ export function createProgram(dependencies: CliDependencies): Command {
     dependencies.answerReader !== undefined
   ) {
     addAnswerCommand(program, {
+      ...(dependencies.recoveryInspector === undefined
+        ? {}
+        : { inspector: dependencies.recoveryInspector }),
       handler: dependencies.recoveryHandler,
       reader: dependencies.answerReader,
       writeOut: (text) => dependencies.stdout.write(text),
@@ -113,6 +124,10 @@ export async function runCli(
     await program.parseAsync([...arguments_], { from: "user" });
     return 0;
   } catch (error) {
+    if (error instanceof AnswerCancelled) {
+      dependencies.stderr.write(`${error.message}\n`);
+      return error.exitCode;
+    }
     if (error instanceof CommanderError) return error.exitCode;
     const message = error instanceof Error ? error.message : String(error);
     dependencies.stderr.write(`error: ${message}\n`);

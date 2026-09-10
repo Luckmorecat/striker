@@ -5,7 +5,7 @@ ordered Striker plan, opens one fresh agent session per task, checks the
 resulting commit and worktree, runs the task's verification command, and records
 completion before moving to the next task.
 
-The package requires Node.js 22.13 or newer and pnpm. It supports Codex, Claude
+The package requires Node.js 22.19 or newer and pnpm. It supports Codex, Claude
 Code, OpenCode, and Pi through `acpx@0.13.1`. Global installation and automatic
 harness switching are outside this package's scope.
 
@@ -257,11 +257,23 @@ One nonterminal run may exist per checkout. Inspect or operate it with:
 ```sh
 pnpm exec striker status
 pnpm exec striker resume
+pnpm exec striker answer                  # interactive multiline answer
 pnpm exec striker answer < answer.txt
 pnpm exec striker answer --file answer.txt
 pnpm exec striker retry
 pnpm exec striker discard --force
 ```
+
+When stdin and stderr are terminals, `answer` shows the task and complete
+persisted attention detail, then opens a Pi multiline composer on stderr in
+normal scrollback. Enter submits; Shift+Enter inserts a newline, with Alt+Enter
+as a fallback. Multiline paste stays in the editor. Blank interactive answers
+reprompt; nonblank content retains its surrounding whitespace. Ctrl-C exits 130
+and Ctrl-D/EOF exits 0, submitting nothing and printing `Run left paused.`
+
+Answer eligibility is checked before reading input and rechecked on submission.
+Files and piped stdin retain their complete UTF-8 content and submit once. This
+standalone command returns after that continuation, even if it pauses again.
 
 Inspect one plan's retained state and chronological completion log with:
 

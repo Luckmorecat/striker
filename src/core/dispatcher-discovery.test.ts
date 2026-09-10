@@ -353,6 +353,11 @@ describe("Dispatcher assumption discoveries", () => {
       status: "needs_attention",
       task: null,
     });
+    expect(await test.dispatcher.inspectRecovery()).toMatchObject({
+      task: null,
+      attention: { reason: "assumption_disproved" },
+      availability: { answer: null },
+    });
     await expect(
       test.dispatcher.answer("Acknowledge the disproof and stop the plan."),
     ).resolves.toMatchObject({ status: "source_exhausted" });
