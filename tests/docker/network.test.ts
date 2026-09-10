@@ -76,3 +76,40 @@ test("socket-only gateway enforces egress while retaining internal feature servi
     await rm(root, { recursive: true, force: true });
   }
 }, 120_000);
+
+// Extension loading must fail offline when packaged imports are incompatible.
+test("packaged Pi provider and search extension start without host authentication", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "striker-pi-start-"));
+  try {
+    await writeFile(
+      path.join(root, "connectivity.json"),
+      JSON.stringify({
+        harness: "pi",
+        model: "gpt-5.6-sol",
+        effort: "low",
+        token: "fake-offline-key",
+      }),
+    );
+    const image = await prepareImage();
+    const output = await dockerCommand([
+      "run",
+      "--rm",
+      ...containerRestrictions(
+        { cpus: 1, memoryMiB: 1024, pids: 64 },
+        `${String(process.getuid?.())}:${String(process.getgid?.())}`,
+      ),
+      "--mount",
+      `type=bind,source=${root},target=/state`,
+      "--entrypoint",
+      "node",
+      image.imageId,
+      "/opt/striker/gateway-bridge.mjs",
+      "pi",
+      "--mode",
+      "rpc",
+    ]);
+    expect(output).toBe("");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}, 120_000);

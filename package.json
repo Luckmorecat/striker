@@ -60,7 +60,8 @@
     "test": "vitest run",
     "test:global-install": "node test-global-install.js",
     "typecheck": "tsc --noEmit",
-    "test:docker": "node test-docker.js"
+    "test:docker": "node test-docker.js",
+    "test:smoke": "node test-smoke.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

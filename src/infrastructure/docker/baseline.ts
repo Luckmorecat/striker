@@ -22,6 +22,10 @@ export async function loadBaseline() {
       "install.mjs",
       "probe.mjs",
       ".dockerignore",
+      "gateway-bridge.mjs",
+      "harness-config.mjs",
+      "pi-search.mjs",
+      "search-mcp.mjs",
     ].map((name) => readFile(path.join(root, name), "utf8")),
   );
   const manifest = schema.parse(JSON.parse(files[0] ?? ""));

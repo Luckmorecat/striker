@@ -1,3 +1,5 @@
+import type { ModelSelection } from "./subscription.js";
+
 export interface PreparedEnvironmentImage {
   readonly imageId: string;
   readonly baselineId: string;
@@ -18,6 +20,10 @@ export interface FeatureEnvironmentAllocation {
   readonly stateRoot: string;
   readonly image: PreparedEnvironmentImage;
   readonly resources: FeatureEnvironmentResources;
+  readonly gateway?: {
+    readonly socketPath: string;
+    readonly selection: ModelSelection;
+  };
 }
 
 export interface RetainedFeatureEnvironment {

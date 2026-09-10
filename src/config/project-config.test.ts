@@ -80,3 +80,22 @@ it("accepts local image selection but never tracked image approval", () => {
     }),
   ).toThrow();
 });
+
+it("accepts isolated model selection but rejects tracked service grants", () => {
+  expect(
+    parseProjectConfig({
+      taskSource: "striker-plan",
+      model: "gpt-5.6-sol",
+      reasoningEffort: "low",
+    }),
+  ).toMatchObject({ model: "gpt-5.6-sol", reasoningEffort: "low" });
+  expect(() =>
+    parseProjectConfig({
+      taskSource: "striker-plan",
+      reasoningEffort: "automatic",
+    }),
+  ).toThrow();
+  expect(() =>
+    parseProjectConfig({ taskSource: "striker-plan", services: [] }),
+  ).toThrow();
+});

@@ -1,6 +1,10 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": { "rootDir": "..", "noEmit": true },
-  "include": ["./**/*.ts", "../vitest.docker.config.ts"],
+  "include": [
+    "./**/*.ts",
+    "../vitest.docker.config.ts",
+    "../vitest.smoke.config.ts"
+  ],
   "exclude": ["../node_modules", "../dist"]
 }

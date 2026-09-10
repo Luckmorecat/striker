@@ -22,6 +22,8 @@ import {
   type AnswerReader,
 } from "./answer-command.js";
 import type { EnvironmentPreparer } from "../core/environment-preparation.js";
+import type { SubscriptionAuthentication } from "../core/subscription.js";
+import { addAuthCommand } from "./auth-command.js";
 import { addEnvironmentCommand } from "./environment-command.js";
 import { addDiscardCommand } from "./discard-command.js";
 import { addPlanCommand } from "./plan-command.js";
@@ -37,6 +39,7 @@ export interface CliWriter {
 }
 
 export interface CliDependencies {
+  readonly subscriptionAuthentication?: SubscriptionAuthentication;
   readonly interaction?: RecoveryInteraction;
   readonly environmentPreparer?: EnvironmentPreparer;
   readonly answerReader?: AnswerReader;
@@ -124,10 +127,7 @@ export function createProgram(dependencies: CliDependencies): Command {
       writeOut: (text) => dependencies.stdout.write(text),
     });
   }
-  if (dependencies.environmentPreparer)
-    addEnvironmentCommand(program, dependencies.environmentPreparer, (text) =>
-      dependencies.stdout.write(text),
-    );
+  addPreparationCommands(program, dependencies);
   addSkillsCommand(program, dependencies);
   return program;
 }
@@ -150,4 +150,18 @@ export async function runCli(
     dependencies.stderr.write(`error: ${message}\n`);
     return 1;
   }
+}
+
+function addPreparationCommands(
+  program: Command,
+  dependencies: CliDependencies,
+): void {
+  if (dependencies.environmentPreparer)
+    addEnvironmentCommand(program, dependencies.environmentPreparer, (text) =>
+      dependencies.stdout.write(text),
+    );
+  if (dependencies.subscriptionAuthentication)
+    addAuthCommand(program, dependencies.subscriptionAuthentication, (text) =>
+      dependencies.stdout.write(text),
+    );
 }

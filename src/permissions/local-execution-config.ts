@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -17,6 +18,22 @@ const schema = z
       .array(z.string().regex(/^sha256:[a-f0-9]{64}$/))
       .default([]),
     resources: resourceLimitsSchema.prefault({}),
+    services: z
+      .array(
+        z
+          .object({
+            name: z
+              .string()
+              .regex(/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/)
+              .refine((name) => !isIP(name)),
+            port: z.number().int().min(1).max(65535),
+            addresses: z
+              .array(z.string().refine((address) => isIP(address) !== 0))
+              .min(1),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 export type ExecutionPolicy = z.infer<typeof schema>;

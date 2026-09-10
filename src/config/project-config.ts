@@ -14,6 +14,11 @@ export const projectConfigSchema = z
       .min(1)
       .regex(/^[^-\s][^\s]*$/)
       .optional(),
+    model: z
+      .string()
+      .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
+      .optional(),
+    reasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
     skills: z.array(z.string().min(1)).optional(),
     taskSource: z.literal("striker-plan"),
   })
@@ -30,6 +35,8 @@ export interface ProjectConfig {
   readonly $schema?: string;
   readonly harness: AgentHarness;
   readonly image?: string;
+  readonly model?: string;
+  readonly reasoningEffort?: "low" | "medium" | "high" | "xhigh";
   readonly skills: readonly string[];
   readonly taskSource: "striker-plan";
 }
@@ -40,6 +47,10 @@ export function parseProjectConfig(value: unknown): ProjectConfig {
     ...(parsed.$schema === undefined ? {} : { $schema: parsed.$schema }),
     harness: parsed.harness ?? "codex",
     ...(parsed.image === undefined ? {} : { image: parsed.image }),
+    ...(parsed.model === undefined ? {} : { model: parsed.model }),
+    ...(parsed.reasoningEffort === undefined
+      ? {}
+      : { reasoningEffort: parsed.reasoningEffort }),
     skills: parsed.skills ?? [],
     taskSource: parsed.taskSource,
   };
@@ -55,4 +66,13 @@ export async function loadProjectConfig(root: string): Promise<ProjectConfig> {
       cause: error,
     });
   }
+}
+
+export function resolveModelSelection(
+  config: Pick<ProjectConfig, "model" | "reasoningEffort">,
+) {
+  return {
+    model: config.model ?? "gpt-5.6-sol",
+    effort: config.reasoningEffort ?? "low",
+  };
 }

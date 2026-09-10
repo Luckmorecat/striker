@@ -1,104 +1,86 @@
 # Subscription compatibility gate
 
-Status: pending as of 2026-09-11. Docker execution must not be activated on the
-strength of this investigation. Both harnesses produced terminal and
-subscription-search outputs through a Striker gateway. Codex completed its
-prompt; Pi did not. Neither passed the complete refresh/context/cancel gate.
+Authenticated Linux gate passed on 2026-09-11. Both Codex and Pi completed real
+subscription refresh, terminal execution, streaming, cancellation, context
+retention after reconnecting, and subscription search with source URLs from a
+restricted Docker container. Public HTTP and HTTPS also passed. Docker feature
+execution/default activation remains later work; macOS acceptance is pending.
 
-## Inspected candidate
+## Tested selection
 
-CLIProxyAPI release `7.2.157`, source commit
-`09a29bd345bc44c473abe7fd07859e32df2ea543`, was downloaded for a host-side
-probe. The Linux amd64 release archive matched the published SHA256:
-`e0df9f570b6e910a14f081425cee2527a503311f617d7727cd428009fab14c77`. The binary's
-help output confirmed its version and these login options:
+| Component                        | Pin                                    |
+| -------------------------------- | -------------------------------------- |
+| CLIProxyAPI (host only)          | 7.2.157                                |
+| acpx                             | 0.13.1                                 |
+| Codex                            | @openai/codex 0.154.0                  |
+| Codex adapter                    | @agentclientprotocol/codex-acp 1.11.0  |
+| Pi                               | @earendil-works/pi-coding-agent 0.85.1 |
+| Pi adapter                       | pi-acp 0.0.33                          |
+| Default model / reasoning effort | gpt-5.6-sol / low                      |
+| Model transport                  | SSE, Responses API                     |
 
-- `-codex-login`: browser OAuth login.
-- `-codex-device-login`: device-code login.
-- `-config`: explicit broker configuration path.
-- `-no-browser`: print browser-login instructions instead of opening a browser.
+The exact runtime pins are authoritative in `baseline.json`; the broker pin is
+in `src/infrastructure/gateway/broker-storage.ts`. Preparation records the
+immutable local image ID and baseline asset hash. The final tested image is
+recorded with verification results in the slice log.
 
-The inspected CLI exposes no Codex credential-import command; its import option
-is for Vertex service accounts. Do not translate or share a user's existing
-Codex refresh-token file as an assumed supported import. Use a separate broker
-login unless a supported import path is established.
-
-[Release and checksums](https://github.com/router-for-me/CLIProxyAPI/releases/tag/v7.2.157)
+CLIProxyAPI source commit: `09a29bd345bc44c473abe7fd07859e32df2ea543`. The
+downloaded Linux amd64 release archive matched the published SHA256:
+`e0df9f570b6e910a14f081425cee2527a503311f617d7727cd428009fab14c77`. See the
+[release and checksums](https://github.com/router-for-me/CLIProxyAPI/releases/tag/v7.2.157)
 and
 [CLI source](https://github.com/router-for-me/CLIProxyAPI/blob/09a29bd345bc44c473abe7fd07859e32df2ea543/cmd/server/main.go).
 
-## Pi integration constraint
+## Authentication and transport
 
-The cached baseline image
-`sha256:fedee2d1c4f730ed6b34a34167910cf378c8e0d6cab83447f0c15a646273bdf6` was
-inspected without network access. It contains `pi-acp 0.0.33` and
-`@mariozechner/pi-coding-agent 0.73.1`, as declared in `baseline.json`.
+The inspected broker has no supported native Codex credential-import command. A
+separate broker-owned browser login succeeded. Striker may reuse that broker
+store explicitly; it never translates or shares native harness OAuth files. The
+supported `POST /v0/management/auth-files/refresh` operation succeeded, advanced
+the persisted refresh timestamp, and left a valid future expiry; real
+model/search requests then succeeded. An earlier forced-expiry edit was rejected
+by automatic approval review and was never executed. The user authorized the
+supported refresh operation. No manual expiry edits were needed.
 
-The official CLIProxyAPI Pi provider `1.4.15`, source commit
-`ffc7cc3fe05b64483651b427e5117ae22dd6aad0`, instead declares
-`@earendil-works/pi-coding-agent >=0.82.0` and `@earendil-works/pi-ai` peers. It
-cannot be adopted unchanged against the baseline's declared packages. Its Codex
-stream integration patches the installed Pi implementation and selects WebSocket
-transport without SSE fallback. This is evidence about that provider, not proof
-that a curated Striker provider cannot use SSE.
+The host broker owns real credentials. A narrow run gateway replaces upstream
+authentication and fixes the selected model/effort. Execution receives a
+revocable run key and a single mounted UNIX socket, with direct Docker
+networking disabled. Host-only management uses a separate key and is not exposed
+through the gateway. No required API billing or paid search credential was used.
 
-[Provider manifest](https://github.com/router-for-me/pi-cliproxyapi-provider/blob/ffc7cc3fe05b64483651b427e5117ae22dd6aad0/package.json)
-and
-[stream implementation](https://github.com/router-for-me/pi-cliproxyapi-provider/blob/ffc7cc3fe05b64483651b427e5117ae22dd6aad0/extensions/codex-stream.ts).
+Codex uses a custom Responses provider and a curated `striker_search` MCP tool.
+`INITIAL_AGENT_MODE=agent-full-access` is required inside the Docker boundary:
+the adapter overrides ordinary sandbox config, and its default nested sandbox
+fails in this container. Acceptance checks actual terminal output and completed
+search calls, not just process exit.
 
-## Resume requirements
+Pi uses its supported `openai-responses` custom provider with a run key, plus
+the packaged curated search extension. It does not use dummy native OAuth or the
+official CLIProxyAPI Pi provider's WebSocket patch. D1 (SSE) holds. Both search
+integrations return broker search results with required source citations;
+upstream errors are sanitized by the gateway.
 
-A broker-owned subscription login was completed. The host broker returned a
-completed `web_search_call` and cited source URLs over SSE using `gpt-5.6-sol`
-and effort `low`. This selection is a tested probe candidate, not a validated
-release default.
+## Regressions and next-slice constraints
 
-Both pinned adapters then ran inside the cached image with `--network none`,
-read-only root, dropped capabilities, and a selectively mounted gateway socket.
-They executed `printf STRIKER_TOOL_OK` and produced cited subscription-search
-outputs. Codex completed its prompt; Pi probes timed out after both 90 and 240
-seconds (container exit 3). The container received a revocable run key, never
-real OAuth tokens. Pi used its supported `openai-responses` custom provider plus
-a curated search extension; the newer official Pi provider was not installed.
-Codex used a curated search MCP tool because its custom-provider session exposed
-no native search.
+The old Pi 0.73.1 / pi-acp 0.0.33 pair emitted tool/search output but timed out
+at 90 and 240 seconds. That Pi version lacks the `agent_settled` event on which
+the adapter waits for prompt completion. The renamed Pi 0.85.1 pair completes
+and is now pinned. Search-extension dependencies must load through Pi's
+extension loader; a CommonJS resolution attempt failed against Pi AI's
+import-only exports. The offline Docker startup test covers this regression.
 
-Pi `0.73.1` contains no `agent_settled` event, while `pi-acp 0.0.33` resolves
-pending prompts only on that event (`dist/index.js:1208–1231` in the installed
-adapter). Successful streamed output therefore does not establish prompt
-completion. The runtime/adapter pins need compatibility testing as a pair before
-this gate can pass; no pin was changed during this attempt.
+Pi reports search completion separately from its initial named tool event; smoke
+correlates events by tool-call ID. It supports retained connection close/reopen,
+but not ACP `session/close` for deleting backend session state. Smoke closes the
+connection and removes its owned container/state. Later execution/recovery code
+must not assume `discardPersistentState: true` is supported by this adapter.
 
-Codex/acpx overrides the config's sandbox mode with its initial agent mode. The
-successful isolated probe selected `INITIAL_AGENT_MODE=agent-full-access`;
-Docker remained the enforcement boundary. The default mode instead failed nested
-sandbox creation and returned exit zero despite failed tools. Future acceptance
-must inspect completed tool outputs and search citations, not just process exit.
+Run `pnpm test:smoke subscription --harness codex` and the equivalent `pi`
+command with `STRIKER_SMOKE_BROKER_ROOT` pointing to a prepared, logged-in host
+broker. Each uses real refresh and model calls; missing prerequisites fail.
+`pnpm check` stays offline. `pnpm test:docker network credentials` uses fake
+endpoints to verify authorization/redaction, blocked direct/private/host access,
+named grants, internal services, and packaged Pi startup.
 
-Real refresh remains unproven. Automatic approval review rejected a proposed
-forced-expiry edit to the sole broker auth record because it could invalidate
-the login. That edit was not executed; user approval is pending. The inspected
-broker also provides `POST /v0/management/auth-files/refresh`, but management is
-disabled in the running probe and no management refresh was attempted. Neither a
-mocked refresh nor the completed login counts as refresh acceptance.
-
-Complete the curated harness integration, broker lifecycle/CLI configuration,
-network allocation integration, and explicit authenticated smoke commands. Both
-harnesses must demonstrate streaming, cancellation, tool calls, retained
-context, actual subscription refresh, and search with useful source links.
-Missing credentials or skipped checks are not acceptance. No model/effort
-default or transport has been validated, and no runtime pins were changed.
-
-The gateway implementation in `src/infrastructure/gateway/` now tests run-scoped
-authentication, fixed upstream/model selection, subscription-search citations,
-stream cancellation, revocation, and pinned HTTP/CONNECT destinations. The
-separate `pnpm test:docker network credentials` tests prove socket-only egress
-with a fake named service, blocked direct/private/host access, and working
-internal services. They also verify denied management/login routes, cross-run
-access, and redaction of upstream error bodies. They do not run subscription
-calls. No run command uses this gateway yet.
-
-There is still no `test:smoke` command or broker lifecycle/CLI integration.
-Context retention, harness cancellation, real refresh, real-credential lifecycle
-acceptance, and macOS acceptance remain unproven. No runtime pins, project model
-schema, execution defaults, or recovery contracts changed.
+See [runtime setup and acceptance](README.md) for commands, model overrides,
+local service grants, and credential-store lock recovery.

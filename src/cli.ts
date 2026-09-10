@@ -20,6 +20,7 @@ import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
 import { RunOperations } from "./core/run-operations.js";
 import type { Dispatcher } from "./core/dispatcher.js";
 import { PlanQueries } from "./core/plan-queries.js";
+import { CredentialBroker } from "./infrastructure/gateway/credential-broker.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
 import { createEnvironmentPreparer } from "./infrastructure/docker/environment-preparer.js";
 import { LocalExecutionEnvironment } from "./infrastructure/local-execution-environment.js";
@@ -122,7 +123,20 @@ async function openPlanQueries(source: string) {
   };
 }
 
+async function credentialBroker() {
+  const root = await git.resolveRoot(cwd);
+  return new CredentialBroker(
+    path.join(await git.resolvePrivatePath(root, "striker"), "broker"),
+  );
+}
+
 process.exitCode = await runCli(process.argv.slice(2), {
+  subscriptionAuthentication: {
+    prepare: async (binary, authDirectory) =>
+      (await credentialBroker()).prepare(binary, authDirectory),
+    login: async () => (await credentialBroker()).login(),
+    status: async () => (await credentialBroker()).status(),
+  },
   environmentPreparer: {
     prepare: async (approveImage) => {
       const root = await git.resolveRoot(cwd);

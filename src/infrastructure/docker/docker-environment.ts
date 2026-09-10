@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { lstat, realpath, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   FeatureEnvironmentAllocation,
@@ -34,6 +34,7 @@ export class DockerEnvironment implements FeatureEnvironmentProvisioner {
       [paths.state, "/state"],
       [paths.output, "/output"],
     ];
+    const gatewayMount = await gatewayOptions(request);
     const environmentId = await this.docker([
       "create",
       "--name",
@@ -45,6 +46,7 @@ export class DockerEnvironment implements FeatureEnvironmentProvisioner {
         "--mount",
         `type=bind,source=${source},target=${target}`,
       ]),
+      ...gatewayMount,
       "--workdir",
       "/workspace",
       "--env",
@@ -67,9 +69,26 @@ export class DockerEnvironment implements FeatureEnvironmentProvisioner {
     };
     await writeFile(
       path.join(paths.root, "environment.json"),
-      `${JSON.stringify({ ...result, runId: request.runId, baselineId: request.image.baselineId, resources }, null, 2)}\n`,
+      `${JSON.stringify({ ...result, runId: request.runId, baselineId: request.image.baselineId, resources, gateway: request.gateway && { socketPath: request.gateway.socketPath, selection: request.gateway.selection } }, null, 2)}\n`,
       { mode: 0o600, flag: "wx" },
     );
     return result;
   }
+}
+
+async function gatewayOptions(
+  request: FeatureEnvironmentAllocation,
+): Promise<string[]> {
+  if (!request.gateway) return [];
+  const socket = request.gateway.socketPath;
+  if (
+    !(await lstat(socket)).isSocket() ||
+    (await realpath(socket)) !== socket ||
+    socket.includes(",")
+  )
+    throw new Error("Gateway must be a real socket at a canonical path");
+  return [
+    "--mount",
+    `type=bind,source=${socket},target=/gateway.sock,readonly`,
+  ];
 }

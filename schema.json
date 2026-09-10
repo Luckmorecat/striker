@@ -12,6 +12,11 @@
       "minLength": 1,
       "pattern": "^[^-\\s][^\\s]*$"
     },
+    "model": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$" },
+    "reasoningEffort": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "xhigh"]
+    },
     "skills": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 }

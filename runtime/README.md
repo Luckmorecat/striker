@@ -52,3 +52,98 @@ Run `pnpm test:docker prepare` for real Docker acceptance. Missing Docker access
 is an error. Ordinary `pnpm check` requires neither Docker nor credentials.
 Harness/adapter pins in `baseline.json` are installation pins; authenticated
 model/search compatibility is a separate gate, not established by preparation.
+
+## Host subscription setup
+
+Install the pinned CLIProxyAPI release listed in
+[BROKER-COMPATIBILITY.md](BROKER-COMPATIBILITY.md), verify its published
+checksum, then run these commands from the Git project:
+
+```sh
+striker auth prepare --broker /absolute/path/to/cli-proxy-api
+striker auth login
+striker auth status
+```
+
+Preparation checks the version, copies the executable into private Git state,
+and records its digest. Login opens the broker's browser authorization flow;
+only the host broker stores access and refresh credentials. Status reports
+whether broker-owned login records are present, not whether a live model request
+will succeed. Native Codex auth files are not imported or shared. An existing
+**broker-owned** Codex auth directory can be selected explicitly with
+`auth prepare --broker <path> --auth-directory <directory>`; stop any other
+broker using it first. Striker serializes login/use of that directory. After a
+crash, its lock is retained: verify the old broker is stopped before removing
+`.striker-broker-lock` from that auth directory.
+
+The broker binds only loopback, uses separate random model and management keys,
+and disables request logs and the control panel. The container receives only a
+revocable run key through a selectively mounted socket. It cannot call broker
+management/login routes or choose another upstream or model. A live run can
+consume permitted subscription usage.
+
+## Isolated model and service settings
+
+The default isolated selection is `gpt-5.6-sol` with reasoning effort `low`.
+Project configuration may override it:
+
+```json
+{
+  "taskSource": "striker-plan",
+  "harness": "pi",
+  "model": "gpt-5.6-sol",
+  "reasoningEffort": "low"
+}
+```
+
+Supported effort values are `low`, `medium`, `high`, and `xhigh`. Preparation of
+run connectivity checks the broker's model catalog and records the selection; an
+unavailable model fails without fallback. These fields configure isolated
+connectivity; the existing local runner does not consume them. Broad Docker run
+composition follows in the next slice.
+
+Public HTTP/HTTPS uses authenticated HTTP proxy/CONNECT traffic over the socket.
+Direct networking stays disabled. Private, link-local, reserved, and host
+interface addresses are denied, including after DNS resolution or redirects.
+Services running inside the feature container remain reachable on loopback.
+Additional services require exact names, ports, and pinned IP addresses in the
+host-only `striker/execution.json`, never tracked project configuration:
+
+```json
+{
+  "approvedImages": [],
+  "resources": { "cpus": 4, "memoryMiB": 8192, "pids": 512 },
+  "services": [
+    { "name": "test-api.local", "port": 8080, "addresses": ["127.0.0.1"] }
+  ]
+}
+```
+
+The grant permits only that name/port. Do not grant host credential stores,
+Docker APIs, or broker management. Host gateway descriptors record the grants
+and selection outside the container's writable mounts.
+
+## Explicit acceptance
+
+Offline boundary tests use fake credentials and endpoints:
+
+```sh
+pnpm test:docker network credentials
+```
+
+Real subscription acceptance consumes subscription usage and refreshes the
+broker-owned login through its supported management API. Prepare/login first,
+stop other broker processes using that auth directory, then run:
+
+```sh
+export STRIKER_SMOKE_BROKER_ROOT="$(git rev-parse --path-format=absolute --git-path striker/broker)"
+pnpm test:smoke subscription --harness codex
+pnpm test:smoke subscription --harness pi
+```
+
+Each command requires Docker and real authentication and fails if either is
+missing. It verifies refresh persistence, terminal execution, streamed output,
+cited search, retained context after reconnecting, stream cancellation, and
+public HTTP/HTTPS from a restricted container. Ordinary `pnpm check` never runs
+these authenticated calls. Smoke timeouts bound acceptance only; they do not
+impose production task timeouts.

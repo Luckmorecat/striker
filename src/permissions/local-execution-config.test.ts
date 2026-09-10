@@ -25,3 +25,24 @@ it("keeps image approval and resource overrides in private local configuration",
   await writeFile(file, '{"resources":{"cpus":0}}');
   await expect(config.read()).rejects.toThrow();
 });
+
+it("persists only exact named service grants with explicit ports and IP addresses", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "striker-grants-"));
+  const file = path.join(root, "execution.json");
+  const config = new LocalExecutionConfig(file);
+  const defaults = await config.read();
+  const services = [
+    { name: "database.test", port: 5432, addresses: ["127.0.0.1", "::1"] },
+  ];
+  await config.write({ ...defaults, services });
+  expect((await config.read()).services).toEqual(services);
+  for (const grant of [
+    { ...services[0], name: "*.test" },
+    { ...services[0], name: "127.0.0.1" },
+    { ...services[0], port: 0 },
+    { ...services[0], addresses: ["database.test"] },
+  ]) {
+    await writeFile(file, JSON.stringify({ services: [grant] }));
+    await expect(config.read()).rejects.toThrow();
+  }
+});

@@ -3,3 +3,7 @@
 !baseline.json
 !install.mjs
 !probe.mjs
+!gateway-bridge.mjs
+!harness-config.mjs
+!pi-search.mjs
+!search-mcp.mjs
