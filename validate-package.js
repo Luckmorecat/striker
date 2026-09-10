@@ -13,6 +13,7 @@ const requiredFiles = [
   "README.md",
   "schema.json",
   "skills/striker/SKILL.md",
+  "skills/striker/CLI.md",
   "skills/striker/agents/openai.yaml",
   "skills/striker-shape/SKILL.md",
   "skills/striker-shape/agents/openai.yaml",

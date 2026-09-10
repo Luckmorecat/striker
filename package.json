@@ -1,7 +1,7 @@
 {
   "name": "@useless_mob/striker",
   "version": "0.1.0",
-  "description": "Project-local task dispatcher for agent implementation plans",
+  "description": "Task dispatcher for agent implementation plans",
   "type": "module",
   "types": "./dist/index.d.ts",
   "sideEffects": false,
@@ -57,6 +57,7 @@
     "prepack": "pnpm build && node validate-package.js",
     "pretest": "pnpm build",
     "test": "vitest run",
+    "test:global-install": "node test-global-install.js",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

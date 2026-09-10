@@ -1,33 +1,52 @@
 # Striker
 
-Striker is a project-local task dispatcher for implementation plans. It reads an
-ordered Striker plan, opens one fresh agent session per task, checks the
-resulting commit and worktree, runs the task's verification command, and records
+Striker is a task dispatcher for implementation plans. It reads an ordered
+Striker plan, opens one fresh agent session per task, checks the resulting
+commit and worktree, runs the task's verification command, and records
 completion before moving to the next task.
 
-The package requires Node.js 22.19 or newer and pnpm. It supports Codex, Claude
-Code, OpenCode, and Pi through `acpx@0.13.1`. Global installation and automatic
-harness switching are outside this package's scope.
+The package requires Node.js 22.19 or newer. Development uses pnpm. It supports
+Codex, Claude Code, OpenCode, and Pi through `acpx@0.13.1`. The harness is
+selected per repository; Striker stops if that harness is unavailable.
 
 ## Install
 
-Install `@useless_mob/striker` as a development dependency from npm:
+Install once to use Striker across repositories without adding a project
+dependency:
+
+```sh
+npm install --global @useless_mob/striker
+striker --help
+```
+
+Ensure your package manager's global executable directory is on PATH. Run
+Striker from the target Git repository. Configuration, permissions, and run
+state remain per repository; installing globally does not configure projects. A
+global upgrade changes the version used by all projects relying on PATH.
+
+For a project-pinned version, local installation remains supported:
 
 ```sh
 pnpm add --save-dev @useless_mob/striker
+pnpm exec striker --help
 ```
 
-For local package testing, build and pack this repository, then install the
-tarball in the consumer project:
+The examples below use `striker` for a global installation. With a local
+installation, use `pnpm exec striker` instead. Agent skills follow the shared
+[CLI selection procedure](skills/striker/CLI.md): they prefer the target
+repository's local executable, then fall back to PATH when it is absent.
+
+To test a checkout as an installed package without changing your global
+installation or a consumer project's dependencies:
 
 ```sh
-pnpm build
-pnpm pack --pack-destination /tmp
-pnpm add --save-dev /tmp/useless_mob-striker-0.1.0.tgz
+pnpm test:global-install
 ```
 
-Do not install Striker globally. The public skills and their agents must use the
-version in the target project's `node_modules/.bin` directory.
+This packs the checkout, installs it with runtime dependencies into a temporary
+global prefix, and checks executable selection, help, plan validation, and skill
+installation from a separate repository. It requires npm, Git, a POSIX shell,
+and registry access. It cleans up its temporary installation afterward.
 
 ## Install the public skills
 
@@ -38,13 +57,13 @@ Striker ships five public, explicit-only skills:
 - `$striker-shape` turns an open product decision into an approved brief.
 - `$striker-spec` turns shaped intent into an approved behavioral specification.
 - `$striker-plan` creates and validates a plan for an approved specification.
-- `$striker` operates the project-local CLI.
+- `$striker` operates the CLI.
 
 Preparation also contains the format references shared by Shape, Spec, and Plan.
 Install the complete set for the selected harness from the project root:
 
 ```sh
-pnpm exec striker skills install --harness codex
+striker skills install --harness codex
 ```
 
 The other accepted harness values are `claude`, `opencode`, and `pi`. Matching
@@ -64,7 +83,6 @@ Create `striker.config.json` at the Git root:
 
 ```json
 {
-  "$schema": "./node_modules/@useless_mob/striker/schema.json",
   "taskSource": "striker-plan",
   "harness": "codex",
   "skills": []
@@ -76,6 +94,11 @@ a list of additional agent skills that must already be installed. Before a run
 changes Git or creates recovery state, Striker checks the selected harness,
 authentication, and every configured skill in a disposable read-only session. It
 stops instead of selecting another harness when preflight fails.
+
+The optional `$schema` field is omitted so these examples work with either
+installation mode. Runtime validation still applies. For editor autocomplete
+with a local install, point `$schema` at the installed schema file relative to
+the JSON document.
 
 The configuration schema is packaged as `schema.json` and exported as
 `@useless_mob/striker/schema.json`.
@@ -142,7 +165,6 @@ local defaults, immutable Outcome Routes, and strict task order:
 
 ```json
 {
-  "$schema": "./node_modules/@useless_mob/striker/plan.schema.json",
   "version": 3,
   "taskSource": "striker-plan",
   "assumptions": {
@@ -184,7 +206,7 @@ the complete format.
 Validate a plan without running it:
 
 ```sh
-pnpm exec striker plan validate path/to/plan
+striker plan validate path/to/plan
 ```
 
 The external `$settle` and `$next-slice` workflows inspired Striker. They are
@@ -196,15 +218,15 @@ Striker plan.
 Set the checkout-local permission mode, then dispatch all remaining tasks:
 
 ```sh
-pnpm exec striker permissions attended
-pnpm exec striker run path/to/plan
+striker permissions attended
+striker run path/to/plan
 ```
 
 Striker refuses a dirty repository by default. `--allow-dirty` permits a run
 only when task changes preserve the initial patch and do not overlap its paths:
 
 ```sh
-pnpm exec striker run path/to/plan --allow-dirty
+striker run path/to/plan --allow-dirty
 ```
 
 After each task, Striker requires one strict implementation-result JSON object,
@@ -255,13 +277,13 @@ accepted.
 One nonterminal run may exist per checkout. Inspect or operate it with:
 
 ```sh
-pnpm exec striker status
-pnpm exec striker resume
-pnpm exec striker answer                  # interactive multiline answer
-pnpm exec striker answer < answer.txt
-pnpm exec striker answer --file answer.txt
-pnpm exec striker retry
-pnpm exec striker discard --force
+striker status
+striker resume
+striker answer                  # interactive multiline answer
+striker answer < answer.txt
+striker answer --file answer.txt
+striker retry
+striker discard --force
 ```
 
 When stdin and stderr are terminals, `run`, `resume`, `retry`, and `answer` stay
@@ -291,8 +313,8 @@ Node.js >=22.19.
 Inspect one plan's retained state and chronological completion log with:
 
 ```sh
-pnpm exec striker plan status path/to/plan
-pnpm exec striker plan log path/to/plan
+striker plan status path/to/plan
+striker plan log path/to/plan
 ```
 
 Both commands accept absolute paths or paths relative to the current directory.
@@ -331,9 +353,8 @@ configuration cannot grant unattended access.
 - `unattended` passes approve-all to `acpx`. Select it explicitly for the local
   checkout.
 
-Change modes with
-`pnpm exec striker permissions attended|auto-review|unattended`. The active mode
-is printed when a run starts.
+Change modes with `striker permissions attended|auto-review|unattended`. The
+active mode is printed when a run starts.
 
 ## Typed API
 
@@ -366,6 +387,6 @@ pnpm pack --dry-run
 Real-harness smoke testing is opt-in. Use a disposable, committed Git checkout,
 select its harness in `striker.config.json`, authenticate that harness, choose
 the `attended` permission mode, and run a small validated plan with
-`pnpm exec striker run <plan>`. A real smoke run opens agent sessions and may
-create a task commit, so do not point it at this repository or an unreviewed
-working tree.
+`striker run <plan>`. A real smoke run opens agent sessions and may create a
+task commit, so do not point it at this repository or an unreviewed working
+tree.

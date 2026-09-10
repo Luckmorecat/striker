@@ -122,14 +122,14 @@ requires. Do not create `log.md` or any other mutable plan-local state.
 If the target directory exists, show it and obtain approval before replacing any
 file.
 
-Validate the plan with:
+Before validation, read [the CLI selection procedure](../striker/CLI.md) and
+define `run_striker` in the shell used for validation. Validate the plan with:
 
 ```sh
-node_modules/.bin/striker plan validate <plan-directory>
+run_striker plan validate <plan-directory>
 ```
 
-Stop if the project-local binary is absent. Correct every failure and rerun
-validation until it passes.
+Correct every failure and rerun validation until it passes.
 
 Print:
 

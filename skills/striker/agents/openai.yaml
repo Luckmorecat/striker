@@ -1,6 +1,6 @@
 interface:
   display_name: "Striker"
-  short_description: "Run the project-local Striker CLI"
-  default_prompt: "Use $striker to operate the project-local Striker CLI."
+  short_description: "Run the Striker CLI"
+  default_prompt: "Use $striker to operate the Striker CLI."
 policy:
   allow_implicit_invocation: false

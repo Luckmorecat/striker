@@ -4,7 +4,7 @@ This file is for maintainers. It must not appear in the npm package.
 
 ## Before publishing
 
-Publish from a clean checkout with Node.js 22.13 or newer and pnpm 11. Sign in
+Publish from a clean checkout with Node.js 22.19 or newer and pnpm 11. Sign in
 to npm as the owner of the `@useless_mob` scope, with two-factor authentication
 enabled. Never store an npm token or one-time password in this repository.
 
@@ -29,6 +29,7 @@ exact package contents:
 ```sh
 pnpm install --frozen-lockfile
 pnpm check
+pnpm test:global-install
 pnpm pack --dry-run
 ```
 
@@ -46,14 +47,14 @@ npm view "@useless_mob/striker@$release_version" version dist-tags.latest
 ```
 
 The registry response must report the selected version and the `latest` tag.
-Test the installed CLI in a disposable directory:
+Test the published CLI in a disposable global prefix (POSIX shell):
 
 ```sh
 release_test_dir="$(mktemp -d)"
-cd "$release_test_dir"
-pnpm init
-pnpm add --save-dev "@useless_mob/striker@$release_version"
-pnpm exec striker --help
+npm install --global --prefix "$release_test_dir/global" "@useless_mob/striker@$release_version"
+mkdir "$release_test_dir/consumer"
+(cd "$release_test_dir/consumer" && "$release_test_dir/global/bin/striker" --help)
+rm -rf "$release_test_dir"
 ```
 
 After the registry and install checks pass, tag the release commit:
