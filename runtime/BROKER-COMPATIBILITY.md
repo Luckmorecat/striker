@@ -1,8 +1,9 @@
 # Subscription compatibility gate
 
 Status: pending as of 2026-09-11. Docker execution must not be activated on the
-strength of this investigation. Neither harness has passed authenticated
-subscription, refresh, or search acceptance through a Striker gateway.
+strength of this investigation. Both harnesses produced terminal and
+subscription-search outputs through a Striker gateway. Codex completed its
+prompt; Pi did not. Neither passed the complete refresh/context/cancel gate.
 
 ## Inspected candidate
 
@@ -47,19 +48,57 @@ and
 
 ## Resume requirements
 
-Complete a broker-owned subscription login using private host-only auth storage.
-Keep its listener on loopback, management and request logging disabled, and its
-API key outside execution mounts. No authenticated calls were made during this
-investigation. Existing personal credentials were not read or copied.
+A broker-owned subscription login was completed. The host broker returned a
+completed `web_search_call` and cited source URLs over SSE using `gpt-5.6-sol`
+and effort `low`. This selection is a tested probe candidate, not a validated
+release default.
 
-Then implement and prove the narrow run gateway, curated harness integration,
-network enforcement, and explicit authenticated smoke commands. Both harnesses
-must demonstrate streaming, cancellation, tool calls, retained context, actual
-subscription refresh, and search with useful source links. Missing credentials
-or skipped checks are not acceptance. No model/effort default or transport has
-been validated, and no runtime pins were changed.
+Both pinned adapters then ran inside the cached image with `--network none`,
+read-only root, dropped capabilities, and a selectively mounted gateway socket.
+They executed `printf STRIKER_TOOL_OK` and produced cited subscription-search
+outputs. Codex completed its prompt; Pi probes timed out after both 90 and 240
+seconds (container exit 3). The container received a revocable run key, never
+real OAuth tokens. Pi used its supported `openai-responses` custom provider plus
+a curated search extension; the newer official Pi provider was not installed.
+Codex used a curated search MCP tool because its custom-provider session exposed
+no native search.
 
-The repository currently has no `test:smoke` command, credential broker, run
-gateway, or Docker egress enforcement. Those remain pending gate work. A broker
-binary starting successfully and passing ordinary `pnpm check` do not establish
-subscription compatibility or isolation.
+Pi `0.73.1` contains no `agent_settled` event, while `pi-acp 0.0.33` resolves
+pending prompts only on that event (`dist/index.js:1208–1231` in the installed
+adapter). Successful streamed output therefore does not establish prompt
+completion. The runtime/adapter pins need compatibility testing as a pair before
+this gate can pass; no pin was changed during this attempt.
+
+Codex/acpx overrides the config's sandbox mode with its initial agent mode. The
+successful isolated probe selected `INITIAL_AGENT_MODE=agent-full-access`;
+Docker remained the enforcement boundary. The default mode instead failed nested
+sandbox creation and returned exit zero despite failed tools. Future acceptance
+must inspect completed tool outputs and search citations, not just process exit.
+
+Real refresh remains unproven. Automatic approval review rejected a proposed
+forced-expiry edit to the sole broker auth record because it could invalidate
+the login. That edit was not executed; user approval is pending. The inspected
+broker also provides `POST /v0/management/auth-files/refresh`, but management is
+disabled in the running probe and no management refresh was attempted. Neither a
+mocked refresh nor the completed login counts as refresh acceptance.
+
+Complete the curated harness integration, broker lifecycle/CLI configuration,
+network allocation integration, and explicit authenticated smoke commands. Both
+harnesses must demonstrate streaming, cancellation, tool calls, retained
+context, actual subscription refresh, and search with useful source links.
+Missing credentials or skipped checks are not acceptance. No model/effort
+default or transport has been validated, and no runtime pins were changed.
+
+The gateway implementation in `src/infrastructure/gateway/` now tests run-scoped
+authentication, fixed upstream/model selection, subscription-search citations,
+stream cancellation, revocation, and pinned HTTP/CONNECT destinations. The
+separate `pnpm test:docker network credentials` tests prove socket-only egress
+with a fake named service, blocked direct/private/host access, and working
+internal services. They also verify denied management/login routes, cross-run
+access, and redaction of upstream error bodies. They do not run subscription
+calls. No run command uses this gateway yet.
+
+There is still no `test:smoke` command or broker lifecycle/CLI integration.
+Context retention, harness cancellation, real refresh, real-credential lifecycle
+acceptance, and macOS acceptance remain unproven. No runtime pins, project model
+schema, execution defaults, or recovery contracts changed.

@@ -52,7 +52,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ["*.js", "*.mjs", "runtime/*.mjs", "vitest*.config.ts"],
+    files: [
+      "*.js",
+      "*.mjs",
+      "runtime/*.mjs",
+      "tests/**/*.mjs",
+      "vitest*.config.ts",
+    ],
     ...tseslint.configs.disableTypeChecked,
   },
 );
