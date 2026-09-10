@@ -14,33 +14,14 @@ export function commandResult(result: DispatchResult): RunCommandResult {
     };
   }
   if (result.status === "needs_attention") {
-    if (result.reason === "task_outcome_limit_exceeded") {
-      return {
-        message:
-          "Run needs attention: task_outcome_limit_exceeded. Run `striker discard --force`, revise the plan routes or fact relevance, and start a new run.",
-        status: "needs_attention",
-      };
-    }
-    if (result.reason === "task_outcome_conflict") {
-      return {
-        message:
-          "Run needs attention: task_outcome_conflict. Restore compatible Git and plan state, then run `striker retry`; otherwise discard the run and start a revised plan.",
-        status: "needs_attention",
-      };
-    }
-    const retryOnly =
-      result.reason === "run_initialization_interrupted" ||
-      result.reason === "session_resume_failed";
-    const commands = retryOnly
-      ? "Run `striker retry` to start a fresh attempt."
-      : "Run `striker answer`, `striker resume`, or `striker retry`.";
     return {
-      message: `Run needs attention: ${result.reason}. ${commands}`,
+      message: `Run needs attention: ${result.reason}.`,
+      reason: result.reason,
       status: "needs_attention",
     };
   }
   return {
-    message: `Run failed: ${result.error}. Run \`striker retry\` or \`striker discard --force\`.`,
+    message: `Run failed: ${result.error}.`,
     status: "failed",
   };
 }

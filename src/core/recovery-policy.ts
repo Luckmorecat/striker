@@ -69,3 +69,26 @@ function validateRetry(recovery: RunRecoveryState): void {
     throw new Error("Cannot retry a completed Striker task");
   }
 }
+
+/** Inspection omits accepted operations that cannot advance the current pause. */
+export function continuationBlocker(
+  recovery: RunRecoveryState,
+  action: RecoveryAction,
+): string | null {
+  const blocker = recoveryBlocker(recovery, action);
+  if (blocker !== null) return blocker;
+  const snapshot = recovery.snapshot;
+  if (
+    action !== "answer" &&
+    snapshot?.attention?.reason === "task_outcome_limit_exceeded"
+  )
+    return "Outcome delivery exceeds the limit; revise the plan routes or fact relevance and start a new run";
+  if (
+    action === "resume" &&
+    snapshot?.status === "needs_attention" &&
+    snapshot.session === null &&
+    !reviewOwnsRecovery(snapshot)
+  )
+    return "Paused Striker run has no session to resume; retry a fresh attempt";
+  return null;
+}

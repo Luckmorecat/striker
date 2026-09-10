@@ -252,6 +252,7 @@ export interface RunCommandRequest {
 }
 
 export interface RunCommandResult {
+  readonly reason?: AttentionReason | "completed_task_changed";
   readonly message: string;
   readonly status: "completed" | "needs_attention" | "failed";
 }

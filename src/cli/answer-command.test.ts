@@ -158,7 +158,7 @@ it("inspects before reading and submits exact content once", async () => {
       },
     }),
   ).toBe(1);
-  expect(order).toEqual(["inspect", "read", answer]);
+  expect(order).toEqual(["inspect", "read", answer, "inspect"]);
   expect(fixture.output().stderr).toContain("Still paused");
 });
 

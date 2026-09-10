@@ -31,9 +31,10 @@ export interface RecoveryInspection {
     readonly title: string;
   } | null;
   readonly attention: {
-    readonly reason: string;
+    readonly reason: AttentionReason | "completed_task_changed" | "failed";
     readonly detail: string;
   } | null;
+  /** Null means a useful continuation; strings explain omitted operations. */
   readonly availability: Readonly<
     Record<import("./recovery-policy.js").RecoveryAction, string | null>
   >;

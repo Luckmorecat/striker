@@ -1,3 +1,7 @@
+import {
+  InteractiveController,
+  type RecoveryInteraction,
+} from "./interactive-controller.js";
 import { Command, CommanderError } from "commander";
 
 import type {
@@ -31,6 +35,7 @@ export interface CliWriter {
 }
 
 export interface CliDependencies {
+  readonly interaction?: RecoveryInteraction;
   readonly answerReader?: AnswerReader;
   readonly recoveryInspector?: RecoveryInspector;
   readonly cwd: string;
@@ -46,6 +51,7 @@ export interface CliDependencies {
 }
 
 export function createProgram(dependencies: CliDependencies): Command {
+  const controller = new InteractiveController(dependencies);
   const program = new Command()
     .name("striker")
     .description("Dispatch implementation tasks from a Striker plan")
@@ -73,6 +79,7 @@ export function createProgram(dependencies: CliDependencies): Command {
   });
   if (dependencies.runHandler !== undefined) {
     addRunCommand(program, {
+      controller,
       handler: dependencies.runHandler,
       permissionConfig: dependencies.permissionConfig,
       writeOut: (text) => dependencies.stdout.write(text),
@@ -83,6 +90,7 @@ export function createProgram(dependencies: CliDependencies): Command {
     dependencies.answerReader !== undefined
   ) {
     addAnswerCommand(program, {
+      controller,
       ...(dependencies.recoveryInspector === undefined
         ? {}
         : { inspector: dependencies.recoveryInspector }),
@@ -93,12 +101,14 @@ export function createProgram(dependencies: CliDependencies): Command {
   }
   if (dependencies.recoveryHandler !== undefined) {
     addResumeCommand(program, {
+      controller,
       handler: dependencies.recoveryHandler,
       writeOut: (text) => dependencies.stdout.write(text),
     });
   }
   if (dependencies.operationHandler !== undefined) {
     addRetryCommand(program, {
+      controller,
       handler: dependencies.operationHandler,
       writeOut: (text) => dependencies.stdout.write(text),
     });

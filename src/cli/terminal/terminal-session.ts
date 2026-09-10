@@ -15,17 +15,29 @@ export interface TerminalOutput extends Writable {
 /** One owner per terminal, shared by answer and permission prompts. */
 export class TerminalSession {
   private owned = false;
+  private enabled = true;
+
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+  }
   constructor(
     readonly input: TerminalInput,
     readonly output: TerminalOutput,
   ) {}
 
   get interactive(): boolean {
-    return this.input.isTTY === true && this.output.isTTY === true;
+    return (
+      this.enabled && this.input.isTTY === true && this.output.isTTY === true
+    );
   }
 
   acquire(): () => void {
     if (this.owned) throw new Error("Terminal input is already in use");
+    if (this.interactive) {
+      while (this.input.read() !== null) {
+        // Keys buffered before this prompt belong to its previous owner.
+      }
+    }
     this.owned = true;
     return () => {
       this.owned = false;
@@ -36,6 +48,7 @@ export class TerminalSession {
     raw: unknown,
   ): Promise<{ outcome: "allow_once" | "reject_once" }> {
     if (!this.interactive) return { outcome: "reject_once" };
+    const wasFlowing = this.input.readableFlowing === true;
     const release = this.acquire();
     const prompt = createInterface({
       input: this.input,
@@ -52,6 +65,7 @@ export class TerminalSession {
       };
     } finally {
       prompt.close();
+      if (!wasFlowing) this.input.pause();
       release();
     }
   }

@@ -32,7 +32,10 @@ const context = {
   runId: "run",
   status: "needs_attention" as const,
   task: { identity: { id: "01", revision: "r1" }, title: "Task title" },
-  attention: { reason: "verification_failed", detail: "Persisted detail" },
+  attention: {
+    reason: "verification_failed" as const,
+    detail: "Persisted detail",
+  },
   availability: { answer: null, resume: null, retry: null },
 };
 

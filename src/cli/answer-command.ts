@@ -1,3 +1,7 @@
+import type {
+  CommandInteraction,
+  InteractionOptions,
+} from "./interactive-controller.js";
 import type { Command } from "commander";
 
 import type { RecoveryCommandHandler } from "../core/contracts.js";
@@ -8,12 +12,8 @@ import type {
 } from "../core/recovery-operations.js";
 import type { AnswerInput } from "./terminal/answer-composer.js";
 
-export class AnswerCancelled extends Error {
-  constructor(readonly exitCode: 0 | 130) {
-    super("Run left paused.");
-  }
-}
-
+import { AnswerCancelled } from "./input-cancelled.js";
+export { AnswerCancelled } from "./input-cancelled.js";
 export interface AnswerReader {
   read(
     file: string | undefined,
@@ -23,6 +23,7 @@ export interface AnswerReader {
 
 interface AnswerCommandDependencies {
   readonly inspector?: RecoveryInspector;
+  readonly controller: CommandInteraction;
   readonly handler: RecoveryCommandHandler;
   readonly reader: AnswerReader;
   readonly writeOut: (text: string) => unknown;
@@ -36,7 +37,9 @@ export function addAnswerCommand(
     .command("answer")
     .description("Answer the agent in the active paused run")
     .option("--file <path>", "read the answer from a file instead of stdin")
-    .action(async (options: { file?: string }) => {
+    .option("--no-interactive", "disable attention and permission prompts")
+    .action(async (options: InteractionOptions) => {
+      dependencies.controller.prepare(options);
       const context = await dependencies.inspector?.inspectRecovery();
       if (context === null) throw new Error("No Striker run is active");
       if (context !== undefined && context.availability.answer !== null) {
@@ -49,7 +52,6 @@ export function addAnswerCommand(
         throw new AnswerCancelled(input.exitCode);
       const answer = typeof input === "string" ? input : input.text;
       const result = await dependencies.handler.answer(answer);
-      if (result.status !== "completed") throw new Error(result.message);
-      dependencies.writeOut(`${result.message}\n`);
+      await dependencies.controller.finish(result, typeof input !== "string");
     });
 }

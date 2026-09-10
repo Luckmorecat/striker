@@ -10,6 +10,7 @@ import { StrikerPlanAdapter } from "./adapters/striker-plan/striker-plan-adapter
 import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
 import { commandResult } from "./cli/command-result.js";
 import { createAnswerReader } from "./cli/terminal/answer-reader.js";
+import { chooseRecoveryAction } from "./cli/terminal/recovery-actions.js";
 import { TerminalSession } from "./cli/terminal/terminal-session.js";
 import { runCli } from "./cli/program.js";
 import { loadProjectConfig } from "./config/project-config.js";
@@ -123,6 +124,15 @@ async function openPlanQueries(source: string) {
 
 process.exitCode = await runCli(process.argv.slice(2), {
   answerReader: createAnswerReader(cwd, terminal),
+  interaction: {
+    get interactive() {
+      return terminal.interactive;
+    },
+    setEnabled: (enabled) => {
+      terminal.setEnabled(enabled);
+    },
+    choose: (context) => chooseRecoveryAction(terminal, context),
+  },
   recoveryInspector: {
     inspectRecovery: async () => {
       const root = await git.resolveRoot(cwd);

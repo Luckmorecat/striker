@@ -264,16 +264,29 @@ pnpm exec striker retry
 pnpm exec striker discard --force
 ```
 
-When stdin and stderr are terminals, `answer` shows the task and complete
-persisted attention detail, then opens a Pi multiline composer on stderr in
-normal scrollback. Enter submits; Shift+Enter inserts a newline, with Alt+Enter
-as a fallback. Multiline paste stays in the editor. Blank interactive answers
-reprompt; nonblank content retains its surrounding whitespace. Ctrl-C exits 130
-and Ctrl-D/EOF exits 0, submitting nothing and printing `Run left paused.`
+When stdin and stderr are terminals, `run`, `resume`, `retry`, and `answer` stay
+attached across repeated pauses. Each pause shows the task and complete
+persisted attention detail on stderr in normal scrollback. Assumption decisions
+open a Pi multiline composer directly. Operational pauses offer the available
+Answer, Resume repair, and Retry actions plus Leave paused; use arrow keys and
+Enter to select. Unavailable or ineffective continuations are omitted. Enter
+submits; Shift+Enter inserts a newline, with Alt+Enter as a fallback. Multiline
+paste stays in the editor. Blank interactive answers reprompt; nonblank content
+retains its surrounding whitespace. Ctrl-C exits 130 and Ctrl-D/EOF exits 0,
+submitting nothing and printing `Run left paused.`
 
 Answer eligibility is checked before reading input and rechecked on submission.
 Files and piped stdin retain their complete UTF-8 content and submit once. This
-standalone command returns after that continuation, even if it pauses again.
+automation path returns after that continuation, even if it pauses again.
+
+All four commands accept `--no-interactive` to disable attention and permission
+prompts. This does not change the configured permission mode or grant
+permission: a request needing terminal approval is rejected. With the composer
+disabled, `answer` without `--file` reads stdin until EOF. Redirecting either
+stdin or stderr also disables terminal prompts. Noninteractive attention and
+failures exit 1 with recovery guidance; completion exits 0. Ctrl-C/EOF behavior
+above applies while waiting for input, not while agents execute. Requires
+Node.js >=22.19.
 
 Inspect one plan's retained state and chronological completion log with:
 

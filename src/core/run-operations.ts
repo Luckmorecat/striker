@@ -1,5 +1,5 @@
 import type { RunJournal } from "./contracts.js";
-import { recoveryBlocker } from "./recovery-policy.js";
+import { continuationBlocker } from "./recovery-policy.js";
 import type {
   RecoveryInspection,
   ActiveRunStatus,
@@ -33,9 +33,9 @@ export class RunOperations {
           : { identity: snapshot.task.identity, title: snapshot.task.title },
       attention,
       availability: {
-        answer: recoveryBlocker(recovery, "answer"),
-        resume: recoveryBlocker(recovery, "resume"),
-        retry: recoveryBlocker(recovery, "retry"),
+        answer: continuationBlocker(recovery, "answer"),
+        resume: continuationBlocker(recovery, "resume"),
+        retry: continuationBlocker(recovery, "retry"),
       },
     };
   }

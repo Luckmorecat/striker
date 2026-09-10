@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RunRecoveryState, RunSnapshot } from "./contracts.js";
-import { recoveryBlocker, validateRecovery } from "./recovery-policy.js";
+import {
+  continuationBlocker,
+  recoveryBlocker,
+  validateRecovery,
+} from "./recovery-policy.js";
 
 const task = {
   identity: { id: "01", revision: "one" },
@@ -88,4 +92,24 @@ describe("recovery availability", () => {
       ),
     ).toBeNull();
   });
+});
+
+it("omits a sessionless paused resume without changing accepted recovery", () => {
+  const state = recovery({ session: null });
+  expect(recoveryBlocker(state, "resume")).toBeNull();
+  expect(continuationBlocker(state, "resume")).toContain("no session");
+  expect(continuationBlocker(state, "retry")).toBeNull();
+});
+
+it("omits retries that repeat immutable outcome limits", () => {
+  const state = recovery({
+    session: null,
+    attention: {
+      reason: "task_outcome_limit_exceeded",
+      detail: "Evidence too large",
+    },
+  });
+  expect(recoveryBlocker(state, "retry")).toBeNull();
+  expect(continuationBlocker(state, "retry")).toContain("revise the plan");
+  expect(continuationBlocker(state, "answer")).toContain("no session");
 });
