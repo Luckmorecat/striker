@@ -9,6 +9,7 @@ import path from "node:path";
 import { StrikerPlanAdapter } from "./adapters/striker-plan/striker-plan-adapter.js";
 import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
 import { commandResult } from "./cli/command-result.js";
+import { createExecutionDispatcher } from "./cli/execution-composition.js";
 import { createAnswerReader } from "./cli/terminal/answer-reader.js";
 import { chooseRecoveryAction } from "./cli/terminal/recovery-actions.js";
 import { TerminalSession } from "./cli/terminal/terminal-session.js";
@@ -17,21 +18,21 @@ import { loadProjectConfig } from "./config/project-config.js";
 import { AdapterRegistry } from "./core/adapter-registry.js";
 import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
 import { RunOperations } from "./core/run-operations.js";
-import { Dispatcher } from "./core/dispatcher.js";
+import type { Dispatcher } from "./core/dispatcher.js";
 import { PlanQueries } from "./core/plan-queries.js";
 import { FileRunJournal } from "./infrastructure/file-run-journal.js";
-import { GitCliRepository } from "./infrastructure/git-cli.js";
+import { LocalExecutionEnvironment } from "./infrastructure/local-execution-environment.js";
 import { FilePlanLogReader } from "./infrastructure/plan-projections.js";
-import { ShellVerifier } from "./infrastructure/shell-verifier.js";
 import { LocalPermissionConfig } from "./permissions/local-permission-config.js";
-import { createAcpxAgentRunner } from "./runner/acpx-runner.js";
 import { createPublicSkillInstaller } from "./skills/public-skill-installer.js";
 
 const cwd = process.cwd();
 const skillsRoot = fileURLToPath(new URL("../skills", import.meta.url));
-const git = new GitCliRepository();
-
 const terminal = new TerminalSession(process.stdin, process.stderr);
+const environment = new LocalExecutionEnvironment((request) =>
+  terminal.permission(request.raw),
+);
+const git = environment.hostGit;
 
 async function permissionFilePath(): Promise<string> {
   const root = await git.resolveRoot(cwd);
@@ -60,18 +61,16 @@ async function createDispatcher(
       workflowRoot: path.join(skillsRoot, "striker-implementor"),
     }),
   );
-  return new Dispatcher({
+  return createExecutionDispatcher({
     adapters: registry,
-    git,
+    environment,
     journal: new FileRunJournal(stateRoot),
-    runner: createAcpxAgentRunner({
+    request: {
       approvalMode,
-      cwd: root,
       harness: config.harness,
-      permissionRelay: (request) => terminal.permission(request.raw),
-      stateDir: path.join(stateRoot, "acpx"),
-    }),
-    verifier: new ShellVerifier(),
+      projectRoot: root,
+      stateRoot,
+    },
   });
 }
 

@@ -94,6 +94,11 @@ export type {
 export type { ProjectConfig } from "./config/project-config.js";
 export type { DispatcherDependencies } from "./core/dispatcher.js";
 export type {
+  ExecutionEnvironment,
+  ExecutionEnvironmentRequest,
+  ExecutionServices,
+} from "./core/execution-environment.js";
+export type {
   ActiveRunStatus,
   RecoveryOperationHandler,
   RecoveryInspection,
