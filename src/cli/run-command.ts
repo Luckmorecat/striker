@@ -31,7 +31,10 @@ export function addRunCommand(
       "--allow-dirty",
       "local only: preserve non-overlapping existing changes",
     )
-    .option("--no-interactive", "disable attention and permission prompts")
+    .option(
+      "--no-interactive",
+      "disable the dashboard, attention and permission prompts",
+    )
     .action(
       async (
         source: string,

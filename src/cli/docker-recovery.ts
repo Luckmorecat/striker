@@ -9,12 +9,14 @@ import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapte
 import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { reopenDockerExecution } from "../infrastructure/docker/reopen-execution.js";
 import { acquireProjectOperation } from "../infrastructure/project-operation-lease.js";
+import { openWithProgress, type RunProgress } from "./ui/run-progress.js";
 
 export async function recoverDockerRun(options: {
   readonly projectRoot: string;
   readonly stateRoot: string;
   readonly action: "resume" | "retry" | "answer";
   readonly answer?: string;
+  readonly progress?: RunProgress;
 }) {
   const release = await acquireProjectOperation(options.stateRoot);
   try {
@@ -25,12 +27,16 @@ export async function recoverDockerRun(options: {
     if (!recovery || !snapshot || !descriptor)
       throw new Error("No Docker run is active");
     validateRecovery(recovery, options.action);
-    const execution = await reopenOrRecordAttention(journal, snapshot, {
-      ...options,
-      runId: snapshot.runId,
-      descriptor,
-      retry: options.action === "retry",
-    });
+    const progress = options.progress;
+    progress?.preparing("Reopening the isolated execution environment.");
+    const execution = await openWithProgress(progress, () =>
+      reopenOrRecordAttention(journal, snapshot, {
+        ...options,
+        runId: snapshot.runId,
+        descriptor,
+        retry: options.action === "retry",
+      }),
+    );
     try {
       const adapters = new AdapterRegistry();
       adapters.register(
@@ -46,8 +52,10 @@ export async function recoverDockerRun(options: {
       );
       const dispatcher = new Dispatcher({
         adapters,
-        journal,
-        ...execution.services,
+        journal: progress ? progress.journal(journal) : journal,
+        ...(progress
+          ? progress.services(execution.services)
+          : execution.services),
       });
       const result =
         options.action === "answer"

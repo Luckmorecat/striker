@@ -10,11 +10,13 @@ import { FileRunJournal } from "../infrastructure/file-run-journal.js";
 import { openDockerExecution } from "../infrastructure/docker/open-execution.js";
 import { StrikerPlanAdapter } from "../adapters/striker-plan/striker-plan-adapter.js";
 import { parseStrikerPlan } from "../adapters/striker-plan/plan-parser.js";
+import { openWithProgress, type RunProgress } from "./ui/run-progress.js";
 
 async function dispatchOwnedRun(
   options: Omit<Parameters<typeof openDockerExecution>[0], "runId" | "plan"> & {
     readonly source: string;
     readonly allowDirty: boolean;
+    readonly progress?: RunProgress;
     readonly writeOut?: (text: string) => unknown;
   },
 ) {
@@ -29,11 +31,13 @@ async function dispatchOwnedRun(
     identity: plan.identity,
     manifest: JSON.stringify(plan.manifest),
   };
-  const execution = await openDockerExecution({
-    ...options,
-    runId,
-    plan: binding,
-  });
+  const progress = options.progress;
+  // The caller owns the display lifetime; only the parsed plan is added here.
+  progress?.plan(plan.tasks);
+  progress?.preparing("Opening the isolated execution environment.");
+  const execution = await openWithProgress(progress, () =>
+    openDockerExecution({ ...options, runId, plan: binding }),
+  );
   try {
     printEnvironment(options, runId, execution.environment);
     const adapters = new AdapterRegistry();
@@ -47,8 +51,10 @@ async function dispatchOwnedRun(
     );
     const result = await new Dispatcher({
       adapters,
-      journal,
-      ...execution.services,
+      journal: progress ? progress.journal(journal) : journal,
+      ...(progress
+        ? progress.services(execution.services)
+        : execution.services),
     }).dispatch({
       runId,
       planId: plan.identity,

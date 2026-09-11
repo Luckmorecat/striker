@@ -294,9 +294,28 @@ striker retry
 striker discard --force
 ```
 
-When stdin and stderr are terminals, `run`, `resume`, `retry`, and `answer` stay
-attached across repeated pauses. Each pause shows the task and complete
-persisted attention detail on stderr in normal scrollback. Assumption decisions
+When stdin and stderr are terminals, `run`, `resume`, `retry`, and `answer`
+display a run dashboard on stderr: the plan with its certified, active and
+pending tasks, the task pipeline (preparing, implementing, verifying, standards
+review, plan review, completed), the session and execution context, elapsed
+time, and the live activity lines. Blocking review findings stay red while
+automatic repair runs, previous checks are marked recheck required at repair
+start, and findings resolve only on a passing review of the repaired candidate.
+Each new repair opens the next implementation round; resuming the same
+interrupted repair keeps its round. A restarted `answer`, `resume` or `retry`
+restores rounds and review history from the existing journal.
+
+Press `m` to toggle motion and `d` to toggle the detail line; with details
+expanded, the arrow keys move the plan window up or down from the active task
+and scroll a finding list larger than the terminal. The active task stays
+visible automatically, and the live activity lines stay on screen however long
+the plan is. `q` does not cancel an executing run; interruption behavior is
+unchanged. Below 76 visible columns the dashboard shows the pipeline alone. On
+completion Striker restores the terminal and prints the result summary without
+waiting for acknowledgment.
+
+Each pause keeps the dashboard on screen and opens the prompt directly below it,
+showing the task and complete persisted attention detail. Assumption decisions
 open a Pi multiline composer directly. Operational pauses offer the available
 Answer, Resume repair, and Retry actions plus Leave paused; use arrow keys and
 Enter to select. Unavailable or ineffective continuations are omitted. Enter
@@ -309,14 +328,14 @@ Answer eligibility is checked before reading input and rechecked on submission.
 Files and piped stdin retain their complete UTF-8 content and submit once. This
 automation path returns after that continuation, even if it pauses again.
 
-All four commands accept `--no-interactive` to disable attention and permission
-prompts. This does not change the configured permission mode or grant
-permission: a request needing terminal approval is rejected. With the composer
-disabled, `answer` without `--file` reads stdin until EOF. Redirecting either
-stdin or stderr also disables terminal prompts. Noninteractive attention and
-failures exit 1 with recovery guidance; completion exits 0. Ctrl-C/EOF behavior
-above applies while waiting for input, not while agents execute. Requires
-Node.js >=22.19.
+All four commands accept `--no-interactive` to disable the dashboard along with
+attention and permission prompts, leaving plain stage lines. This does not
+change the configured permission mode or grant permission: a request needing
+terminal approval is rejected. With the composer disabled, `answer` without
+`--file` reads stdin until EOF. Redirecting either stdin or stderr also disables
+terminal prompts. Noninteractive attention and failures exit 1 with recovery
+guidance; completion exits 0. Ctrl-C/EOF behavior above applies while waiting
+for input, not while agents execute. Requires Node.js >=22.19.
 
 Inspect one plan's retained state and chronological completion log with:
 

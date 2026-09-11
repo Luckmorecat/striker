@@ -19,7 +19,10 @@ export function addResumeCommand(
   program
     .command("resume")
     .description("Resume an interrupted run or repair a paused run")
-    .option("--no-interactive", "disable attention and permission prompts")
+    .option(
+      "--no-interactive",
+      "disable the dashboard, attention and permission prompts",
+    )
     .action(async (options: InteractionOptions) => {
       dependencies.controller.prepare(options);
       const result = await dependencies.handler.resume();

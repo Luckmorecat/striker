@@ -37,7 +37,10 @@ export function addAnswerCommand(
     .command("answer")
     .description("Answer the agent in the active paused run")
     .option("--file <path>", "read the answer from a file instead of stdin")
-    .option("--no-interactive", "disable attention and permission prompts")
+    .option(
+      "--no-interactive",
+      "disable the dashboard, attention and permission prompts",
+    )
     .action(async (options: InteractionOptions) => {
       dependencies.controller.prepare(options);
       const context = await dependencies.inspector?.inspectRecovery();

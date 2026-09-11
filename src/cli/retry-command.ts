@@ -19,7 +19,10 @@ export function addRetryCommand(
   program
     .command("retry")
     .description("Retry the active task in a fresh agent session")
-    .option("--no-interactive", "disable attention and permission prompts")
+    .option(
+      "--no-interactive",
+      "disable the dashboard, attention and permission prompts",
+    )
     .action(async (options: InteractionOptions) => {
       dependencies.controller.prepare(options);
       const result = await dependencies.handler.retry();

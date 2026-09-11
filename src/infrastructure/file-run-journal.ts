@@ -178,6 +178,15 @@ export class FileRunJournal implements RunJournal {
     return recovery;
   }
 
+  /** Read-only history seam: the same parsed, replay-validated event list. */
+  async readHistory(
+    planId: string,
+  ): Promise<readonly RunJournalEvent[] | null> {
+    const events = await this.readEvents(planId, true);
+    if (events !== null) replayPlanJournal(events, planId);
+    return events;
+  }
+
   async loadRun(runId: string): Promise<RunSnapshot | null> {
     validateId(runId, "run identity");
     const plans = await readdir(this.#plansRoot, { withFileTypes: true }).catch(
