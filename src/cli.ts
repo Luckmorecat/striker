@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 /// <reference types="node" />
+import { readExecutionStatus } from "./cli/execution-status.js";
+import { LocalExecutionConfig } from "./permissions/local-execution-config.js";
+import { warnLocalExecution } from "./cli/execution-warning.js";
 import { CleanupFeature } from "./core/cleanup-feature.js";
 import { DockerFeatureResources } from "./infrastructure/docker/feature-resources.js";
 
@@ -96,15 +99,21 @@ async function dispatchRun(
 ) {
   const root = await git.resolveRoot(cwd);
   const config = await loadProjectConfig(root);
-  if (backend === "docker")
+  const selected = await new LocalExecutionConfig(
+    path.join(await git.resolvePrivatePath(root, "striker"), "execution.json"),
+  ).select(backend);
+  process.stdout.write(`Execution: ${selected}.\n`);
+  if (selected === "docker")
     return dispatchDockerRun({
       projectRoot: root,
       stateRoot: await git.resolvePrivatePath(root, "striker"),
       packagedRoot: skillsRoot,
       config,
+      writeOut: (text) => process.stdout.write(text),
       source: path.resolve(cwd, source),
       allowDirty,
     });
+  warnLocalExecution(process.stderr);
   const release = await acquireProjectOperation(
     await git.resolvePrivatePath(root, "striker"),
   );
@@ -142,6 +151,7 @@ async function recoverRun(
       action,
       ...(answer === undefined ? {} : { answer }),
     });
+  warnLocalExecution(process.stderr);
   const release = await acquireProjectOperation(stateRoot);
   try {
     const dispatcher = await createDispatcher(await permissionConfig.read());
@@ -304,9 +314,7 @@ process.exitCode = await runCli(process.argv.slice(2), {
     },
     status: async () => {
       const root = await git.resolveRoot(cwd);
-      return new RunOperations(
-        new FileRunJournal(await git.resolvePrivatePath(root, "striker")),
-      ).status();
+      return readExecutionStatus(await git.resolvePrivatePath(root, "striker"));
     },
   },
   skillInstaller: createPublicSkillInstaller(skillsRoot),

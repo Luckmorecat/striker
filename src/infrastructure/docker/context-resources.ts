@@ -1,3 +1,4 @@
+import { skillNameSchema } from "../../config/project-config.js";
 import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
 import { readdir, readFile, realpath, lstat } from "node:fs/promises";
@@ -65,7 +66,7 @@ export async function resolveContextResources(request: {
   );
   const names = new Set(skills.map((skill) => skill.name));
   for (const name of request.skills) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(name) || names.has(name))
+    if (!skillNameSchema.safeParse(name).success || names.has(name))
       throw new Error(`Invalid or ambiguous skill name: ${name}`);
     names.add(name);
     skills.push(

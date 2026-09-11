@@ -6,8 +6,11 @@ commit and worktree, runs the task's verification command, and records
 completion before moving to the next task.
 
 The package requires Node.js 22.19 or newer. Development uses pnpm. It supports
-Codex, Claude Code, OpenCode, and Pi through `acpx@0.13.1`. The harness is
-selected per repository; Striker stops if that harness is unavailable.
+Docker execution by default with Codex and Pi through `acpx@0.13.1`. Explicit
+local execution also supports Claude Code and OpenCode. The harness is selected
+per repository; failures stop execution without fallback. See the
+[isolated execution guide](docs/isolated-execution.md) and
+[platform acceptance status](docs/release-acceptance.md).
 
 ## Install
 
@@ -90,10 +93,10 @@ Create `striker.config.json` at the Git root:
 ```
 
 `taskSource` must be `striker-plan`. `harness` defaults to `codex`. `skills` is
-a list of additional agent skills that must already be installed. Before a run
-changes Git or creates recovery state, Striker checks the selected harness,
-authentication, and every configured skill in a disposable read-only session. It
-stops instead of selecting another harness when preflight fails.
+a list of unique extra skill names installed under `.agents/skills/<name>` in
+the project. Only packaged Striker skills and these named extras load in Docker.
+`image`, `model`, and `reasoningEffort` are optional; see the execution guide
+for local image approval and the tested `gpt-5.6-sol` / `low` default.
 
 The optional `$schema` field is omitted so these examples work with either
 installation mode. Runtime validation still applies. For editor autocomplete
@@ -215,18 +218,23 @@ Striker plan.
 
 ## Run and recover
 
-Set the checkout-local permission mode, then dispatch all remaining tasks:
+Prepare the local image and broker-owned subscription login, then dispatch from
+a clean source checkout:
 
 ```sh
-striker permissions attended
+striker environment prepare
+striker auth prepare --broker /absolute/path/to/cli-proxy-api
+striker auth login
 striker run path/to/plan
 ```
 
-Striker refuses a dirty repository by default. `--allow-dirty` permits a run
-only when task changes preserve the initial patch and do not overlap its paths:
+Docker execution requires a clean repository. Explicit local selection persists
+for this checkout and warns about host access and personal configuration. Local
+`--allow-dirty` permits only non-overlapping changes preserving the initial
+patch:
 
 ```sh
-striker run path/to/plan --allow-dirty
+striker run path/to/plan --execution local --allow-dirty
 ```
 
 After each task, Striker requires one strict implementation-result JSON object,
@@ -251,15 +259,15 @@ evidence. Each reviewer returns one strict JSON object. The plan reviewer
 accepts or rejects every proposal. Striker accepts findings only for Git-derived
 changed paths.
 
-A blocking finding from either review resumes the preserved implementation
-session with the typed findings. The implementor amends its one task commit.
-Striker reruns verification, standards review, and plan-compliance review
-against the amended commit. Both passed results must match the final candidate
-before `task_completed`. The journal records each review and repair stage for
-recovery. The implementation session reads plan context but never updates the
-plan directory or reviews its own work.
+A blocking finding starts a fresh isolated repair thread with typed findings;
+local execution reuses the implementation session. The implementor amends its
+one task commit. Striker reruns verification, standards review, and
+plan-compliance review against the amended commit. Both passed results must
+match the final candidate before `task_completed`. The journal records each
+review and repair stage for recovery. The implementation session reads plan
+context but never updates the plan directory or reviews its own work.
 
-Striker keys one version 6 persistent event journal by the immutable plan
+Striker keys one version 11 persistent event journal by the recorded plan
 identity under Git-private checkout storage. The journal records each run, task
 selection, baseline, attempt, session, continuation, failure, attention state,
 completion, source conflict, discovery decision, ledger transition, discard, and
@@ -271,8 +279,8 @@ interrupted projection write, without rerunning a completed implementation
 session.
 
 The `task_session_started` event stores the exact prepared implementation
-request before its first turn begins. Journal versions 2 through 5 are not
-accepted.
+request before its first turn begins. Older journal versions are not accepted
+and are not migrated or deleted automatically.
 
 One nonterminal run may exist per checkout. Inspect or operate it with:
 
@@ -333,14 +341,30 @@ developer decision. Status and log projections include the proposal, review
 decision, transition, evidence, and pause reason.
 
 `resume` continues an interrupted implementation or repair session. An
-interrupted reviewer is replaced with a fresh read-only review pinned to the
-same candidate. `answer` continues a paused implementation session with
-developer input. `retry` records the failed attempt and starts the incomplete
-task in a fresh session. `discard --force` records a terminal discard only for a
-paused or failed run, then releases the active claim. All plan events remain
-Git-private after completion or discard.
+interrupted Docker reviewer resumes its recorded thread and read-only snapshot.
+Local review recovery starts a fresh reviewer pinned to the same candidate.
+`answer` continues a paused implementation session with developer input. `retry`
+records the failed attempt and starts the incomplete task in a fresh session.
+`discard --force` records a terminal discard only for a paused or failed run,
+then releases the active claim. All plan events remain Git-private after
+completion or discard.
 
-## Permission modes
+After each certified task, the exact commit is exported to host branch
+`codex/striker-<run-id>` while the source checkout stays unchanged. A later
+failure preserves completed work. Apply the whole successful feature explicitly
+with `striker apply <run-id>`; it requires the original clean branch at its
+starting commit and preserves the commit sequence. Changed targets and
+divergence are refused. No automatic merge, rebase, squash or push occurs.
+
+Discard stops isolated execution but retains files.
+`striker cleanup <run-id> --force` removes inactive retained execution
+resources, including unexported work, while preserving the host result branch
+and audit journal. It refuses active features/running containers. Apply remains
+possible after cleanup. See the [execution guide](docs/isolated-execution.md)
+for interruption recovery, network exceptions, derived images and the isolation
+boundary.
+
+## Permission modes (local execution)
 
 Permission settings live in Git-private checkout state. Tracked project
 configuration cannot grant unattended access.
@@ -375,8 +399,8 @@ Only the package root and the two JSON schemas are public export paths.
 
 ## Development and smoke tests
 
-The default checks use fake runners and temporary Git repositories. They never
-contact an installed harness:
+The default checks use fake runners and temporary Git repositories. They need
+neither Docker nor subscription credentials:
 
 ```sh
 pnpm check
@@ -384,9 +408,16 @@ pnpm build
 pnpm pack --dry-run
 ```
 
-Real-harness smoke testing is opt-in. Use a disposable, committed Git checkout,
-select its harness in `striker.config.json`, authenticate that harness, choose
-the `attended` permission mode, and run a small validated plan with
-`striker run <plan>`. A real smoke run opens agent sessions and may create a
-task commit, so do not point it at this repository or an unreviewed working
-tree.
+Release acceptance runs separately on Linux and macOS Docker hosts, with both
+fake endpoint tests and authenticated smoke tests for each supported harness:
+
+```sh
+pnpm test:docker
+STRIKER_SMOKE_BROKER_ROOT=/private/prepared-broker pnpm test:smoke --harness codex
+STRIKER_SMOKE_BROKER_ROOT=/private/prepared-broker pnpm test:smoke --harness pi
+```
+
+These commands fail when prerequisites are missing. Real smoke tests consume
+subscription usage and refresh broker-owned credentials. See
+[release acceptance](docs/release-acceptance.md) for actual evidence and
+blockers.

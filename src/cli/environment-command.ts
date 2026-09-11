@@ -20,7 +20,7 @@ export function addEnvironmentCommand(
     .action(async (options: { approveImage?: boolean }) => {
       const result = await handler.prepare(options.approveImage === true);
       write(
-        `Prepared image ${result.imageId}\nFeature execution remains local.\n`,
+        `Prepared image ${result.imageId}\nRun striker auth prepare and auth login before Docker execution.\n`,
       );
     });
 }

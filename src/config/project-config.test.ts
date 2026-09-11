@@ -99,3 +99,22 @@ it("accepts isolated model selection but rejects tracked service grants", () => 
     parseProjectConfig({ taskSource: "striker-plan", services: [] }),
   ).toThrow();
 });
+
+it("accepts only extra skill names, never paths or duplicate names", () => {
+  for (const skills of [
+    ["../personal"],
+    ["/home/skill"],
+    ["two words"],
+    ["extra", "extra"],
+  ]) {
+    expect(() =>
+      parseProjectConfig({ taskSource: "striker-plan", skills }),
+    ).toThrow();
+  }
+  expect(
+    parseProjectConfig({
+      taskSource: "striker-plan",
+      skills: ["project-extra"],
+    }).skills,
+  ).toEqual(["project-extra"]);
+});

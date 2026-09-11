@@ -25,7 +25,10 @@
     "skills",
     "!dist/**/*.test.*",
     "!dist/testing",
-    "runtime"
+    "runtime",
+    "docs/isolated-execution.md",
+    "docs/derived-images.md",
+    "docs/release-acceptance.md"
   ],
   "bin": {
     "striker": "./dist/cli.js"

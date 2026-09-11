@@ -8,6 +8,15 @@ import type {
 } from "./contracts.js";
 
 export interface ActiveRunStatus {
+  readonly execution?: {
+    readonly backend: "local" | "docker";
+    readonly imageId?: string;
+    readonly model?: string;
+    readonly effort?: string;
+    readonly artifacts?: string;
+    readonly error?: string;
+  };
+  readonly recoveryActions?: readonly import("./recovery-policy.js").RecoveryAction[];
   readonly resultExport?: import("./result-export.js").ResultExportState;
   readonly attempt: number;
   readonly attentionReason?: AttentionReason | "completed_task_changed";

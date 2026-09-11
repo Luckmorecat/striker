@@ -1,3 +1,5 @@
+import { resolveModelSelection } from "../config/project-config.js";
+import { resultBranchName } from "../core/result-export.js";
 import { withResultExport } from "./result-export-output.js";
 import { acquireProjectOperation } from "../infrastructure/project-operation-lease.js";
 import { randomUUID } from "node:crypto";
@@ -13,6 +15,7 @@ async function dispatchOwnedRun(
   options: Omit<Parameters<typeof openDockerExecution>[0], "runId" | "plan"> & {
     readonly source: string;
     readonly allowDirty: boolean;
+    readonly writeOut?: (text: string) => unknown;
   },
 ) {
   if (options.allowDirty)
@@ -32,6 +35,7 @@ async function dispatchOwnedRun(
     plan: binding,
   });
   try {
+    printEnvironment(options, runId, execution.environment);
     const adapters = new AdapterRegistry();
     adapters.register(
       new StrikerPlanAdapter({
@@ -76,4 +80,23 @@ export async function dispatchDockerRun(
   } finally {
     await release();
   }
+}
+
+function printEnvironment(
+  options: Parameters<typeof dispatchOwnedRun>[0],
+  runId: string,
+  environment: import("../core/environment-preparation.js").RetainedFeatureEnvironment,
+) {
+  const selection = resolveModelSelection(options.config);
+  options.writeOut?.(
+    [
+      `Run: ${runId}`,
+      `Image: ${environment.imageId}`,
+      `Model: ${selection.model} (${selection.effort})`,
+      `Artifacts: ${path.dirname(environment.checkout)}`,
+      `Result branch: ${resultBranchName(runId)} (after certification)`,
+      "Inspect pauses with striker status; use its available recovery actions.",
+      "",
+    ].join("\n"),
+  );
 }

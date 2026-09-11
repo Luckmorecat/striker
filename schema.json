@@ -19,7 +19,8 @@
     },
     "skills": {
       "type": "array",
-      "items": { "type": "string", "minLength": 1 }
+      "items": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]*$" },
+      "uniqueItems": true
     },
     "taskSource": { "type": "string", "const": "striker-plan" }
   },

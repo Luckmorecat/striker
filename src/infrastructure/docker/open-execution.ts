@@ -119,7 +119,15 @@ async function prepareExecution(options: DockerOpenOptions) {
     .strict()
     .parse(
       JSON.parse(
-        await readFile(path.join(stateRoot, "prepared-image.json"), "utf8"),
+        await readFile(
+          path.join(stateRoot, "prepared-image.json"),
+          "utf8",
+        ).catch((cause: unknown) => {
+          throw new Error(
+            "Prepared image is missing or inaccessible; run striker environment prepare",
+            { cause },
+          );
+        }),
       ),
     );
   if (image.baselineId !== (await loadBaseline()).identity)

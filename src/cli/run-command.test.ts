@@ -40,7 +40,7 @@ describe("striker run", () => {
       source: "plans/current",
     });
     expect(stdout).toBe(
-      "Permission mode: unattended.\nCompleted tasks/01.md.\n",
+      "Local permission mode: unattended.\nCompleted tasks/01.md.\n",
     );
     expect(stderr).toBe("");
   });
@@ -72,7 +72,7 @@ describe("striker run", () => {
     });
 
     expect(exitCode).toBe(1);
-    expect(stdout).toBe("Permission mode: auto-review.\n");
+    expect(stdout).toBe("Local permission mode: auto-review.\n");
     expect(stderr).toContain("verification_failed");
   });
 });

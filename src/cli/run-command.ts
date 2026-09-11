@@ -22,12 +22,15 @@ export function addRunCommand(
     .description("Run every remaining task from a Striker plan")
     .argument("<source>", "Striker plan directory")
     .addOption(
-      new Option("--execution <backend>", "execution environment").choices([
-        "local",
-        "docker",
-      ]),
+      new Option(
+        "--execution <backend>",
+        "persist execution choice locally (default: docker)",
+      ).choices(["local", "docker"]),
     )
-    .option("--allow-dirty", "preserve non-overlapping existing changes")
+    .option(
+      "--allow-dirty",
+      "local only: preserve non-overlapping existing changes",
+    )
     .option("--no-interactive", "disable attention and permission prompts")
     .action(
       async (
@@ -39,7 +42,7 @@ export function addRunCommand(
       ) => {
         dependencies.controller.prepare(options);
         const approvalMode = await dependencies.permissionConfig.read();
-        dependencies.writeOut(`Permission mode: ${approvalMode}.\n`);
+        dependencies.writeOut(`Local permission mode: ${approvalMode}.\n`);
         const result = await dependencies.handler.run({
           ...(options.execution ? { execution: options.execution } : {}),
           allowDirty: options.allowDirty ?? false,

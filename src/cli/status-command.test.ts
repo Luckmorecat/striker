@@ -174,3 +174,31 @@ it("shows the exported prefix and actionable export errors", async () => {
     "Export error: Result branch changed",
   );
 });
+
+it("names the recorded environment and available recovery commands", async () => {
+  const fixture = cliDependencies(() =>
+    Promise.resolve({
+      attempt: 1,
+      lastTransition: "run_needs_attention",
+      runId: "isolated",
+      session: null,
+      status: "needs_attention",
+      task: null,
+      execution: {
+        backend: "docker",
+        imageId: "sha256:recorded",
+        model: "gpt-5.6-sol",
+        effort: "low",
+        artifacts: "/private/environments/isolated",
+      },
+      recoveryActions: ["retry"],
+    }),
+  );
+  await runCli(["status"], fixture.dependencies);
+  const output = fixture.output().stdout;
+  expect(output).toContain("Execution: docker");
+  expect(output).toContain("Image: sha256:recorded");
+  expect(output).toContain("Model: gpt-5.6-sol (low)");
+  expect(output).toContain("Artifacts: /private/environments/isolated");
+  expect(output).toContain("Recovery: striker retry");
+});

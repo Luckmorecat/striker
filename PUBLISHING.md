@@ -37,6 +37,16 @@ The dry run must show the intended package name and version. It must include
 `LICENSE`, `README.md`, `schema.json`, `plan.schema.json`, `dist`, and `skills`.
 It must not include `PUBLISHING.md`, tests, source files, or stale build output.
 
+## Docker release gate
+
+Before publishing, run `pnpm test:docker` and both
+`STRIKER_SMOKE_BROKER_ROOT=<prepared-broker> pnpm test:smoke --harness codex|pi`
+on Linux and macOS Docker hosts. Record exact platform, image and results in
+`docs/release-acceptance.md`. Missing/skipped acceptance is a release blocker.
+Ordinary `pnpm check` must remain independent of Docker and login. The package
+must include `runtime`, worker output under `dist/runner/worker`, and the linked
+execution guides under `docs`.
+
 ## Publish and verify
 
 Publish the package publicly. npm may request a two-factor authentication code:

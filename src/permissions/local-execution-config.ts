@@ -14,6 +14,7 @@ export const resourceLimitsSchema = z
 
 export const executionPolicySchema = z
   .object({
+    backend: z.enum(["local", "docker"]).optional(),
     approvedImages: z
       .array(z.string().regex(/^sha256:[a-f0-9]{64}$/))
       .default([]),
@@ -40,6 +41,12 @@ export type ExecutionPolicy = z.infer<typeof executionPolicySchema>;
 
 export class LocalExecutionConfig {
   constructor(private readonly filePath: string) {}
+
+  async select(backend?: "local" | "docker"): Promise<"local" | "docker"> {
+    const policy = await this.read();
+    if (backend !== undefined) await this.write({ ...policy, backend });
+    return backend ?? policy.backend ?? "docker";
+  }
 
   async read(): Promise<ExecutionPolicy> {
     try {

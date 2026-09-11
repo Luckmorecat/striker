@@ -5,6 +5,8 @@ import { z } from "zod";
 
 import { agentHarnesses, type AgentHarness } from "../core/contracts.js";
 
+export const skillNameSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/);
+
 export const projectConfigSchema = z
   .object({
     $schema: z.string().min(1).optional(),
@@ -19,7 +21,14 @@ export const projectConfigSchema = z
       .regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/)
       .optional(),
     reasoningEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
-    skills: z.array(z.string().min(1)).optional(),
+    skills: z
+      .array(skillNameSchema)
+      .refine(
+        (names) => new Set(names).size === names.length,
+        "Extra skill names must be unique",
+      )
+      .meta({ uniqueItems: true })
+      .optional(),
     taskSource: z.literal("striker-plan"),
   })
   .strict()

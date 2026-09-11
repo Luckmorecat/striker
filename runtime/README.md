@@ -7,10 +7,9 @@ this packaged runtime directory is sent as build context; project files, Git
 metadata, personal configuration, and credentials are excluded.
 
 The command prints the actual immutable local image ID and records it in the
-Git-private `striker/prepared-image.json`. Feature execution remains local at
-this stage. Container allocation is an infrastructure API; it creates a stopped,
-network-disabled container and empty checkout/state/output directories. Checkout
-population and execution wiring follow in later slices.
+Git-private `striker/prepared-image.json`. Docker is the default for new runs.
+See the [execution guide](../docs/isolated-execution.md) for setup and controls,
+and [release acceptance](../docs/release-acceptance.md) for platform evidence.
 
 For another toolchain, first prepare the baseline, then find its local tag with
 `docker image ls --filter reference='striker-baseline:*'`. Build a derived image
@@ -99,8 +98,8 @@ Project configuration may override it:
 Supported effort values are `low`, `medium`, `high`, and `xhigh`. Preparation of
 run connectivity checks the broker's model catalog and records the selection; an
 unavailable model fails without fallback. These fields configure isolated
-connectivity; the existing local runner does not consume them. Broad Docker run
-composition follows in the next slice.
+connectivity; the existing local runner does not consume them. Docker runs
+consume these settings; recovery retains its recorded selection.
 
 Public HTTP/HTTPS uses authenticated HTTP proxy/CONNECT traffic over the socket.
 Direct networking stays disabled. Private, link-local, reserved, and host
@@ -152,8 +151,9 @@ impose production task timeouts.
 
 After preparing the current image and broker-owned login, run a clean committed
 project with `striker run <plan-directory> --execution docker`. Codex and Pi are
-supported. Local execution remains the default during rollout; Docker errors
-stop execution.
+supported. Docker is the default; explicit local selection persists locally and
+warns about host access and personal configuration. Docker errors stop
+execution.
 
 The host selects tasks and owns the journal. The retained container owns an
 independent Git checkout, verification, acpx, and every harness child process.
@@ -195,7 +195,7 @@ Only one command may execute or mutate an active project run at a time. A dead
 host's operation lease can be reclaimed; its supervised broker stops before
 releasing the credential lease. An unverifiable lease fails closed with an
 inspection instruction. Recovery stops orphaned workers before delivering work.
-Journal versions before v10 are rejected without modifying the old files.
+Journal versions before v11 are rejected without modifying the old files.
 
 Future task text stays live under the run's original plan identity. Future
 task-list edits are accepted; routes and ledger definitions remain bound to its
@@ -226,7 +226,8 @@ task. Retain the host journal and `refs/striker/exports/<run-id>` ownership ref;
 they recover interruptions before or after the result branch advances. Transfers
 validate Git objects in a temporary bare repository and disable host Git hooks,
 helpers and network fetching. A transfer exceeding 128 MiB fails explicitly and
-retains the work. Cleanup remains a later rollout step; export performs no push.
+retains the work. Explicit cleanup preserves the result branch; export performs
+no push.
 
 Run `pnpm test:docker result-export` for explicit Docker export acceptance.
 

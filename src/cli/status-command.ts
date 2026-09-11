@@ -24,6 +24,7 @@ function renderStatus(status: ActiveRunStatus): string {
   if (status.attentionReason !== undefined) {
     lines.push(`Attention: ${status.attentionReason}`);
   }
+  lines.push(...executionStatusLines(status));
   if (status.resultExport)
     lines.push(...resultExportLines(status.resultExport));
   return `${lines.join("\n")}\n`;
@@ -42,4 +43,29 @@ export function addStatusCommand(
         status === null ? "No active Striker run.\n" : renderStatus(status),
       );
     });
+}
+
+function executionStatusLines(status: ActiveRunStatus): string[] {
+  const lines: string[] = [];
+  const execution = status.execution;
+  if (execution) lines.push(`Execution: ${execution.backend}`);
+  if (execution?.imageId) lines.push(`Image: ${execution.imageId}`);
+  if (execution?.model)
+    lines.push(
+      `Model: ${execution.model} (${execution.effort ?? "unspecified"})`,
+    );
+  if (execution?.artifacts) lines.push(`Artifacts: ${execution.artifacts}`);
+  if (execution?.error) lines.push(`Environment: ${execution.error}`);
+  if (status.recoveryActions)
+    lines.push(`Recovery: ${recoveryInstructions(status.recoveryActions)}`);
+  return lines;
+}
+
+function recoveryInstructions(
+  actions: NonNullable<ActiveRunStatus["recoveryActions"]>,
+): string {
+  return (
+    actions.map((action) => `striker ${action}`).join("; ") ||
+    "inspect retained state; no continuation available"
+  );
 }
