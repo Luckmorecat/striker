@@ -116,7 +116,7 @@ export async function saveRecoveryRecord(
   );
   return hash(data);
 }
-async function loadRecoveryRecord(
+export async function readOwnedRecoveryRecord(
   stateRoot: string,
   runId: string,
   expected: { recoveryId: string; environmentId: string; imageId: string },
@@ -138,6 +138,18 @@ async function loadRecoveryRecord(
     record.environment.imageId !== expected.imageId
   )
     throw new Error("Execution ownership does not match the active journal");
+  return { root, record };
+}
+async function loadRecoveryRecord(
+  stateRoot: string,
+  runId: string,
+  expected: { recoveryId: string; environmentId: string; imageId: string },
+) {
+  const { root, record } = await readOwnedRecoveryRecord(
+    stateRoot,
+    runId,
+    expected,
+  );
   await validatePaths(root, record.environment);
   if (
     (await frozenInputsIdentity(record.environment.inputs)) !== record.inputsId

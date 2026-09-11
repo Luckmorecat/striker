@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 /// <reference types="node" />
+import { CleanupFeature } from "./core/cleanup-feature.js";
+import { DockerFeatureResources } from "./infrastructure/docker/feature-resources.js";
 
 import { ApplyFeature } from "./core/apply-feature.js";
 import { ApplyResult } from "./infrastructure/apply-result.js";
@@ -183,6 +185,21 @@ async function credentialBroker() {
 }
 
 process.exitCode = await runCli(process.argv.slice(2), {
+  cleanupHandler: {
+    cleanup: async (runId) => {
+      const root = await git.resolveRoot(cwd);
+      const stateRoot = await git.resolvePrivatePath(root, "striker");
+      const release = await acquireProjectOperation(stateRoot);
+      try {
+        await new CleanupFeature(
+          new FileRunJournal(stateRoot),
+          new DockerFeatureResources(stateRoot, root),
+        ).cleanup(runId);
+      } finally {
+        await release();
+      }
+    },
+  },
   applyHandler: {
     apply: async (runId) => {
       const root = await git.resolveRoot(cwd);
@@ -274,7 +291,10 @@ process.exitCode = await runCli(process.argv.slice(2), {
       const stateRoot = await git.resolvePrivatePath(root, "striker");
       const release = await acquireProjectOperation(stateRoot);
       try {
-        await new RunOperations(new FileRunJournal(stateRoot)).discard();
+        await new RunOperations(
+          new FileRunJournal(stateRoot),
+          new DockerFeatureResources(stateRoot, root),
+        ).discard();
       } finally {
         await release();
       }

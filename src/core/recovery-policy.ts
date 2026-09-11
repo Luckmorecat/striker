@@ -26,6 +26,8 @@ export function validateRecovery(
   recovery: RunRecoveryState,
   action: RecoveryAction,
 ): void {
+  if (recovery.snapshot?.cleanup)
+    throw new Error("Execution resources were cleaned up; discard this run");
   if (exportResume(recovery, action)) return;
   if (action === "answer") {
     validateAnswer(recovery);

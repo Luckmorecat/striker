@@ -1,4 +1,17 @@
 import {
+  agentSessionSchema,
+  agentRequestSchema,
+} from "./run-journal-session-schema.js";
+export {
+  agentSessionSchema,
+  agentRequestSchema,
+} from "./run-journal-session-schema.js";
+import {
+  cleanupSchema,
+  cleanupStartedSchema,
+  cleanupCompletedSchema,
+} from "./run-journal-cleanup-schema.js";
+import {
   applicationSchema,
   applicationStartedSchema,
   applicationCompletedSchema,
@@ -29,32 +42,9 @@ import {
   taskIdentitySchema,
   verificationSchema,
 } from "./run-journal-common-schema.js";
-import { deliveredOutcomeSchema } from "./run-journal-outcome-schema.js";
 
-export const runJournalSchemaId = "striker.plan-journal.v10";
+export const runJournalSchemaId = "striker.plan-journal.v11";
 
-export const agentSessionSchema = z
-  .object({
-    id: z.string().min(1),
-    resumeId: z.string().min(1).optional(),
-    execution: z
-      .object({
-        environmentId: z.string().regex(/^[a-f0-9]{64}$/),
-        stageId: z.uuid(),
-        inputId: z.string().regex(/^[a-f0-9]{64}$/),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
-export const agentRequestSchema = z
-  .object({
-    instructions: z.string(),
-    priorTaskEvidence: z.array(deliveredOutcomeSchema).optional(),
-    skills: z.array(z.string()),
-    workflowInstructions: z.string().optional(),
-  })
-  .strict();
 const completionEvidenceSchema = z
   .object({
     discoveries: discoveryProposalsSchema.optional(),
@@ -147,6 +137,7 @@ const reviewSchemas = createRunJournalReviewSchemas({
 
 export const runSnapshotSchema = z
   .object({
+    cleanup: cleanupSchema.optional(),
     application: applicationSchema.optional(),
     resultExport: resultExportSchema.optional(),
     attempt: z.number().int().positive().optional(),
@@ -308,6 +299,8 @@ const ledgerAttentionAnsweredSchema = z
   .strict();
 
 export const runJournalEventSchema = z.discriminatedUnion("type", [
+  cleanupStartedSchema,
+  cleanupCompletedSchema,
   applicationStartedSchema,
   applicationCompletedSchema,
   resultExportCompletedSchema,

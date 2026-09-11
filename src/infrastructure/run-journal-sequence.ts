@@ -85,7 +85,7 @@ export function replayPlanJournal(
     if (snapshot === undefined) {
       throw new Error("Striker plan journal does not start with run_started");
     }
-    const applied = historicalApplication(runs, event, snapshot);
+    const applied = historicalOperation(runs, event, snapshot);
     if (applied) {
       snapshot = applied;
       continue;
@@ -166,12 +166,14 @@ function initialLedger(events: readonly RunJournalEvent[]) {
   });
 }
 
-function historicalApplication(
+function historicalOperation(
   runs: Map<string, RunSnapshot>,
   event: Exclude<RunJournalEvent, { type: "run_started" }>,
   snapshot: RunSnapshot,
 ): RunSnapshot | null {
   if (
+    event.type !== "cleanup_started" &&
+    event.type !== "cleanup_completed" &&
     event.type !== "application_started" &&
     event.type !== "application_completed"
   )

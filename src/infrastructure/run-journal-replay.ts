@@ -1,5 +1,12 @@
 import {
+  replayCleanup,
+  isCleanupEvent,
+  assertExecutionRetained,
+  type CleanupEvent,
+} from "../core/cleanup-feature.js";
+import {
   replayApplication,
+  isApplicationEvent,
   type ApplicationEvent,
 } from "../core/apply-feature.js";
 import {
@@ -96,11 +103,9 @@ export function replayEvent(
     event.type === "result_export_failed"
   )
     return replayResultExport(snapshot, event);
-  if (
-    event.type === "application_started" ||
-    event.type === "application_completed"
-  )
-    return replayApplication(snapshot, event);
+  if (isApplicationEvent(event)) return replayApplication(snapshot, event);
+  if (isCleanupEvent(event)) return replayCleanup(snapshot, event);
+  assertExecutionRetained(snapshot, event);
   assertExportSettled(snapshot, event);
   if (isLedgerEvent(event)) {
     return replayLedgerEvent(snapshot, event, ledgerTransitionApplied);
@@ -240,6 +245,7 @@ function replayTerminal(
     | ResultEvent
     | ReviewEvent
     | ResultExportEvent
+    | CleanupEvent
     | ApplicationEvent
   >,
 ): RunSnapshot {

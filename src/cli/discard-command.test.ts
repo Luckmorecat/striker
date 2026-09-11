@@ -56,7 +56,7 @@ describe("striker discard", () => {
     expect(test.output().stderr).toContain("--force");
   });
 
-  it("deletes recovery state after --force", async () => {
+  it("ends execution after --force", async () => {
     const test = fixture();
 
     await expect(
@@ -112,4 +112,11 @@ describe("striker discard", () => {
       snapshot: { status: "discarded" },
     });
   });
+});
+
+it("describes discard as retaining execution artifacts", async () => {
+  const test = fixture();
+  expect(await runCli(["discard", "--help"], test.dependencies)).toBe(0);
+  expect(test.output().stdout).toContain("retain");
+  expect(test.output().stdout).not.toContain("Delete");
 });

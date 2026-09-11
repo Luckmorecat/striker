@@ -252,7 +252,21 @@ verify that their owning processes have stopped before removing those locks
 manually. Manual integration of the result branch remains available
 independently.
 
-Journal v10 records the original source path and application intent/completion.
-Older journals are rejected without migration or automatic deletion. Application
-is available by run ID even after another run begins; it shares the project
-operation lease with execution and recovery.
+Journal v11 records the original source path plus application and cleanup
+intent/completion. Older journals are rejected without migration or automatic
+deletion. Application is available by run ID even after another run begins; it
+shares the project operation lease with execution and recovery.
+
+`striker discard --force` ends a paused or failed run, stops its retained
+container and revokes run connectivity, while keeping files available for
+inspection. `striker cleanup <run-id> --force` explicitly deletes an inactive
+run's checkout (including unexported work), agent state, scratch, inputs and
+outputs, and removes its stopped container. It refuses running features and
+running containers. Stop the command and discard paused/failed execution first
+if its container is still running. Cleanup never removes the host result branch,
+export ownership ref, journal, recovery/audit metadata, broker login or shared
+prepared image. Retry the same cleanup command after a partial deletion. Once
+cleanup starts, resume/answer/retry cannot continue that execution; discard any
+remaining paused run to release it. Completed features can still be applied from
+their host result branch after cleanup. Nothing is garbage-collected
+automatically.

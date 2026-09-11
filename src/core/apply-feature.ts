@@ -104,3 +104,12 @@ export class ApplyFeature implements ApplyFeatureHandler {
     return intent;
   }
 }
+
+export function isApplicationEvent(event: {
+  readonly type: string;
+}): event is ApplicationEvent {
+  return (
+    event.type === "application_started" ||
+    event.type === "application_completed"
+  );
+}

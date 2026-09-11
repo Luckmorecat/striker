@@ -1,3 +1,4 @@
+import { CleanupFeature } from "../core/cleanup-feature.js";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -91,6 +92,10 @@ it("reopens apply intent after lost completion append, including an older run wh
         completedTasks: [{ id: "one", revision: "v1" }],
       },
     });
+    await new CleanupFeature(disk, { remove: () => Promise.resolve() }).cleanup(
+      "first",
+    );
+    expect((await disk.loadRun("first"))?.cleanup).toBe("completed");
     let applied = false;
     const command = new ApplyFeature(
       {

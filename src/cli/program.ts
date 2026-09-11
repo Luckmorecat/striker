@@ -1,3 +1,5 @@
+import { addCleanupCommand } from "./cleanup-command.js";
+import type { CleanupFeatureHandler } from "../core/cleanup-feature.js";
 import { addApplyCommand } from "./apply-command.js";
 import type { ApplyFeatureHandler } from "../core/apply-feature.js";
 import {
@@ -41,6 +43,7 @@ export interface CliWriter {
 }
 
 export interface CliDependencies {
+  readonly cleanupHandler?: CleanupFeatureHandler;
   readonly applyHandler?: ApplyFeatureHandler;
   readonly subscriptionAuthentication?: SubscriptionAuthentication;
   readonly interaction?: RecoveryInteraction;
@@ -163,6 +166,10 @@ function addPreparationCommands(
   program: Command,
   dependencies: CliDependencies,
 ): void {
+  if (dependencies.cleanupHandler)
+    addCleanupCommand(program, dependencies.cleanupHandler, (text) =>
+      dependencies.stdout.write(text),
+    );
   if (dependencies.environmentPreparer)
     addEnvironmentCommand(program, dependencies.environmentPreparer, (text) =>
       dependencies.stdout.write(text),

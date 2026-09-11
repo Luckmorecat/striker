@@ -6,7 +6,10 @@ import type {
 } from "./recovery-operations.js";
 
 export class RunOperations {
-  constructor(private readonly journal: RunJournal) {}
+  constructor(
+    private readonly journal: RunJournal,
+    private readonly execution?: import("./cleanup-feature.js").ExecutionStopper,
+  ) {}
 
   async inspectRecovery(): Promise<RecoveryInspection | null> {
     const recovery = await this.journal.loadActive();
@@ -72,6 +75,11 @@ export class RunOperations {
     }
     if (snapshot.status !== "failed" && snapshot.status !== "needs_attention") {
       throw new Error("Only paused or failed Striker runs can be discarded");
+    }
+    if (snapshot.request.execution) {
+      if (!this.execution)
+        throw new Error("Isolated discard requires an execution stopper");
+      await this.execution.stop(snapshot);
     }
     await this.journal.append({
       runId: snapshot.runId,

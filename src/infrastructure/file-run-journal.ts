@@ -203,6 +203,8 @@ export class FileRunJournal implements RunJournal {
 
   private async eventClaim(event: RunJournalEvent): Promise<ActiveClaim> {
     if (
+      event.type !== "cleanup_started" &&
+      event.type !== "cleanup_completed" &&
       event.type !== "application_started" &&
       event.type !== "application_completed"
     )

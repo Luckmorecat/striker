@@ -42,6 +42,7 @@ export interface DispatchRequest {
 }
 
 export interface RunSnapshot {
+  readonly cleanup?: import("./cleanup-feature.js").CleanupState;
   readonly application?: import("./apply-feature.js").ApplicationState;
   readonly resultExport?: import("./result-export.js").ResultExportState;
   readonly attempt?: number;
@@ -102,6 +103,7 @@ export interface StandardsReviewState {
 }
 
 export type RunJournalEvent =
+  | import("./cleanup-feature.js").CleanupEvent
   | import("./apply-feature.js").ApplicationEvent
   | import("./result-export.js").ResultExportEvent
   | {

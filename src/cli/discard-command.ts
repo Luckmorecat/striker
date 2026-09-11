@@ -13,8 +13,8 @@ export function addDiscardCommand(
 ): void {
   program
     .command("discard")
-    .description("Delete paused or failed Striker recovery state")
-    .option("--force", "confirm deletion without an interactive prompt")
+    .description("End paused or failed execution and retain artifacts")
+    .option("--force", "confirm ending execution without an interactive prompt")
     .action(async (options: { force?: boolean }) => {
       if (options.force !== true) {
         throw new Error("Discard requires --force confirmation");
