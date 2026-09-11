@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /// <reference types="node" />
 
+import { ApplyFeature } from "./core/apply-feature.js";
+import { ApplyResult } from "./infrastructure/apply-result.js";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
@@ -181,6 +183,21 @@ async function credentialBroker() {
 }
 
 process.exitCode = await runCli(process.argv.slice(2), {
+  applyHandler: {
+    apply: async (runId) => {
+      const root = await git.resolveRoot(cwd);
+      const stateRoot = await git.resolvePrivatePath(root, "striker");
+      const release = await acquireProjectOperation(stateRoot);
+      try {
+        return await new ApplyFeature(
+          new FileRunJournal(stateRoot),
+          new ApplyResult(root),
+        ).apply(runId);
+      } finally {
+        await release();
+      }
+    },
+  },
   subscriptionAuthentication: {
     prepare: async (binary, authDirectory) =>
       (await credentialBroker()).prepare(binary, authDirectory),

@@ -1,4 +1,8 @@
 import {
+  replayApplication,
+  type ApplicationEvent,
+} from "../core/apply-feature.js";
+import {
   replayResultExport,
   type ResultExportEvent,
 } from "../core/result-export.js";
@@ -92,6 +96,11 @@ export function replayEvent(
     event.type === "result_export_failed"
   )
     return replayResultExport(snapshot, event);
+  if (
+    event.type === "application_started" ||
+    event.type === "application_completed"
+  )
+    return replayApplication(snapshot, event);
   assertExportSettled(snapshot, event);
   if (isLedgerEvent(event)) {
     return replayLedgerEvent(snapshot, event, ledgerTransitionApplied);
@@ -231,6 +240,7 @@ function replayTerminal(
     | ResultEvent
     | ReviewEvent
     | ResultExportEvent
+    | ApplicationEvent
   >,
 ): RunSnapshot {
   switch (event.type) {

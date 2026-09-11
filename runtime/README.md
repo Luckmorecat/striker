@@ -195,7 +195,7 @@ Only one command may execute or mutate an active project run at a time. A dead
 host's operation lease can be reclaimed; its supervised broker stops before
 releasing the credential lease. An unverifiable lease fails closed with an
 inspection instruction. Recovery stops orphaned workers before delivering work.
-Journal versions before v9 are rejected without modifying the old files.
+Journal versions before v10 are rejected without modifying the old files.
 
 Future task text stays live under the run's original plan identity. Future
 task-list edits are accepted; routes and ledger definitions remain bound to its
@@ -226,7 +226,33 @@ task. Retain the host journal and `refs/striker/exports/<run-id>` ownership ref;
 they recover interruptions before or after the result branch advances. Transfers
 validate Git objects in a temporary bare repository and disable host Git hooks,
 helpers and network fetching. A transfer exceeding 128 MiB fails explicitly and
-retains the work. Application to the original branch and cleanup remain later
-rollout steps; export performs no push.
+retains the work. Cleanup remains a later rollout step; export performs no push.
 
 Run `pnpm test:docker result-export` for explicit Docker export acceptance.
+
+### Apply a completed feature
+
+Apply a completed feature explicitly with `striker apply <run-id>` from its
+original source checkout. The entire feature must have completed successfully
+and exported all certified commits. The command preserves that commit sequence
+and advances only the recorded original branch, still at its starting commit,
+with a clean index/worktree. It rechecks the result branch and ownership receipt
+under Git locks; changed branches, dirty files, concealed index entries, and
+ignored files obstructing the result are refused. Host hooks, fsmonitor, and
+configured conversion filters do not execute during application.
+
+Apply needs neither Docker nor subscription access. It retains the result
+branch, execution artifacts, and journal. A repeat after a recorded apply is
+idempotent if the source still matches the completed result. After interruption,
+retry the same command: durable intent permits completing a fully installed
+checkout or recording an already advanced ref. Partial checkout state or later
+user changes require explicit inspection with `git status` and comparison to the
+printed result branch; Striker never resets them. If Git reports stale locks,
+verify that their owning processes have stopped before removing those locks
+manually. Manual integration of the result branch remains available
+independently.
+
+Journal v10 records the original source path and application intent/completion.
+Older journals are rejected without migration or automatic deletion. Application
+is available by run ID even after another run begins; it shares the project
+operation lease with execution and recovery.

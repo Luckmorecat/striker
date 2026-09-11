@@ -1,6 +1,12 @@
 import {
+  applicationSchema,
+  applicationStartedSchema,
+  applicationCompletedSchema,
+} from "./run-journal-application-schema.js";
+import {
   runCompletedSchema,
   runDiscardedSchema,
+  runSourceChangedSchema,
 } from "./run-journal-terminal-schema.js";
 import {
   resultExportSchema,
@@ -25,7 +31,7 @@ import {
 } from "./run-journal-common-schema.js";
 import { deliveredOutcomeSchema } from "./run-journal-outcome-schema.js";
 
-export const runJournalSchemaId = "striker.plan-journal.v9";
+export const runJournalSchemaId = "striker.plan-journal.v10";
 
 export const agentSessionSchema = z
   .object({
@@ -141,6 +147,7 @@ const reviewSchemas = createRunJournalReviewSchemas({
 
 export const runSnapshotSchema = z
   .object({
+    application: applicationSchema.optional(),
     resultExport: resultExportSchema.optional(),
     attempt: z.number().int().positive().optional(),
     attention: runAttentionSchema.nullable().optional(),
@@ -265,14 +272,6 @@ const runFailedSchema = z
     type: z.literal("run_failed"),
   })
   .strict();
-const runSourceChangedSchema = z
-  .object({
-    current: taskIdentitySchema.nullable(),
-    runId: z.string().min(1),
-    task: taskIdentitySchema,
-    type: z.literal("run_source_changed"),
-  })
-  .strict();
 const assumptionTransitionSchema = z
   .object({
     id: z.string().regex(/^A[1-9]\d*$/u),
@@ -309,6 +308,8 @@ const ledgerAttentionAnsweredSchema = z
   .strict();
 
 export const runJournalEventSchema = z.discriminatedUnion("type", [
+  applicationStartedSchema,
+  applicationCompletedSchema,
   resultExportCompletedSchema,
   resultExportFailedSchema,
   runStartedSchema,

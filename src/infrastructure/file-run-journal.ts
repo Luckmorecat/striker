@@ -1,4 +1,11 @@
-import { chmod, mkdir, open, readFile, unlink } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  unlink,
+} from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 
@@ -130,7 +137,7 @@ export class FileRunJournal implements RunJournal {
     const claimed =
       normalized.type === "run_started"
         ? await this.claimRun(normalized.planId, normalized.runId)
-        : { claim: await this.requireClaim(normalized.runId), created: false };
+        : { claim: await this.eventClaim(normalized), created: false };
     const { claim } = claimed;
     const planRoot = this.planRoot(claim.planId);
     let appended = false;
@@ -169,6 +176,44 @@ export class FileRunJournal implements RunJournal {
       recovery.taskOutcomes,
     );
     return recovery;
+  }
+
+  async loadRun(runId: string): Promise<RunSnapshot | null> {
+    validateId(runId, "run identity");
+    const plans = await readdir(this.#plansRoot, { withFileTypes: true }).catch(
+      (error: unknown) => {
+        if (hasCode(error, "ENOENT")) return [];
+        throw error;
+      },
+    );
+    let found: RunSnapshot | null = null;
+    for (const plan of plans.filter((entry) => entry.isDirectory())) {
+      const events = await this.readEvents(plan.name, true);
+      if (
+        !events?.some(
+          (event) => event.type === "run_started" && event.runId === runId,
+        )
+      )
+        continue;
+      if (found) throw new Error("Duplicate run identity across plan journals");
+      found = replayPlanJournal(events, plan.name, runId).snapshot;
+    }
+    return found;
+  }
+
+  private async eventClaim(event: RunJournalEvent): Promise<ActiveClaim> {
+    if (
+      event.type !== "application_started" &&
+      event.type !== "application_completed"
+    )
+      return this.requireClaim(event.runId);
+    const snapshot = await this.loadRun(event.runId);
+    if (!snapshot) throw new Error("Application run is missing");
+    return {
+      ownerPid: process.pid,
+      planId: snapshot.planId,
+      runId: snapshot.runId,
+    };
   }
 
   async loadActive(): Promise<RunRecoveryState | null> {

@@ -30,6 +30,7 @@ export interface ExecutionRunDescriptor {
   readonly recoveryId: string;
   readonly environmentId: string;
   readonly imageId: string;
+  readonly sourceRoot: string;
   readonly sourceHead: string;
   readonly sourceBranch: string;
 }

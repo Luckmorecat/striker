@@ -42,6 +42,7 @@ export interface DispatchRequest {
 }
 
 export interface RunSnapshot {
+  readonly application?: import("./apply-feature.js").ApplicationState;
   readonly resultExport?: import("./result-export.js").ResultExportState;
   readonly attempt?: number;
   readonly attention?: RunAttention | null;
@@ -101,6 +102,7 @@ export interface StandardsReviewState {
 }
 
 export type RunJournalEvent =
+  | import("./apply-feature.js").ApplicationEvent
   | import("./result-export.js").ResultExportEvent
   | {
       readonly decision: import("./review-contracts.js").DiscoveryDecision;

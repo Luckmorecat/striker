@@ -5,6 +5,7 @@ function startGit(
   root: string,
   args: readonly string[],
   callback: (error: ExecFileException | null, stdout: string) => void,
+  indexFile?: string,
 ) {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith("GIT_")),
@@ -41,6 +42,7 @@ function startGit(
         GIT_CONFIG_GLOBAL: "/dev/null",
         GIT_NO_LAZY_FETCH: "1",
         GIT_TERMINAL_PROMPT: "0",
+        ...(indexFile ? { GIT_INDEX_FILE: indexFile } : {}),
       },
     },
     callback,
@@ -54,12 +56,18 @@ export function resultGit(
   root: string,
   args: readonly string[],
   input?: Uint8Array | string,
+  indexFile?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = startGit(root, args, (error, stdout) => {
-      if (error) reject(new Error(error.message, { cause: error }));
-      else resolve(stdout.trim());
-    });
+    const child = startGit(
+      root,
+      args,
+      (error, stdout) => {
+        if (error) reject(new Error(error.message, { cause: error }));
+        else resolve(args.includes("-z") ? stdout : stdout.trim());
+      },
+      indexFile,
+    );
     child.stdin?.end(input);
   });
 }

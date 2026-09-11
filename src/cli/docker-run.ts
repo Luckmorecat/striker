@@ -57,6 +57,7 @@ async function dispatchOwnedRun(
         environmentId: execution.environment.environmentId,
         imageId: execution.environment.imageId,
         sourceHead: execution.source.head,
+        sourceRoot: options.projectRoot,
         sourceBranch: execution.source.branch,
       },
     });

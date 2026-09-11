@@ -110,3 +110,12 @@ export type {
   ResultExporter,
   ResultExportState,
 } from "./core/result-export.js";
+
+export { ApplyFeature } from "./core/apply-feature.js";
+export type {
+  ApplicationIntent,
+  ApplicationState,
+  ApplyFeatureHandler,
+  FeatureApplications,
+  ResultApplication,
+} from "./core/apply-feature.js";

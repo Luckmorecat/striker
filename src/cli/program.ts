@@ -1,3 +1,5 @@
+import { addApplyCommand } from "./apply-command.js";
+import type { ApplyFeatureHandler } from "../core/apply-feature.js";
 import {
   InteractiveController,
   type RecoveryInteraction,
@@ -39,6 +41,7 @@ export interface CliWriter {
 }
 
 export interface CliDependencies {
+  readonly applyHandler?: ApplyFeatureHandler;
   readonly subscriptionAuthentication?: SubscriptionAuthentication;
   readonly interaction?: RecoveryInteraction;
   readonly environmentPreparer?: EnvironmentPreparer;
@@ -127,6 +130,10 @@ export function createProgram(dependencies: CliDependencies): Command {
       writeOut: (text) => dependencies.stdout.write(text),
     });
   }
+  if (dependencies.applyHandler)
+    addApplyCommand(program, dependencies.applyHandler, (text) =>
+      dependencies.stdout.write(text),
+    );
   addPreparationCommands(program, dependencies);
   addSkillsCommand(program, dependencies);
   return program;

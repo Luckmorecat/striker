@@ -27,6 +27,7 @@ const request = {
     environmentId: "d".repeat(64),
     imageId: `sha256:${"e".repeat(64)}`,
     sourceHead: before,
+    sourceRoot: "/repo",
     sourceBranch: "main",
   },
 } as const;
