@@ -57,6 +57,7 @@ export type PermissionRelay = (
 ) => Promise<AcpPermissionDecision | undefined>;
 
 interface RunnerOptions {
+  readonly agent?: string;
   readonly approvalMode?: ApprovalMode;
   readonly cwd: string;
   readonly harness: AgentHarness;
@@ -135,7 +136,8 @@ export class AcpxAgentRunner implements AgentRunner {
   ): Promise<AgentTurn> {
     const sessionKey = `striker-${randomUUID()}`;
     const handle = await this.options.runtime.ensureSession({
-      agent: harnessCapabilities[this.options.harness].agent,
+      agent:
+        this.options.agent ?? harnessCapabilities[this.options.harness].agent,
       cwd: this.options.cwd,
       mode: "persistent",
       sessionKey,
@@ -171,7 +173,8 @@ export class AcpxAgentRunner implements AgentRunner {
     instructions: string,
   ): Promise<AgentTurn> {
     const handle = await this.options.runtime.ensureSession({
-      agent: harnessCapabilities[this.options.harness].agent,
+      agent:
+        this.options.agent ?? harnessCapabilities[this.options.harness].agent,
       cwd: this.options.cwd,
       mode: "persistent",
       sessionKey: session.id,
@@ -201,7 +204,8 @@ export class AcpxAgentRunner implements AgentRunner {
       );
     }
     return runReviewSession({
-      agent: harnessCapabilities[this.options.harness].agent,
+      agent:
+        this.options.agent ?? harnessCapabilities[this.options.harness].agent,
       cwd: this.options.cwd,
       request,
       runtime,
@@ -267,7 +271,8 @@ export class AcpxAgentRunner implements AgentRunner {
     let handle: AcpRuntimeHandle;
     try {
       handle = await runtime.ensureSession({
-        agent: harnessCapabilities[this.options.harness].agent,
+        agent:
+          this.options.agent ?? harnessCapabilities[this.options.harness].agent,
         cwd: this.options.cwd,
         mode: "persistent",
         sessionKey,

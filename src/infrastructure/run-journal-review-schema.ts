@@ -39,6 +39,7 @@ function reviewState(
       result: result.nullable(),
       resultCommit: z.string().min(1),
       repairOutput: z.string().nullable(),
+      repairSession: input.agentSession.optional(),
       reviewSession: input.agentSession.nullable(),
       stage: reviewStageSchema,
       startCommit: z.string().min(1),

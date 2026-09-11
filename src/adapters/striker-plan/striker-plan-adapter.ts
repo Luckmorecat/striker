@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -21,6 +22,7 @@ import { validateOutcomeFactProposals } from "../../core/outcome-contracts.js";
 interface AdapterOptions {
   readonly projectRoot: string;
   readonly workflowRoot: string;
+  readonly inlineContext?: boolean;
 }
 
 function includesIdentity(
@@ -53,6 +55,7 @@ class StrikerPlanSource implements TaskSource {
     private readonly projectRoot: string,
     private readonly workflow: string,
     planRoot: string,
+    private readonly frozenContext?: string,
   ) {
     this.#planRoot = planRoot;
   }
@@ -135,7 +138,7 @@ class StrikerPlanSource implements TaskSource {
       )?.to ?? [];
     return {
       ...task,
-      instructions: `${task.instructions}\n\n## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\n`,
+      instructions: `${task.instructions}\n\n${this.frozenContext ?? `## Striker plan context\n\nPlan root: ${this.#planRoot}\nSpine: ${path.join(this.#planRoot, "spine.md")}\nMap: ${path.join(this.#planRoot, "map.md")}\n`}`,
       outcomePlanId: this.plan.identity,
       outcomePlanRoutes: this.plan.outcomeRoutes,
       outcomeRoutes,
@@ -177,6 +180,16 @@ export class StrikerPlanAdapter implements TaskSourceAdapter {
       this.options.projectRoot,
       workflow,
       planRoot,
+      this.options.inlineContext
+        ? (
+            await Promise.all(
+              ["spine.md", "map.md"].map(
+                async (name) =>
+                  `## Frozen ${name}\n\n${await readFile(path.join(planRoot, name), "utf8")}`,
+              ),
+            )
+          ).join("\n\n")
+        : undefined,
     );
   }
 }

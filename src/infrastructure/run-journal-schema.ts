@@ -15,12 +15,23 @@ import {
 } from "./run-journal-common-schema.js";
 import { deliveredOutcomeSchema } from "./run-journal-outcome-schema.js";
 
-export const runJournalSchemaId = "striker.plan-journal.v6";
+export const runJournalSchemaId = "striker.plan-journal.v7";
 
-const agentSessionSchema = z
-  .object({ id: z.string().min(1), resumeId: z.string().min(1).optional() })
+export const agentSessionSchema = z
+  .object({
+    id: z.string().min(1),
+    resumeId: z.string().min(1).optional(),
+    execution: z
+      .object({
+        environmentId: z.string().regex(/^[a-f0-9]{64}$/),
+        stageId: z.uuid(),
+        inputId: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict()
+      .optional(),
+  })
   .strict();
-const agentRequestSchema = z
+export const agentRequestSchema = z
   .object({
     instructions: z.string(),
     priorTaskEvidence: z.array(deliveredOutcomeSchema).optional(),
@@ -36,7 +47,7 @@ const completionEvidenceSchema = z
     verification: verificationSchema.optional(),
   })
   .strict();
-const gitStateSchema = z
+export const gitStateSchema = z
   .object({
     dirtyPaths: z.array(z.string()),
     head: z.string(),
@@ -76,6 +87,16 @@ const implementationTaskSchema = z.object({
 });
 const dispatchRequestSchema = z
   .object({
+    execution: z
+      .object({
+        backend: z.literal("docker"),
+        environmentId: z.string().regex(/^[a-f0-9]{64}$/),
+        imageId: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+        sourceHead: z.string().regex(/^[a-f0-9]{40,64}$/),
+        sourceBranch: z.string().min(1),
+      })
+      .strict()
+      .optional(),
     allowDirty: z.boolean().optional(),
     completedTasks: z.array(taskIdentitySchema),
     planId: z.string().min(1),

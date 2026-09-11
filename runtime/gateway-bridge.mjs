@@ -4,7 +4,13 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { configureHarness } from "./harness-config.mjs";
 
-const launch = JSON.parse(await readFile("/state/connectivity.json", "utf8"));
+const home = process.env.STRIKER_STAGE_HOME ?? "/state";
+const launch = JSON.parse(
+  await readFile(
+    process.env.STRIKER_LAUNCH_FILE ?? `${home}/connectivity.json`,
+    "utf8",
+  ),
+);
 const sockets = new Set();
 const server = createServer((client) => {
   const upstream = connect("/gateway.sock");
@@ -25,13 +31,18 @@ const server = createServer((client) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const url = `http://127.0.0.1:${server.address().port}`;
 const proxy = `http://striker:${launch.token}@127.0.0.1:${server.address().port}`;
-await mkdir("/state", { recursive: true });
-await writeFile("/state/proxy-url", proxy, { mode: 0o600 });
+await mkdir(home, { recursive: true });
+await writeFile(`${home}/proxy-url`, proxy, { mode: 0o600 });
 const env = {
   ...process.env,
-  HOME: "/state",
-  CODEX_HOME: "/state/.codex",
-  PI_CODING_AGENT_DIR: "/state/.pi/agent",
+  HOME: home,
+  TMPDIR: home,
+  STRIKER_HARNESS: launch.harness,
+  ...(launch.isolated && launch.harness === "pi"
+    ? { PI_ACP_PI_COMMAND: "/opt/striker/pi-launch.mjs" }
+    : {}),
+  CODEX_HOME: `${home}/.codex`,
+  PI_CODING_AGENT_DIR: `${home}/.pi/agent`,
   STRIKER_GATEWAY_URL: url,
   STRIKER_RUN_KEY: launch.token,
   INITIAL_AGENT_MODE: "agent-full-access",
@@ -42,7 +53,7 @@ const env = {
   NO_PROXY: "localhost,127.0.0.1,::1",
   no_proxy: "localhost,127.0.0.1,::1",
 };
-await configureHarness(launch, url);
+await configureHarness(launch, url, home, process.cwd());
 const argv = process.argv.slice(2);
 if (!argv.length)
   throw new Error("Gateway bridge requires an execution command");

@@ -148,7 +148,8 @@ function startRepair(
   const review = snapshot.standardsReview;
   if (
     snapshot.session === null ||
-    !sameSession(snapshot.session, event.session) ||
+    (!snapshot.session.execution &&
+      !sameSession(snapshot.session, event.session)) ||
     review === null ||
     review === undefined ||
     !["changes_required", "repair_interrupted"].includes(review.stage) ||
@@ -159,7 +160,12 @@ function startRepair(
   return {
     ...snapshot,
     attention: null,
-    standardsReview: { ...review, repairOutput: null, stage: "repairing" },
+    standardsReview: {
+      ...review,
+      repairOutput: null,
+      repairSession: event.session,
+      stage: "repairing",
+    },
     status:
       snapshot.status === "needs_attention"
         ? transitionRun(snapshot.status, "resume")
@@ -176,7 +182,7 @@ function completeRepair(
     snapshot.status !== "running" ||
     review?.stage !== "repairing" ||
     snapshot.session === null ||
-    !sameSession(snapshot.session, event.session) ||
+    !sameSession(review.repairSession ?? snapshot.session, event.session) ||
     !isDeepStrictEqual(review.result, event.result)
   ) {
     throw new Error("Standards repair result has invalid state");
@@ -200,7 +206,7 @@ function interruptRepair(
     snapshot.status !== "running" ||
     review?.stage !== "repairing" ||
     snapshot.session === null ||
-    !sameSession(snapshot.session, event.session) ||
+    !sameSession(review.repairSession ?? snapshot.session, event.session) ||
     !isDeepStrictEqual(review.result, event.result)
   ) {
     throw new Error("Standards repair interruption has invalid state");

@@ -47,8 +47,13 @@ export async function startBrokerProcess(
           headers: { authorization: `Bearer ${key}` },
           signal: AbortSignal.timeout(500),
         });
-        await response.body?.cancel();
-        if (response.ok) return { close };
+        const catalog = (await response.json()) as { data?: unknown[] };
+        if (
+          response.ok &&
+          Array.isArray(catalog.data) &&
+          catalog.data.length > 0
+        )
+          return { close };
       } catch {
         /* The loopback listener may not be ready yet. */
       }

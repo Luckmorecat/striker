@@ -19,6 +19,9 @@ export async function loadBaseline() {
     [
       "baseline.json",
       "Dockerfile",
+      "restrict-stage.c",
+      "context-config.mjs",
+      "pi-launch.mjs",
       "install.mjs",
       "probe.mjs",
       ".dockerignore",

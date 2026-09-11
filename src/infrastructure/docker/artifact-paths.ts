@@ -24,9 +24,10 @@ export async function allocateArtifactPaths(stateRoot: string, runId: string) {
     checkout: path.join(root, "checkout"),
     state: path.join(root, "state"),
     output: path.join(root, "output"),
+    inputs: path.join(root, "inputs"),
   };
   await Promise.all(
-    [paths.checkout, paths.state, paths.output].map((directory) =>
+    [paths.checkout, paths.state, paths.output, paths.inputs].map((directory) =>
       mkdir(directory, { mode: 0o700 }),
     ),
   );

@@ -23,3 +23,11 @@ export interface ExecutionEnvironmentRequest {
 export interface ExecutionEnvironment {
   open(request: ExecutionEnvironmentRequest): Promise<ExecutionServices>;
 }
+
+export interface ExecutionRunDescriptor {
+  readonly backend: "docker";
+  readonly environmentId: string;
+  readonly imageId: string;
+  readonly sourceHead: string;
+  readonly sourceBranch: string;
+}

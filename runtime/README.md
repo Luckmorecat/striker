@@ -147,3 +147,29 @@ cited search, retained context after reconnecting, stream cancellation, and
 public HTTP/HTTPS from a restricted container. Ordinary `pnpm check` never runs
 these authenticated calls. Smoke timeouts bound acceptance only; they do not
 impose production task timeouts.
+
+## Explicit isolated feature execution
+
+After preparing the current image and broker-owned login, run a clean committed
+project with `striker run <plan-directory> --execution docker`. Codex and Pi are
+supported. Local execution remains the default during rollout; Docker errors
+stop execution.
+
+The host selects tasks and owns the journal. The retained container owns an
+independent Git checkout, verification, acpx, and every harness child process.
+Each stage stops the preceding container processes before starting. Reviews use
+read-only snapshots and separate scratch directories. The Linux container kernel
+must support Landlock ABI 3 or newer; unsupported restrictions fail closed. See
+the
+[kernel's Landlock documentation](https://docs.kernel.org/userspace-api/landlock.html).
+
+Only packaged Striker skills and explicitly configured project skills are
+enabled. Extra names resolve under `.agents/skills/<name>/SKILL.md`; duplicate
+names, metadata aliases, missing resources, and symlinked resource paths are
+rejected. Repository instructions remain available. Future plan tasks are read
+from the host when selected; delivered task and stage inputs are retained with
+their recorded identity.
+
+Work remains in the private `environments/<run-id>/checkout` directory after the
+container stops. Status and discard use the host journal. Cross-command Docker
+recovery and result-branch export are not yet available in this rollout.

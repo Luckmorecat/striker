@@ -113,11 +113,16 @@ async function inspectRestrictions(
         RW: true,
       }),
       expect.objectContaining({
+        Source: environment.inputs,
+        Destination: "/opt/striker/run",
+        RW: false,
+      }),
+      expect.objectContaining({
         Source: environment.output,
         Destination: "/output",
         RW: true,
       }),
     ]),
   );
-  expect(inspected[0]?.Mounts.filter((mount) => mount.Source)).toHaveLength(3);
+  expect(inspected[0]?.Mounts.filter((mount) => mount.Source)).toHaveLength(4);
 }

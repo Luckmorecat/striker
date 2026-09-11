@@ -98,7 +98,7 @@ async function markInterruptedRepair(
     },
     result: input.review.result,
     runId: input.request.runId,
-    session: input.session,
+    session: input.review.repairSession ?? input.session,
     task: input.task.identity,
     type: "plan_compliance_repair_interrupted",
   });

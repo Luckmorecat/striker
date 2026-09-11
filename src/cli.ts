@@ -8,6 +8,7 @@ import path from "node:path";
 
 import { StrikerPlanAdapter } from "./adapters/striker-plan/striker-plan-adapter.js";
 import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
+import { dispatchDockerRun } from "./cli/docker-run.js";
 import { commandResult } from "./cli/command-result.js";
 import { createExecutionDispatcher } from "./cli/execution-composition.js";
 import { createAnswerReader } from "./cli/terminal/answer-reader.js";
@@ -56,6 +57,11 @@ async function createDispatcher(
   const config = await loadProjectConfig(root);
   const stateRoot = await git.resolvePrivatePath(root, "striker");
   await mkdir(stateRoot, { mode: 0o700, recursive: true });
+  const active = await new FileRunJournal(stateRoot).loadActive();
+  if (active?.snapshot?.request.execution?.backend === "docker")
+    throw new Error(
+      "This run belongs to Docker execution; local recovery is forbidden",
+    );
   const registry = new AdapterRegistry();
   registry.register(
     new StrikerPlanAdapter({
@@ -80,9 +86,19 @@ async function dispatchRun(
   source: string,
   allowDirty: boolean,
   approvalMode: ApprovalMode,
+  backend?: "local" | "docker",
 ) {
   const root = await git.resolveRoot(cwd);
   const config = await loadProjectConfig(root);
+  if (backend === "docker")
+    return dispatchDockerRun({
+      projectRoot: root,
+      stateRoot: await git.resolvePrivatePath(root, "striker"),
+      packagedRoot: skillsRoot,
+      config,
+      source: path.resolve(cwd, source),
+      allowDirty,
+    });
   const dispatcher = await createDispatcher(approvalMode);
   const sourcePath = path.resolve(cwd, source);
   const plan = await parseStrikerPlan(sourcePath);
@@ -183,8 +199,13 @@ process.exitCode = await runCli(process.argv.slice(2), {
     },
   },
   runHandler: {
-    run: async ({ allowDirty, approvalMode, source }) => {
-      const result = await dispatchRun(source, allowDirty, approvalMode);
+    run: async ({ allowDirty, approvalMode, source, execution }) => {
+      const result = await dispatchRun(
+        source,
+        allowDirty,
+        approvalMode,
+        execution,
+      );
       return commandResult(result);
     },
   },
@@ -200,16 +221,20 @@ process.exitCode = await runCli(process.argv.slice(2), {
   },
   operationHandler: {
     discard: async () => {
-      const dispatcher = await createDispatcher(await permissionConfig.read());
-      await dispatcher.discard();
+      const root = await git.resolveRoot(cwd);
+      await new RunOperations(
+        new FileRunJournal(await git.resolvePrivatePath(root, "striker")),
+      ).discard();
     },
     retry: async () => {
       const dispatcher = await createDispatcher(await permissionConfig.read());
       return commandResult(await dispatcher.retry());
     },
     status: async () => {
-      const dispatcher = await createDispatcher(await permissionConfig.read());
-      return dispatcher.status();
+      const root = await git.resolveRoot(cwd);
+      return new RunOperations(
+        new FileRunJournal(await git.resolvePrivatePath(root, "striker")),
+      ).status();
     },
   },
   skillInstaller: createPublicSkillInstaller(skillsRoot),

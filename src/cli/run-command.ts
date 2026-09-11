@@ -2,7 +2,7 @@ import type {
   CommandInteraction,
   InteractionOptions,
 } from "./interactive-controller.js";
-import type { Command } from "commander";
+import { Option, type Command } from "commander";
 
 import type { PermissionConfig, RunCommandHandler } from "../core/contracts.js";
 
@@ -21,17 +21,27 @@ export function addRunCommand(
     .command("run")
     .description("Run every remaining task from a Striker plan")
     .argument("<source>", "Striker plan directory")
+    .addOption(
+      new Option("--execution <backend>", "execution environment").choices([
+        "local",
+        "docker",
+      ]),
+    )
     .option("--allow-dirty", "preserve non-overlapping existing changes")
     .option("--no-interactive", "disable attention and permission prompts")
     .action(
       async (
         source: string,
-        options: InteractionOptions & { allowDirty?: boolean },
+        options: InteractionOptions & {
+          allowDirty?: boolean;
+          execution?: "local" | "docker";
+        },
       ) => {
         dependencies.controller.prepare(options);
         const approvalMode = await dependencies.permissionConfig.read();
         dependencies.writeOut(`Permission mode: ${approvalMode}.\n`);
         const result = await dependencies.handler.run({
+          ...(options.execution ? { execution: options.execution } : {}),
           allowDirty: options.allowDirty ?? false,
           approvalMode,
           source,

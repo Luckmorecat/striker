@@ -46,6 +46,8 @@ export class DockerEnvironment implements FeatureEnvironmentProvisioner {
         "--mount",
         `type=bind,source=${source},target=${target}`,
       ]),
+      "--mount",
+      `type=bind,source=${paths.inputs},target=/opt/striker/run,readonly`,
       ...gatewayMount,
       "--workdir",
       "/workspace",
@@ -66,6 +68,7 @@ export class DockerEnvironment implements FeatureEnvironmentProvisioner {
       checkout: paths.checkout,
       state: paths.state,
       output: paths.output,
+      inputs: paths.inputs,
     };
     await writeFile(
       path.join(paths.root, "environment.json"),

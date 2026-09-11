@@ -23,6 +23,11 @@ export interface ImplementationTask {
 }
 
 export interface AgentSession {
+  readonly execution?: {
+    readonly environmentId: string;
+    readonly stageId: string;
+    readonly inputId: string;
+  };
   readonly id: string;
   readonly resumeId?: string;
 }

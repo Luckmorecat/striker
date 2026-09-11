@@ -52,6 +52,7 @@ export type RunTransition =
   | "retry";
 
 export interface DispatchRequest {
+  readonly execution?: import("./execution-environment.js").ExecutionRunDescriptor;
   readonly allowDirty?: boolean;
   readonly completedTasks: readonly TaskIdentity[];
   readonly planId: string;
@@ -86,6 +87,7 @@ export interface PlanComplianceReviewState {
     import("./review-contracts.js").PlanComplianceReviewResult | null;
   readonly resultCommit: string;
   readonly repairOutput: string | null;
+  readonly repairSession?: AgentSession;
   readonly reviewSession: AgentSession | null;
   readonly stage: ReviewStage;
   readonly standards: import("./review-contracts.js").StandardsReviewResult;
@@ -110,6 +112,7 @@ export interface StandardsReviewState {
   readonly result: StandardsReviewResult | null;
   readonly resultCommit: string;
   readonly repairOutput: string | null;
+  readonly repairSession?: AgentSession;
   readonly reviewSession: AgentSession | null;
   readonly stage: ReviewStage;
   readonly startCommit: string;

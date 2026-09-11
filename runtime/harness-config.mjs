@@ -1,10 +1,20 @@
+import path from "node:path";
+import { isolatedContext } from "./context-config.mjs";
 import { mkdir, writeFile } from "node:fs/promises";
 
-export async function configureHarness(launch, url) {
+export async function configureHarness(
+  launch,
+  url,
+  home = "/state",
+  cwd = "/workspace",
+) {
+  const context = launch.isolated
+    ? await isolatedContext(home, cwd)
+    : undefined;
   if (launch.harness === "codex") {
-    await mkdir("/state/.codex", { recursive: true });
+    await mkdir(path.join(home, ".codex"), { recursive: true });
     await writeFile(
-      "/state/.codex/config.toml",
+      path.join(home, ".codex/config.toml"),
       [
         `model = ${JSON.stringify(launch.model)}`,
         `model_reasoning_effort = ${JSON.stringify(launch.effort)}`,
@@ -16,11 +26,12 @@ export async function configureHarness(launch, url) {
         'wire_api = "responses"',
         "requires_openai_auth = false",
         `experimental_bearer_token = ${JSON.stringify(launch.token)}`,
+        ...(context?.codex ?? []),
       ].join("\n"),
       { mode: 0o600 },
     );
     await writeFile(
-      "/state/mcp.json",
+      path.join(home, "mcp.json"),
       JSON.stringify({
         mcpServers: [
           {
@@ -37,9 +48,9 @@ export async function configureHarness(launch, url) {
       { mode: 0o600 },
     );
   } else if (launch.harness === "pi") {
-    await mkdir("/state/.pi/agent", { recursive: true });
+    await mkdir(path.join(home, ".pi/agent"), { recursive: true });
     await writeFile(
-      "/state/.pi/agent/models.json",
+      path.join(home, ".pi/agent/models.json"),
       JSON.stringify({
         providers: {
           striker: {
@@ -63,7 +74,7 @@ export async function configureHarness(launch, url) {
       { mode: 0o600 },
     );
     await writeFile(
-      "/state/.pi/agent/settings.json",
+      path.join(home, ".pi/agent/settings.json"),
       JSON.stringify({
         defaultProvider: "striker",
         defaultModel: launch.model,
@@ -71,5 +82,11 @@ export async function configureHarness(launch, url) {
         extensions: ["/opt/striker/pi-search.mjs"],
       }),
     );
+    if (context)
+      await writeFile(
+        path.join(home, "pi-args.json"),
+        JSON.stringify(context.piArgs),
+        { mode: 0o600 },
+      );
   } else throw new Error("Unsupported isolated harness");
 }

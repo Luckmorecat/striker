@@ -246,6 +246,7 @@ export interface PublicSkillInstaller {
 }
 
 export interface RunCommandRequest {
+  readonly execution?: "local" | "docker";
   readonly allowDirty: boolean;
   readonly approvalMode: ApprovalMode;
   readonly source: string;

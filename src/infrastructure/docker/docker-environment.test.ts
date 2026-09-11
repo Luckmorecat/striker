@@ -49,7 +49,7 @@ it("allocates exclusive private mount directories and creates a restricted retai
       "1024m",
     ]),
   );
-  expect(create.filter((arg) => arg.startsWith("type=bind"))).toHaveLength(3);
+  expect(create.filter((arg) => arg.startsWith("type=bind"))).toHaveLength(4);
   expect(
     await readFile(
       path.join(root, "environments/test-run/environment.json"),

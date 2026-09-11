@@ -7,3 +7,6 @@
 !harness-config.mjs
 !pi-search.mjs
 !search-mcp.mjs
+!restrict-stage.c
+!context-config.mjs
+!pi-launch.mjs

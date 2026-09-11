@@ -7,6 +7,7 @@ export async function prepareHarnessLaunch(
   request: ModelSelection & {
     readonly harness: string;
     readonly token: string;
+    readonly isolated?: boolean;
   },
 ) {
   if (request.harness !== "codex" && request.harness !== "pi")

@@ -1,3 +1,4 @@
+import { runRepairSession } from "./repair-session.js";
 import type {
   AgentRunner,
   AgentSession,
@@ -218,34 +219,55 @@ async function appendRepairInterruption(
 export async function repairStandardsFindings(
   input: StandardsRepairRequest,
 ): Promise<StandardsRepairOutcome> {
-  await input.journal.append({
-    result: input.result,
-    runId: input.request.runId,
-    session: input.session,
-    task: input.task.identity,
-    type: "standards_repair_started",
-  });
+  let session = input.session;
+  const delivery = { begun: false };
+
   let output: string;
   try {
-    const turn = await input.runner.resumeSession(
-      input.session,
+    const turn = await runRepairSession(
+      input,
       repairInstructions(input.result),
+      async (value) => {
+        session = value;
+        await input.journal.append({
+          result: input.result,
+          runId: input.request.runId,
+          session: value,
+          task: input.task.identity,
+          type: "standards_repair_started",
+        });
+        delivery.begun = true;
+      },
     );
     if (turn.status === "failed") {
-      return await appendRepairInterruption(input, turn.error);
+      return await appendRepairInterruption({ ...input, session }, turn.error);
     }
-    if (!sameSession(input.session, turn.session)) {
+    if (!sameSession(session, turn.session)) {
       throw new Error("Agent runner replaced the implementation session");
     }
     output = turn.output;
   } catch (error) {
-    return appendRepairInterruption(input, error);
+    if (!delivery.begun) {
+      const attention: RunAttention = {
+        reason: "standards_repair_interrupted",
+        detail: error instanceof Error ? error.message : String(error),
+      };
+      await input.journal.append({
+        type: "run_needs_attention",
+        runId: input.request.runId,
+        task: input.task.identity,
+        session,
+        attention,
+      });
+      return { attention, status: "interrupted" };
+    }
+    return appendRepairInterruption({ ...input, session }, error);
   }
   await input.journal.append({
     output,
     result: input.result,
     runId: input.request.runId,
-    session: input.session,
+    session,
     task: input.task.identity,
     type: "standards_repair_completed",
   });

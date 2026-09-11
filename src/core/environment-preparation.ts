@@ -32,6 +32,7 @@ export interface RetainedFeatureEnvironment {
   readonly checkout: string;
   readonly state: string;
   readonly output: string;
+  readonly inputs: string;
 }
 
 /** Resource preparation only; does not grant execution or model access. */
