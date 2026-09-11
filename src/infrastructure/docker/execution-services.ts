@@ -1,3 +1,4 @@
+import { parseReviewResult } from "../../runner/review-result.js";
 import { agentRequestSchema } from "../run-journal-schema.js";
 import type {
   AgentRunner,
@@ -50,6 +51,19 @@ function executionRunner(
     },
     resumeInitialSession: (session, recovery) =>
       runner.resumeSession(session, initialDeliveryPrompt(recovery)),
+    resumeReviewSession: async (session) => {
+      const turn = await runner.resumeSession(
+        session,
+        "Resume the interrupted review using its frozen instructions. Return the required strict review JSON.",
+      );
+      return turn.status === "failed"
+        ? turn
+        : {
+            status: "returned",
+            session,
+            result: parseReviewResult(turn.output),
+          };
+    },
     runReviewInNewSession: async (request, started) => {
       let session: AgentSession | undefined;
       const turn = (await executor.execute(
@@ -137,10 +151,27 @@ export function dockerExecutionServices(
       verify: async (request) => {
         if (request.cwd !== projectRoot)
           throw new Error("Worker request names a different execution root");
-        return (await executor.execute({
-          operation: "verify",
-          command: request.command,
-        })) as VerificationResult;
+        const result = (await executor
+          .execute({
+            operation: "verify",
+            command: request.command,
+          })
+          .catch((error: unknown) => ({
+            command: request.command,
+            exitCode: 1,
+            output: `Verification worker interrupted: ${error instanceof Error ? error.message : String(error)}. Resume the retained run after inspecting its resources.`,
+          }))) as VerificationResult;
+        if (
+          result.exitCode === 137 ||
+          /resource temporarily unavailable|cannot allocate memory|no space left/i.test(
+            result.output,
+          )
+        )
+          return {
+            ...result,
+            output: `${result.output}\nIsolated memory, process or storage resources exhausted, or verification was killed. Inspect retained files and recorded limits before recovery.`,
+          };
+        return result;
       },
     },
   };

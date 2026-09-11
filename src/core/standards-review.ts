@@ -13,6 +13,7 @@ import type {
 } from "./contracts.js";
 
 interface StandardsReviewRequest {
+  readonly preservedSession?: AgentSession | null;
   readonly attempt: number;
   readonly completion: TaskCompletionEvidence;
   readonly execution: TaskExecutionEvidence;
@@ -123,10 +124,16 @@ async function appendInterruption(
   return { attention, status: "interrupted" };
 }
 
-function invokeReviewer(
+async function invokeReviewer(
   input: StandardsReviewRequest,
   sessionStarted: (session: AgentSession) => Promise<void>,
 ): Promise<ReviewTurn> {
+  if (input.preservedSession?.execution) {
+    if (!input.runner.resumeReviewSession)
+      throw new Error("Runner cannot resume isolated reviews");
+    await sessionStarted(input.preservedSession);
+    return input.runner.resumeReviewSession(input.preservedSession);
+  }
   if (input.runner.runReviewInNewSession === undefined) {
     throw new Error("Agent runner does not support read-only reviews");
   }

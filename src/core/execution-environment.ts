@@ -26,6 +26,7 @@ export interface ExecutionEnvironment {
 
 export interface ExecutionRunDescriptor {
   readonly backend: "docker";
+  readonly recoveryId: string;
   readonly environmentId: string;
   readonly imageId: string;
   readonly sourceHead: string;

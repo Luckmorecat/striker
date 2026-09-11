@@ -261,10 +261,15 @@ export class PausedRunRecovery {
   ): Promise<DispatchResult> {
     transitionRun(paused.status, action);
     await appendRunContinuation(this.dependencies.journal, paused, answer);
+    const review = paused.planComplianceReview ?? paused.standardsReview;
+    const preserved =
+      review?.stage === "repair_attention" && review.repairSession?.execution
+        ? review.repairSession
+        : paused.session;
     let turn;
     try {
       turn = await this.dependencies.runner.resumeSession(
-        paused.session,
+        preserved,
         instructions,
       );
     } catch (error) {
@@ -278,8 +283,8 @@ export class PausedRunRecovery {
       );
     }
     if (
-      turn.session.id !== paused.session.id ||
-      turn.session.resumeId !== paused.session.resumeId
+      turn.session.id !== preserved.id ||
+      turn.session.resumeId !== preserved.resumeId
     ) {
       return pauseResumeFailure(
         this.dependencies.journal,

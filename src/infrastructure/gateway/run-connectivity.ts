@@ -16,6 +16,7 @@ import { RunGateway } from "./run-gateway.js";
 
 interface ConnectivityRequest {
   readonly root: string;
+  readonly socketPath?: string;
   readonly config: ProjectConfig;
   readonly services: readonly NamedServiceGrant[];
   readonly broker: {
@@ -33,9 +34,12 @@ export async function openRunConnectivity(request: ConnectivityRequest) {
       `Selected subscription model is unavailable: ${selection.model}`,
     );
   await mkdir(request.root, { recursive: true, mode: 0o700 });
-  const directory = await mkdtemp(
-    path.join(await realpath(request.root), "gateway-"),
-  );
+  const directory = request.socketPath
+    ? path.dirname(request.socketPath)
+    : await mkdtemp(path.join(await realpath(request.root), "gateway-"));
+  if (request.socketPath) {
+    await mkdir(directory, { mode: 0o700 });
+  }
   const socketPath = path.join(directory, "access.sock");
   const descriptorPath = path.join(directory, "selection.json");
   const gateway = new RunGateway({

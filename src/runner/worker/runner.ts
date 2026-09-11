@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { collectFinalMessage } from "../acp-output.js";
 import { createAcpRuntime, createRuntimeStore } from "acpx/runtime";
 import path from "node:path";
 import { AcpxAgentRunner, type AcpxRuntimeBoundary } from "../acpx-runner.js";
@@ -43,7 +45,25 @@ export function createWorkerRunner(): AcpxAgentRunner {
   const boundary: AcpxRuntimeBoundary = {
     close: ({ handle, reason }) => runtime.close({ handle, reason }),
     doctor: () => runtime.doctor(),
-    ensureSession: (input) => runtime.ensureSession(input),
+    ensureSession: async (input) => {
+      const handle = await runtime.ensureSession(input);
+      if (harness === "codex" && !input.resumeSessionId) {
+        // Codex persists its new backend thread only after its first turn.
+        // Complete initialization before advertising durable task delivery.
+        const turn = runtime.startTurn({
+          handle,
+          mode: "prompt",
+          requestId: randomUUID(),
+          text: "STRIKER_SESSION_INITIALIZATION: Reply READY. Task instructions follow in the next message. Do not invoke tools or modify files.",
+        });
+        const output = collectFinalMessage(turn.events);
+        const result = await turn.result;
+        await output;
+        if (result.status !== "completed")
+          throw new Error("Could not initialize a durable Codex session");
+      }
+      return handle;
+    },
     probeAvailability: () => runtime.probeAvailability(),
     startTurn: (input) => runtime.startTurn(input),
   };

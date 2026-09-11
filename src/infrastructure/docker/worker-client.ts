@@ -36,7 +36,14 @@ export async function callWorker(options: {
     child.once("error", reject);
     child.once("close", (code) => {
       if (code === 0) resolve();
-      else reject(new Error("Isolated worker exited unsuccessfully"));
+      else
+        reject(
+          new Error(
+            code === 137
+              ? "Isolated worker was killed (exit 137); inspect container memory/resource limits and retained files before resuming"
+              : `Isolated worker exited (${String(code)}); inspect retained container resources and resume or explicitly retry`,
+          ),
+        );
     });
   });
   // Observe exit rejection immediately while consuming the framed response.

@@ -1,3 +1,4 @@
+import { parsePlanManifest } from "./plan-manifest.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -23,6 +24,10 @@ interface AdapterOptions {
   readonly projectRoot: string;
   readonly workflowRoot: string;
   readonly inlineContext?: boolean;
+  readonly planBinding?: {
+    readonly identity: string;
+    readonly manifest: string;
+  };
 }
 
 function includesIdentity(
@@ -175,8 +180,20 @@ export class StrikerPlanAdapter implements TaskSourceAdapter {
       parseStrikerPlan(planRoot),
       loadImplementorWorkflow(this.options.workflowRoot),
     ]);
+    const binding = this.options.planBinding;
+    if (
+      binding &&
+      JSON.stringify({ ...plan.manifest, tasks: [] }) !==
+        JSON.stringify({
+          ...parsePlanManifest(JSON.parse(binding.manifest)),
+          tasks: [],
+        })
+    )
+      throw new Error(
+        "Active plan manifest changed; restore its routes and ledger definitions before recovery",
+      );
     return new StrikerPlanSource(
-      plan,
+      binding ? { ...plan, identity: binding.identity } : plan,
       this.options.projectRoot,
       workflow,
       planRoot,

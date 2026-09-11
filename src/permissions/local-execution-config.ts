@@ -12,7 +12,7 @@ export const resourceLimitsSchema = z
   })
   .strict();
 
-const schema = z
+export const executionPolicySchema = z
   .object({
     approvedImages: z
       .array(z.string().regex(/^sha256:[a-f0-9]{64}$/))
@@ -36,17 +36,19 @@ const schema = z
       .optional(),
   })
   .strict();
-export type ExecutionPolicy = z.infer<typeof schema>;
+export type ExecutionPolicy = z.infer<typeof executionPolicySchema>;
 
 export class LocalExecutionConfig {
   constructor(private readonly filePath: string) {}
 
   async read(): Promise<ExecutionPolicy> {
     try {
-      return schema.parse(JSON.parse(await readFile(this.filePath, "utf8")));
+      return executionPolicySchema.parse(
+        JSON.parse(await readFile(this.filePath, "utf8")),
+      );
     } catch (cause) {
       if ((cause as NodeJS.ErrnoException).code === "ENOENT")
-        return schema.parse({});
+        return executionPolicySchema.parse({});
       throw new Error(
         `Cannot load local execution configuration: ${String(cause)}`,
         { cause },
@@ -55,7 +57,7 @@ export class LocalExecutionConfig {
   }
 
   async write(value: ExecutionPolicy): Promise<void> {
-    const policy = schema.parse(value);
+    const policy = executionPolicySchema.parse(value);
     await mkdir(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
     const temporary = `${this.filePath}.${randomUUID()}.tmp`;
     try {

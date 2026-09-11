@@ -8,6 +8,8 @@ import path from "node:path";
 
 import { StrikerPlanAdapter } from "./adapters/striker-plan/striker-plan-adapter.js";
 import { parseStrikerPlan } from "./adapters/striker-plan/plan-parser.js";
+import { recoverDockerRun } from "./cli/docker-recovery.js";
+import { acquireProjectOperation } from "./infrastructure/project-operation-lease.js";
 import { dispatchDockerRun } from "./cli/docker-run.js";
 import { commandResult } from "./cli/command-result.js";
 import { createExecutionDispatcher } from "./cli/execution-composition.js";
@@ -99,20 +101,52 @@ async function dispatchRun(
       source: path.resolve(cwd, source),
       allowDirty,
     });
-  const dispatcher = await createDispatcher(approvalMode);
-  const sourcePath = path.resolve(cwd, source);
-  const plan = await parseStrikerPlan(sourcePath);
-  return dispatcher.dispatch({
-    allowDirty,
-    completedTasks: [],
-    planId: plan.identity,
-    runId: randomUUID(),
-    skills: config.skills,
-    taskSource: {
-      location: sourcePath,
-      type: config.taskSource,
-    },
-  });
+  const release = await acquireProjectOperation(
+    await git.resolvePrivatePath(root, "striker"),
+  );
+  try {
+    const dispatcher = await createDispatcher(approvalMode);
+    const sourcePath = path.resolve(cwd, source);
+    const plan = await parseStrikerPlan(sourcePath);
+    return await dispatcher.dispatch({
+      allowDirty,
+      completedTasks: [],
+      planId: plan.identity,
+      runId: randomUUID(),
+      skills: config.skills,
+      taskSource: {
+        location: sourcePath,
+        type: config.taskSource,
+      },
+    });
+  } finally {
+    await release();
+  }
+}
+
+async function recoverRun(
+  action: "resume" | "retry" | "answer",
+  answer?: string,
+) {
+  const root = await git.resolveRoot(cwd);
+  const stateRoot = await git.resolvePrivatePath(root, "striker");
+  const active = await new FileRunJournal(stateRoot).loadActive();
+  if (active?.snapshot?.request.execution?.backend === "docker")
+    return recoverDockerRun({
+      projectRoot: root,
+      stateRoot,
+      action,
+      ...(answer === undefined ? {} : { answer }),
+    });
+  const release = await acquireProjectOperation(stateRoot);
+  try {
+    const dispatcher = await createDispatcher(await permissionConfig.read());
+    return action === "answer"
+      ? await dispatcher.answer(answer ?? "")
+      : await dispatcher[action]();
+  } finally {
+    await release();
+  }
 }
 
 async function openPlanQueries(source: string) {
@@ -211,24 +245,25 @@ process.exitCode = await runCli(process.argv.slice(2), {
   },
   recoveryHandler: {
     answer: async (answer) => {
-      const dispatcher = await createDispatcher(await permissionConfig.read());
-      return commandResult(await dispatcher.answer(answer));
+      return commandResult(await recoverRun("answer", answer));
     },
     resume: async () => {
-      const dispatcher = await createDispatcher(await permissionConfig.read());
-      return commandResult(await dispatcher.resume());
+      return commandResult(await recoverRun("resume"));
     },
   },
   operationHandler: {
     discard: async () => {
       const root = await git.resolveRoot(cwd);
-      await new RunOperations(
-        new FileRunJournal(await git.resolvePrivatePath(root, "striker")),
-      ).discard();
+      const stateRoot = await git.resolvePrivatePath(root, "striker");
+      const release = await acquireProjectOperation(stateRoot);
+      try {
+        await new RunOperations(new FileRunJournal(stateRoot)).discard();
+      } finally {
+        await release();
+      }
     },
     retry: async () => {
-      const dispatcher = await createDispatcher(await permissionConfig.read());
-      return commandResult(await dispatcher.retry());
+      return commandResult(await recoverRun("retry"));
     },
     status: async () => {
       const root = await git.resolveRoot(cwd);

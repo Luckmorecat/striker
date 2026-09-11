@@ -115,9 +115,9 @@ function reviewOutput(text: string) {
 }
 function modelOutput(body: ModelRequest) {
   const text = JSON.stringify(body.input);
-  const review =
-    text.includes("# Independent standards review") ||
-    text.includes("# Independent plan-compliance review");
+  if (initializationOnly(text)) return textOutput("READY");
+  const repair = text.includes("# Reviewed candidate evidence");
+  const review = reviewOnly(text, repair);
   if (review) {
     return reviewOutput(text);
   }
@@ -135,9 +135,11 @@ function modelOutput(body: ModelRequest) {
       outcomeFacts: [],
     });
   const second = text.includes("SLICE_TEST_TASK_2");
-  const command = second
-    ? "test $(cat first.txt) = first && printf second > second.txt && git add second.txt && git commit -m second"
-    : "printf first > first.txt && git add first.txt && git commit -m first";
+  const command = repair
+    ? "git commit --allow-empty --amend -m repaired"
+    : second
+      ? "test $(cat first.txt) = first && printf second > second.txt && git add second.txt && git commit -m second"
+      : "printf first > first.txt && git add first.txt && git commit -m first";
   if (
     body.input.some(
       (item) => (item as { type: string }).type === "additional_tools",
@@ -171,15 +173,28 @@ function modelOutput(body: ModelRequest) {
     status: "completed",
   };
 }
-export async function fakeResponses() {
+export async function fakeResponses(
+  beforeResponse?: (input: string) => Promise<void>,
+  changesRequired?: "standards" | "plan_compliance",
+) {
   const errors: string[] = [];
+  let rejected = false;
   const server = createServer((request, response) => {
     void (async () => {
       const chunks: Buffer[] = [];
       for await (const chunk of request)
         chunks.push(Buffer.from(chunk as Buffer));
       const body = JSON.parse(Buffer.concat(chunks).toString()) as ModelRequest;
-      send(response, modelOutput(body));
+      await beforeResponse?.(JSON.stringify(body.input));
+      let output = modelOutput(body);
+      if (changesRequired && !rejected) {
+        const changed = rejectReview(output, changesRequired);
+        if (changed) {
+          output = changed;
+          rejected = true;
+        }
+      }
+      send(response, output);
     })().catch((error: unknown) => {
       errors.push(String(error));
       response.writeHead(500).end("Fake model failure");
@@ -201,4 +216,47 @@ export async function fakeResponses() {
       });
     },
   };
+}
+
+function initializationOnly(text: string) {
+  return (
+    text.includes("STRIKER_SESSION_INITIALIZATION") &&
+    !text.includes("SLICE_TEST_TASK") &&
+    !text.includes("# Independent")
+  );
+}
+
+function rejectReview(
+  output: Record<string, unknown>,
+  kind: "standards" | "plan_compliance",
+) {
+  if (output.type !== "message") return undefined;
+  const content = output.content as { text: string }[];
+  const result = JSON.parse(content[0]?.text ?? "null") as {
+    kind?: string;
+  } | null;
+  if (result?.kind !== kind) return undefined;
+  return textOutput({
+    ...result,
+    verdict: "changes_required",
+    findings: [
+      {
+        kind: "defect",
+        severity: "blocking",
+        path: "first.txt",
+        location: { line: 1 },
+        rule: "Acceptance repair scenario",
+        message: "The candidate needs an amendment",
+        fix: "Amend the existing commit while preserving exact file content",
+      },
+    ],
+  });
+}
+
+function reviewOnly(text: string, repair: boolean) {
+  return (
+    !repair &&
+    (text.includes("# Independent standards review") ||
+      text.includes("# Independent plan-compliance review"))
+  );
 }

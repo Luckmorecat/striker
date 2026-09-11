@@ -1,8 +1,10 @@
+import { taskPromptText } from "../../runner/task-prompt.js";
+import { stageRecord } from "./stage-record.js";
 import { parseWorkerRequest } from "../../runner/worker/protocol.js";
-import { createHash, randomUUID } from "node:crypto";
-import { cp, mkdir, writeFile, readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { AgentSession } from "../../core/contracts.js";
+import type { AgentSession, AgentRequest } from "../../core/contracts.js";
 import type { RetainedFeatureEnvironment } from "../../core/environment-preparation.js";
 import type { ModelSelection } from "../../core/subscription.js";
 import { prepareHarnessLaunch } from "../../runner/worker/harness-launch.js";
@@ -39,36 +41,26 @@ export class StageExecutor {
     const environment = this.options.environment;
     try {
       await dockerCommand(["stop", "--time", "0", environment.environmentId]);
-      const preserved = this.preservedStage(request);
-      const stageId = preserved?.stageId ?? randomUUID();
-      const inputId = createHash("sha256")
-        .update(JSON.stringify({ request, context: this.options.contextId }))
-        .digest("hex");
-      const root = path.dirname(environment.inputs);
-      const record = path.join(root, "stages", stageId);
-      await mkdir(record, { recursive: true, mode: 0o700 });
-      if (preserved) {
-        const frozen = JSON.parse(
-          await readFile(path.join(record, "input.json"), "utf8"),
-        ) as { inputId: string; contextId: string };
-        if (
-          frozen.inputId !== preserved.inputId ||
-          frozen.contextId !== this.options.contextId
-        )
-          throw new Error("Frozen stage resources changed");
-      } else
-        await writeFile(
-          path.join(record, "input.json"),
-          JSON.stringify({
-            request,
-            inputId,
-            contextId: this.options.contextId,
-          }),
-          { mode: 0o600, flag: "wx" },
-        );
+      this.preservedStage(request);
+      const stage = await stageRecord(
+        environment.inputs,
+        this.options.contextId,
+        request,
+      );
+      const { stageId, inputId, record } = stage;
       const home = await this.prepareHome(stageId);
-      const command = await this.command(request, stageId, home);
+      const command = this.command(stage.original, stageId, home);
       await dockerCommand(["start", environment.environmentId]);
+      if (stage.preserved)
+        await dockerCommand([
+          "exec",
+          environment.environmentId,
+          "/bin/sh",
+          "-c",
+          'test -d "$1/acpx" || { echo "Preserved session files missing; explicit retry required" >&2; exit 1; }',
+          "striker",
+          home,
+        ]);
       await dockerCommand([
         "exec",
         environment.environmentId,
@@ -80,7 +72,7 @@ export class StageExecutor {
       return await callWorker({
         environmentId: environment.environmentId,
         command,
-        request,
+        request: continuationRequest(request, stage.original),
         ...(started
           ? {
               started: async (session: AgentSession) => {
@@ -130,11 +122,7 @@ export class StageExecutor {
     return `/state/stages/${stageId}`;
   }
 
-  private async command(
-    request: Body,
-    stageId: string,
-    home: string,
-  ): Promise<string[]> {
+  private command(request: Body, stageId: string, home: string): string[] {
     const worker = [
       "node",
       "/opt/striker/gateway-bridge.mjs",
@@ -147,15 +135,6 @@ export class StageExecutor {
       `STRIKER_LAUNCH_FILE=/opt/striker/run/launch/${stageId}/connectivity.json`,
     ];
     if (request.operation !== "review") return [...env, ...worker];
-    const snapshot = path.join(
-      this.options.environment.inputs,
-      "reviews",
-      stageId,
-    );
-    await cp(this.options.environment.checkout, snapshot, {
-      recursive: true,
-      verbatimSymlinks: true,
-    });
     return [
       ...env,
       "/opt/striker/restrict-stage",
@@ -165,4 +144,16 @@ export class StageExecutor {
       ...worker,
     ];
   }
+}
+
+function continuationRequest(request: Body, original: Body): Body {
+  if (request.operation !== "continue") return request;
+  if (original.operation === "review")
+    return { ...request, instructions: original.instructions };
+  if (original.operation !== "implement")
+    throw new Error("Preserved session has no agent stage input");
+  return {
+    ...request,
+    instructions: `${taskPromptText(original.request as AgentRequest)}\n\n# Stage continuation\n${request.instructions}`,
+  };
 }

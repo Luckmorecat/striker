@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FakeAgentRunner, InMemoryRunJournal } from "../testing/fakes.js";
 import { AdapterRegistry } from "./adapter-registry.js";
 import type {
+  AgentSession,
   DispatchRequest,
   GitRepository,
   GitState,
@@ -107,7 +108,10 @@ class RepairGit implements GitRepository {
   }
 }
 
-async function seedImplementation(journal: InMemoryRunJournal): Promise<void> {
+async function seedImplementation(
+  journal: InMemoryRunJournal,
+  session: AgentSession = implementor,
+): Promise<void> {
   await journal.append({
     planId: request.planId,
     request,
@@ -131,7 +135,7 @@ async function seedImplementation(journal: InMemoryRunJournal): Promise<void> {
     attempt: 1,
     request: { instructions: task.instructions, skills: [] },
     runId: request.runId,
-    session: implementor,
+    session,
     task: task.identity,
     type: "task_session_started",
   });
@@ -139,8 +143,9 @@ async function seedImplementation(journal: InMemoryRunJournal): Promise<void> {
 
 async function seedChangesRequired(
   journal: InMemoryRunJournal,
+  session: AgentSession = implementor,
 ): Promise<StandardsReviewResult> {
-  await seedImplementation(journal);
+  await seedImplementation(journal, session);
   const result = reviewResult("candidate-1", "changes_required");
   await journal.append(reviewStarted());
   await journal.append({
@@ -432,49 +437,65 @@ describe("retried standards repair amendment", () => {
 });
 
 describe("post-repair evidence recovery", () => {
-  it("returns failed evidence to the preserved implementor", async () => {
-    const journal = new InMemoryRunJournal();
-    const result = await seedChangesRequired(journal);
-    await journal.append({
-      result,
-      runId: request.runId,
-      session: implementor,
-      task: task.identity,
-      type: "standards_repair_started",
-    });
-    await journal.append({
-      output: "repair complete",
-      result,
-      runId: request.runId,
-      session: implementor,
-      task: task.identity,
-      type: "standards_repair_completed",
-    });
-    const runner = new FakeAgentRunner({
-      output: "verification fixed",
-      session: implementor,
-      status: "returned",
-    });
-    const results = [
-      { ...verification, exitCode: 1, output: "failed" },
-      verification,
-    ];
-    const host = dispatcher(journal, runner, new RepairGit(), () =>
-      Promise.resolve(results.shift() ?? verification),
-    );
+  it.each([false, true])(
+    "returns failed evidence to the preserved repair thread (isolated: %s)",
+    async (isolated) => {
+      const repair = isolated
+        ? {
+            id: "repair",
+            execution: {
+              environmentId: "a".repeat(64),
+              stageId: "cdd9e33b-5b67-48de-b0d6-f6cb3f6fef76",
+              inputId: "b".repeat(64),
+            },
+          }
+        : implementor;
+      const journal = new InMemoryRunJournal();
+      const result = await seedChangesRequired(
+        journal,
+        isolated ? { ...repair, id: "implementation" } : implementor,
+      );
+      await journal.append({
+        result,
+        runId: request.runId,
+        session: repair,
+        task: task.identity,
+        type: "standards_repair_started",
+      });
+      await journal.append({
+        output: "repair complete",
+        result,
+        runId: request.runId,
+        session: repair,
+        task: task.identity,
+        type: "standards_repair_completed",
+      });
+      const runner = new FakeAgentRunner({
+        output: "verification fixed",
+        session: repair,
+        status: "returned",
+      });
+      const results = [
+        { ...verification, exitCode: 1, output: "failed" },
+        verification,
+      ];
+      const host = dispatcher(journal, runner, new RepairGit(), () =>
+        Promise.resolve(results.shift() ?? verification),
+      );
 
-    await expect(host.resume()).resolves.toMatchObject({
-      reason: "verification_failed",
-      status: "needs_attention",
-    });
-    expect(journal.snapshots.at(-1)?.standardsReview?.stage).toBe(
-      "repair_attention",
-    );
-    await expect(host.answer("Fix verification.")).resolves.toMatchObject({
-      status: "completed",
-    });
-    expect(runner.resumeRequests).toHaveLength(1);
-  });
+      await expect(host.resume()).resolves.toMatchObject({
+        reason: "verification_failed",
+        status: "needs_attention",
+      });
+      expect(journal.snapshots.at(-1)?.standardsReview?.stage).toBe(
+        "repair_attention",
+      );
+      await expect(host.answer("Fix verification.")).resolves.toMatchObject({
+        status: "completed",
+      });
+      expect(runner.resumeRequests).toMatchObject([{ session: repair }]);
+    },
+  );
 });
 
 describe("standards review developer answers", () => {

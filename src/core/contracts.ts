@@ -118,6 +118,7 @@ export interface AgentRunner {
     session: AgentSession,
     instructions: string,
   ): Promise<AgentTurn>;
+  resumeReviewSession?(session: AgentSession): Promise<ReviewTurn>;
   runReviewInNewSession?(
     request: ReviewRequest,
     sessionStarted?: (session: AgentSession) => Promise<void>,

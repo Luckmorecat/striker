@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -26,11 +27,25 @@ export async function startBrokerProcess(
   key: string,
   managementKey: string,
 ) {
-  const child = spawn(descriptor.binary, ["-config", config, "-local-model"], {
-    cwd: path.dirname(config),
-    env: { ...process.env, MANAGEMENT_PASSWORD: managementKey },
-    stdio: "ignore",
-  });
+  const child = spawn(
+    process.execPath,
+    [
+      fileURLToPath(
+        new URL(
+          "../../../dist/infrastructure/gateway/broker-supervisor.js",
+          import.meta.url,
+        ),
+      ),
+      descriptor.binary,
+      config,
+      path.join(descriptor.authDirectory, ".striker-broker-lock"),
+    ],
+    {
+      cwd: path.dirname(config),
+      env: { ...process.env, MANAGEMENT_PASSWORD: managementKey },
+      stdio: ["pipe", "ignore", "ignore"],
+    },
+  );
   const exited = once(child, "exit");
   // Observe spawn failure immediately, without allowing a rejected promise to escape.
   void exited.catch(() => undefined);

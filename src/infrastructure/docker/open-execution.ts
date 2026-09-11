@@ -1,3 +1,9 @@
+import { executionLifetime } from "./execution-lifetime.js";
+import {
+  saveRecoveryRecord,
+  frozenInputsIdentity,
+  containerIdentity,
+} from "./recovery-record.js";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
@@ -21,6 +27,7 @@ interface DockerOpenOptions {
   readonly projectRoot: string;
   readonly stateRoot: string;
   readonly runId: string;
+  readonly plan: { readonly identity: string; readonly manifest: string };
   readonly packagedRoot: string;
   readonly config: ProjectConfig;
 }
@@ -33,27 +40,16 @@ export async function openDockerExecution(options: DockerOpenOptions) {
   const broker = await new CredentialBroker(
     path.join(stateRoot, "broker"),
   ).open();
-  let connectivity: Awaited<ReturnType<typeof openRunConnectivity>> | undefined;
-  let environmentId: string | undefined;
-  const close = async () => {
-    try {
-      if (environmentId)
-        await dockerCommand(["stop", "--time", "0", environmentId]);
-    } finally {
-      try {
-        await connectivity?.close();
-      } finally {
-        await broker.close();
-      }
-    }
-  };
+  const lifetime = executionLifetime(broker);
+  const close = () => lifetime.close();
   try {
-    connectivity = await openRunConnectivity({
+    const connectivity = await openRunConnectivity({
       root: stateRoot,
       broker,
       config,
       services: policy.services ?? [],
     });
+    lifetime.connectivity(connectivity);
     const environment = await new DockerEnvironment().allocate({
       stateRoot,
       runId: options.runId,
@@ -61,7 +57,8 @@ export async function openDockerExecution(options: DockerOpenOptions) {
       resources: policy.resources,
       gateway: connectivity,
     });
-    environmentId = environment.environmentId;
+    const environmentId = environment.environmentId;
+    lifetime.environment(environmentId);
     const source = await exportSourceCheckout(
       options.projectRoot,
       environment.inputs,
@@ -70,6 +67,23 @@ export async function openDockerExecution(options: DockerOpenOptions) {
     await dockerCommand(["start", environmentId]);
     await initializeCheckout(environment);
     await dockerCommand(["stop", "--time", "0", environmentId]);
+    const recoveryId = await saveRecoveryRecord({
+      version: 1,
+      plan: options.plan,
+      runId: options.runId,
+      projectRoot: options.projectRoot,
+      harness: config.harness,
+      skills: [...config.skills],
+      contextId: context.identity,
+      inputsId: await frozenInputsIdentity(environment.inputs),
+      containerId: (await containerIdentity(environment.environmentId))
+        .identity,
+      environment,
+      policy,
+      selection: connectivity.selection,
+      socketPath: connectivity.socketPath,
+      source,
+    });
     const executor = new StageExecutor({
       environment,
       contextId: context.identity,
@@ -78,6 +92,7 @@ export async function openDockerExecution(options: DockerOpenOptions) {
       token: connectivity.token,
     });
     return {
+      recoveryId,
       services: dockerExecutionServices(
         executor,
         options.projectRoot,

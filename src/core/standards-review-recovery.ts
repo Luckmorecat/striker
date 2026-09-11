@@ -127,6 +127,7 @@ async function repair(
 
 async function review(input: ReviewRecoveryRequest): Promise<DispatchResult> {
   const outcome = await runStandardsReview({
+    preservedSession: input.review.reviewSession,
     attempt: input.review.attempt,
     completion: input.review.completion,
     execution: executionEvidence(input),

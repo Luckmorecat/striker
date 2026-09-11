@@ -226,7 +226,12 @@ function reviewAfterRetry(
 ): Exclude<RunSnapshot["standardsReview"], undefined> {
   const review = snapshot.standardsReview;
   return review?.result?.verdict === "changes_required"
-    ? { ...review, repairOutput: null, stage: "repair_attention" }
+    ? {
+        ...review,
+        repairOutput: null,
+        repairSession: null,
+        stage: "repair_attention",
+      }
     : null;
 }
 

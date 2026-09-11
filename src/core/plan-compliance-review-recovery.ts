@@ -128,6 +128,7 @@ async function review(
   input: PlanReviewRecoveryRequest,
 ): Promise<DispatchResult> {
   const outcome = await runPlanComplianceReview({
+    preservedSession: input.review.reviewSession,
     attempt: input.review.attempt,
     completion: input.review.completion,
     discoveries: input.review.discoveries ?? [],

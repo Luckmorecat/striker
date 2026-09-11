@@ -64,11 +64,17 @@ try {
       throw new Error("Host did not acknowledge durable stage delivery");
   });
   emit({ id: request.id, type: "result", value });
-} catch {
+} catch (error) {
+  const code = (error as NodeJS.ErrnoException).code;
   emit({
     id: request.id,
     type: "error",
-    message: "Isolated worker operation failed",
+    message:
+      code === "ENOSPC"
+        ? "Isolated storage is full; free space in the retained environment before recovery"
+        : code === "EAGAIN"
+          ? "Isolated process limit exhausted; stop orphaned work before recovery"
+          : "Isolated worker operation failed; inspect retained resources and session state before recovery",
   });
   process.exitCode = 1;
 } finally {

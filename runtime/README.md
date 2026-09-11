@@ -171,5 +171,40 @@ from the host when selected; delivered task and stage inputs are retained with
 their recorded identity.
 
 Work remains in the private `environments/<run-id>/checkout` directory after the
-container stops. Status and discard use the host journal. Cross-command Docker
-recovery and result-branch export are not yet available in this rollout.
+container stops. Status and discard use the host journal. Docker recovery is
+available as described below; result-branch export remains a later rollout.
+
+### Recover an isolated feature
+
+`striker resume` and `striker answer` reopen the recorded Docker environment;
+`striker retry` starts a fresh task thread while retaining its checkout and
+installed dependencies. The journal binds recovery to the original image,
+harness, model/effort, resource limits, frozen skills and stage inputs. Changing
+project defaults does not change a paused run. Revoked image approvals or local
+service grants must be restored before recovery can reconnect.
+
+Interrupted reviewers retain their original read-only snapshot and session.
+Missing containers, images, frozen inputs or session files stop recovery rather
+than replacing its identity. Restore the missing resources, or explicitly retry
+when only the task session was lost. Memory/process/storage failures retain
+files and report attention. If Docker reports the container was OOM-killed,
+inspect the retained work and use `striker retry`; recorded limits still apply.
+
+Only one command may execute or mutate an active project run at a time. A dead
+host's operation lease can be reclaimed; its supervised broker stops before
+releasing the credential lease. An unverifiable lease fails closed with an
+inspection instruction. Recovery stops orphaned workers before delivering work.
+Journal versions before v8 are rejected without modifying the old files.
+
+Future task text stays live under the run's original plan identity. Future
+task-list edits are accepted; routes and ledger definitions remain bound to its
+recorded manifest. Completed task edits are still refused. Current task/review
+inputs stay frozen.
+
+Recovery acceptance is separate from ordinary checks:
+
+```sh
+pnpm test:docker recovery resource-limits
+STRIKER_SMOKE_BROKER_ROOT=/private/prepared-broker pnpm test:smoke recovery --harness codex
+STRIKER_SMOKE_BROKER_ROOT=/private/prepared-broker pnpm test:smoke recovery --harness pi
+```

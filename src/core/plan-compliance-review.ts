@@ -15,6 +15,7 @@ import type {
 import { validatePlanReviewDecisions } from "./plan-review-decision-validation.js";
 
 interface PlanReviewRequest {
+  readonly preservedSession?: AgentSession | null;
   readonly attempt: number;
   readonly completion: TaskCompletionEvidence;
   readonly discoveries: readonly import("./discovery-contracts.js").ResolvedDiscoveryProposal[];
@@ -141,10 +142,16 @@ async function appendInterruption(
   return { attention, status: "interrupted" };
 }
 
-function invokeReviewer(
+async function invokeReviewer(
   input: PlanReviewRequest,
   started: (session: AgentSession) => Promise<void>,
 ): Promise<ReviewTurn> {
+  if (input.preservedSession?.execution) {
+    if (!input.runner.resumeReviewSession)
+      throw new Error("Runner cannot resume isolated reviews");
+    await started(input.preservedSession);
+    return input.runner.resumeReviewSession(input.preservedSession);
+  }
   if (input.runner.runReviewInNewSession === undefined) {
     throw new Error("Agent runner does not support read-only reviews");
   }

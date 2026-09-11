@@ -137,3 +137,40 @@ test("isolated repair starts a fresh durable thread with frozen task context and
     { repairSession, stage: "repaired" },
   );
 });
+
+test("interrupted isolated repair resumes its recorded repair thread and frozen context", async () => {
+  const journal = await readyJournal();
+  const repairSession = { ...session, id: "preserved-repair" };
+  const first = new FakeAgentRunner({
+    status: "failed",
+    session: repairSession,
+    error: "worker killed",
+  });
+  expect(
+    await repairStandardsFindings({
+      journal,
+      request,
+      result: review,
+      runner: first,
+      session,
+      task,
+    }),
+  ).toMatchObject({ status: "interrupted" });
+  const next = new FakeAgentRunner({
+    status: "returned",
+    session: repairSession,
+    output: "repaired",
+  });
+  expect(
+    await repairStandardsFindings({
+      journal,
+      request,
+      result: review,
+      runner: next,
+      session,
+      task,
+    }),
+  ).toMatchObject({ status: "returned" });
+  expect(next.requests).toHaveLength(0);
+  expect(next.resumeRequests).toMatchObject([{ session: repairSession }]);
+});

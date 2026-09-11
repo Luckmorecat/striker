@@ -1,3 +1,4 @@
+import { executionDescriptorSchema } from "./run-journal-execution-schema.js";
 import { z } from "zod";
 
 import { createRunJournalReviewSchemas } from "./run-journal-review-schema.js";
@@ -15,7 +16,7 @@ import {
 } from "./run-journal-common-schema.js";
 import { deliveredOutcomeSchema } from "./run-journal-outcome-schema.js";
 
-export const runJournalSchemaId = "striker.plan-journal.v7";
+export const runJournalSchemaId = "striker.plan-journal.v8";
 
 export const agentSessionSchema = z
   .object({
@@ -87,16 +88,7 @@ const implementationTaskSchema = z.object({
 });
 const dispatchRequestSchema = z
   .object({
-    execution: z
-      .object({
-        backend: z.literal("docker"),
-        environmentId: z.string().regex(/^[a-f0-9]{64}$/),
-        imageId: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-        sourceHead: z.string().regex(/^[a-f0-9]{40,64}$/),
-        sourceBranch: z.string().min(1),
-      })
-      .strict()
-      .optional(),
+    execution: executionDescriptorSchema,
     allowDirty: z.boolean().optional(),
     completedTasks: z.array(taskIdentitySchema),
     planId: z.string().min(1),
@@ -108,6 +100,7 @@ const dispatchRequestSchema = z
   })
   .strict();
 const attentionReasonSchema = z.enum([
+  "execution_resource_exhausted",
   "assumption_disproved",
   "assumption_needs_decision",
   "completion_evidence_missing",
