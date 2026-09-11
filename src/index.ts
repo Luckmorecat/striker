@@ -104,3 +104,9 @@ export type {
   RecoveryInspection,
   RecoveryInspector,
 } from "./core/recovery-operations.js";
+
+export type {
+  CertifiedExport,
+  ResultExporter,
+  ResultExportState,
+} from "./core/result-export.js";

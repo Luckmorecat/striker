@@ -1,3 +1,4 @@
+import { withResultExport } from "./result-export-output.js";
 import { acquireProjectOperation } from "../infrastructure/project-operation-lease.js";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -40,7 +41,7 @@ async function dispatchOwnedRun(
         planBinding: binding,
       }),
     );
-    return await new Dispatcher({
+    const result = await new Dispatcher({
       adapters,
       journal,
       ...execution.services,
@@ -59,6 +60,7 @@ async function dispatchOwnedRun(
         sourceBranch: execution.source.branch,
       },
     });
+    return await withResultExport(result, journal, plan.identity);
   } finally {
     await execution.close();
   }

@@ -1,6 +1,20 @@
+import { resultExportLines } from "./result-export-output.js";
 import type { DispatchResult, RunCommandResult } from "../core/contracts.js";
 
 export function commandResult(result: DispatchResult): RunCommandResult {
+  const command = baseResult(result);
+  return result.resultExport
+    ? {
+        ...command,
+        message: [
+          command.message,
+          ...resultExportLines(result.resultExport),
+        ].join("\n"),
+      }
+    : command;
+}
+
+function baseResult(result: DispatchResult): RunCommandResult {
   if (result.status === "source_exhausted") {
     return {
       message: "Striker plan has no remaining tasks.",

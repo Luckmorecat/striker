@@ -26,6 +26,7 @@ export function validateRecovery(
   recovery: RunRecoveryState,
   action: RecoveryAction,
 ): void {
+  if (exportResume(recovery, action)) return;
   if (action === "answer") {
     validateAnswer(recovery);
     return;
@@ -78,6 +79,7 @@ export function continuationBlocker(
   const blocker = recoveryBlocker(recovery, action);
   if (blocker !== null) return blocker;
   const snapshot = recovery.snapshot;
+  if (exportResume(recovery, action)) return null;
   if (
     action !== "answer" &&
     snapshot?.attention?.reason === "task_outcome_limit_exceeded"
@@ -91,4 +93,13 @@ export function continuationBlocker(
   )
     return "Paused Striker run has no session to resume; retry a fresh attempt";
   return null;
+}
+
+function exportResume(
+  recovery: RunRecoveryState,
+  action: RecoveryAction,
+): boolean {
+  return (
+    action === "resume" && recovery.snapshot?.resultExport?.pending != null
+  );
 }

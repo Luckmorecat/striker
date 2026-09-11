@@ -53,6 +53,7 @@ export class RunOperations {
         ? "completed_task_changed"
         : undefined);
     return {
+      ...exportStatus(snapshot),
       attempt: snapshot.attempt ?? (snapshot.task === null ? 0 : 1),
       ...(attentionReason === undefined ? {} : { attentionReason }),
       lastTransition: recovery.lastEvent.type,
@@ -77,4 +78,8 @@ export class RunOperations {
       type: "run_discarded",
     });
   }
+}
+
+function exportStatus(snapshot: import("./contracts.js").RunSnapshot) {
+  return snapshot.resultExport ? { resultExport: snapshot.resultExport } : {};
 }

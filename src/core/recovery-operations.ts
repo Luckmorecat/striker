@@ -8,6 +8,7 @@ import type {
 } from "./contracts.js";
 
 export interface ActiveRunStatus {
+  readonly resultExport?: import("./result-export.js").ResultExportState;
   readonly attempt: number;
   readonly attentionReason?: AttentionReason | "completed_task_changed";
   readonly lastTransition: RunJournalEvent["type"];

@@ -1,3 +1,8 @@
+import {
+  exportingJournal,
+  flushResultExport,
+  type ResultExporter,
+} from "./result-export.js";
 import type { AdapterRegistry } from "./adapter-registry.js";
 import type {
   AgentRunner,
@@ -33,6 +38,7 @@ import { certifyTask, completeReviewedTask } from "./task-certification.js";
 import { resolveDiscoveryProposals } from "./discovery-proposal.js";
 
 export interface DispatcherDependencies {
+  readonly resultExporter?: ResultExporter;
   readonly adapters: AdapterRegistry;
   readonly runner: AgentRunner;
   readonly journal: RunJournal;
@@ -41,7 +47,17 @@ export interface DispatcherDependencies {
 }
 
 export class Dispatcher {
-  constructor(private readonly dependencies: DispatcherDependencies) {}
+  private readonly dependencies: DispatcherDependencies;
+
+  constructor(dependencies: DispatcherDependencies) {
+    this.dependencies = {
+      ...dependencies,
+      journal: exportingJournal(
+        dependencies.journal,
+        dependencies.resultExporter,
+      ),
+    };
+  }
 
   async dispatch(request: DispatchRequest): Promise<DispatchResult> {
     const completed = await loadCompletedTasks(
@@ -83,6 +99,10 @@ export class Dispatcher {
   }
 
   async resume(): Promise<DispatchResult> {
+    await flushResultExport(
+      this.dependencies.journal,
+      this.dependencies.resultExporter,
+    );
     return this.recovery().resume();
   }
 
@@ -123,6 +143,11 @@ export class Dispatcher {
     completed: readonly TaskIdentity[],
     preflight: boolean,
   ): Promise<DispatchResult> {
+    await flushResultExport(
+      this.dependencies.journal,
+      this.dependencies.resultExporter,
+      request.runId,
+    );
     const selection = await this.selectTask(request, completed);
     if ("conflict" in selection) {
       await ensureRunStarted(this.dependencies.journal, request);

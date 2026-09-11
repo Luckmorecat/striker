@@ -1,3 +1,4 @@
+import { dockerResultExporter } from "./result-exporter.js";
 import { executionLifetime } from "./execution-lifetime.js";
 import {
   saveRecoveryRecord,
@@ -93,11 +94,14 @@ export async function openDockerExecution(options: DockerOpenOptions) {
     });
     return {
       recoveryId,
-      services: dockerExecutionServices(
-        executor,
-        options.projectRoot,
-        config.skills,
-      ),
+      services: {
+        ...dockerExecutionServices(
+          executor,
+          options.projectRoot,
+          config.skills,
+        ),
+        resultExporter: dockerResultExporter(environment, options.projectRoot),
+      },
       environment,
       source,
       close,

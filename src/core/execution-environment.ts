@@ -7,6 +7,7 @@ import type {
 } from "./contracts.js";
 
 export interface ExecutionServices {
+  readonly resultExporter?: import("./result-export.js").ResultExporter;
   readonly runner: AgentRunner;
   readonly git: GitRepository;
   readonly verifier: Verifier;

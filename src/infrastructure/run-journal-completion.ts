@@ -1,3 +1,4 @@
+import { queueCertifiedExport } from "../core/result-export.js";
 import { isDeepStrictEqual } from "node:util";
 
 import type { RunJournalEvent, RunSnapshot } from "../core/contracts.js";
@@ -102,7 +103,8 @@ export function completeTask(
   ) {
     throw new Error("Task completion requires two matching passed reviews");
   }
-  const completed = { ...snapshot };
+  const resultExport = queueCertifiedExport(snapshot, event);
+  const completed = { ...snapshot, ...(resultExport ? { resultExport } : {}) };
   delete completed.attempt;
   return {
     ...completed,

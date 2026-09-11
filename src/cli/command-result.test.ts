@@ -46,3 +46,17 @@ describe("CLI command result", () => {
     });
   });
 });
+it("prints the host result branch on completion", () => {
+  expect(
+    commandResult({
+      status: "source_exhausted",
+      runId: "export",
+      resultExport: {
+        branch: "codex/striker-export",
+        head: "a".repeat(40),
+        pending: null,
+        error: null,
+      },
+    }).message,
+  ).toContain("Result branch: codex/striker-export");
+});

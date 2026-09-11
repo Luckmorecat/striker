@@ -172,7 +172,8 @@ their recorded identity.
 
 Work remains in the private `environments/<run-id>/checkout` directory after the
 container stops. Status and discard use the host journal. Docker recovery is
-available as described below; result-branch export remains a later rollout.
+available as described below. Certified tasks are exported to the host as
+described below.
 
 ### Recover an isolated feature
 
@@ -194,7 +195,7 @@ Only one command may execute or mutate an active project run at a time. A dead
 host's operation lease can be reclaimed; its supervised broker stops before
 releasing the credential lease. An unverifiable lease fails closed with an
 inspection instruction. Recovery stops orphaned workers before delivering work.
-Journal versions before v8 are rejected without modifying the old files.
+Journal versions before v9 are rejected without modifying the old files.
 
 Future task text stays live under the run's original plan identity. Future
 task-list edits are accepted; routes and ledger definitions remain bound to its
@@ -208,3 +209,24 @@ pnpm test:docker recovery resource-limits
 STRIKER_SMOKE_BROKER_ROOT=/private/prepared-broker pnpm test:smoke recovery --harness codex
 STRIKER_SMOKE_BROKER_ROOT=/private/prepared-broker pnpm test:smoke recovery --harness pi
 ```
+
+### Inspect certified results on the host
+
+After each task passes verification and both reviews, Striker imports its exact
+commit to `codex/striker-<run-id>` in the original repository. Run output and
+`striker status` show the branch, exported head and any pending export error.
+Use `git log codex/striker-<run-id>` or `git diff HEAD...codex/striker-<run-id>`
+to inspect the completed prefix; a later failed task leaves that prefix intact.
+The source branch and worktree stay unchanged.
+
+Export refuses existing unrelated, changed, symbolic or checked-out result
+branches. Restore the expected result ref (or switch its worktree to another
+branch), then use `striker resume` to retry export without repeating a certified
+task. Retain the host journal and `refs/striker/exports/<run-id>` ownership ref;
+they recover interruptions before or after the result branch advances. Transfers
+validate Git objects in a temporary bare repository and disable host Git hooks,
+helpers and network fetching. A transfer exceeding 128 MiB fails explicitly and
+retains the work. Application to the original branch and cleanup remain later
+rollout steps; export performs no push.
+
+Run `pnpm test:docker result-export` for explicit Docker export acceptance.

@@ -6,7 +6,7 @@ import { expect, it } from "vitest";
 
 import { FileRunJournal } from "./file-run-journal.js";
 
-it.each([2, 3, 4, 5, 6, 7])(
+it.each([2, 3, 4, 5, 6, 7, 8])(
   "rejects retired journal v%s without rewriting events",
   async (version) => {
     const root = await mkdtemp(path.join(tmpdir(), "striker-journal-version-"));

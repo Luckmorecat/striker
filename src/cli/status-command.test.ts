@@ -144,3 +144,33 @@ describe("striker status", () => {
     );
   });
 });
+it("shows the exported prefix and actionable export errors", async () => {
+  const fixture = cliDependencies(() =>
+    Promise.resolve({
+      attempt: 0,
+      lastTransition: "result_export_failed",
+      runId: "export",
+      session: null,
+      status: "running",
+      task: null,
+      resultExport: {
+        branch: "codex/striker-export",
+        head: "a".repeat(40),
+        error: "Result branch changed; restore it and run striker resume",
+        pending: {
+          task: { id: "two", revision: "v1" },
+          startCommit: "a".repeat(40),
+          resultCommit: "b".repeat(40),
+        },
+      },
+    }),
+  );
+  await runCli(["status"], fixture.dependencies);
+  expect(fixture.output().stdout).toContain(
+    "Result branch: codex/striker-export",
+  );
+  expect(fixture.output().stdout).toContain(`Exported head: ${"a".repeat(40)}`);
+  expect(fixture.output().stdout).toContain(
+    "Export error: Result branch changed",
+  );
+});

@@ -293,7 +293,9 @@ export type {
   StandardsReviewResult,
 } from "./review-contracts.js";
 
-export type DispatchResult =
+export type DispatchResult = {
+  readonly resultExport?: import("./result-export.js").ResultExportState;
+} & (
   | {
       readonly status: "source_exhausted";
       readonly runId: string;
@@ -327,4 +329,5 @@ export type DispatchResult =
       readonly task: ImplementationTask;
       readonly session: AgentSession;
       readonly error: string;
-    };
+    }
+);

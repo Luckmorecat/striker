@@ -1,3 +1,7 @@
+import {
+  replayResultExport,
+  type ResultExportEvent,
+} from "../core/result-export.js";
 import type {
   AgentSession,
   GitState,
@@ -75,30 +79,6 @@ function requireSession(
   }
 }
 
-export function startSnapshot(
-  event: Extract<RunJournalEvent, { type: "run_started" }>,
-): RunSnapshot {
-  const { planId, request } = event;
-  if (request.runId !== event.runId) {
-    throw new Error("Striker run start contains a mismatched request");
-  }
-  if (request.planId !== planId) {
-    throw new Error("Striker run start contains a mismatched plan identity");
-  }
-  return {
-    attention: null,
-    baselineRecorded: false,
-    before: null,
-    planId,
-    preparedRequest: null,
-    request,
-    runId: event.runId,
-    session: null,
-    status: "running",
-    task: null,
-  };
-}
-
 export function replayEvent(
   snapshot: RunSnapshot,
   event: ReplayEvent,
@@ -107,6 +87,12 @@ export function replayEvent(
   if (event.runId !== snapshot.runId) {
     throw new Error("Striker plan journal contains a mismatched run id");
   }
+  if (
+    event.type === "result_export_completed" ||
+    event.type === "result_export_failed"
+  )
+    return replayResultExport(snapshot, event);
+  assertExportSettled(snapshot, event);
   if (isLedgerEvent(event)) {
     return replayLedgerEvent(snapshot, event, ledgerTransitionApplied);
   }
@@ -239,7 +225,12 @@ function replayTerminal(
   snapshot: RunSnapshot,
   event: Exclude<
     ReplayEvent,
-    LedgerEvent | PlanReviewEvent | ProgressEvent | ResultEvent | ReviewEvent
+    | LedgerEvent
+    | PlanReviewEvent
+    | ProgressEvent
+    | ResultEvent
+    | ReviewEvent
+    | ResultExportEvent
   >,
 ): RunSnapshot {
   switch (event.type) {
@@ -347,4 +338,12 @@ function startSession(
     throw new Error("Striker session event has an invalid attempt");
   }
   return { ...snapshot, preparedRequest, session };
+}
+
+function assertExportSettled(snapshot: RunSnapshot, event: ReplayEvent): void {
+  if (
+    snapshot.resultExport?.pending &&
+    (event.type === "task_selected" || event.type === "run_completed")
+  )
+    throw new Error("Certified task export is still pending");
 }

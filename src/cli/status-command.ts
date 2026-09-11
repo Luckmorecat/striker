@@ -1,3 +1,4 @@
+import { resultExportLines } from "./result-export-output.js";
 import type { Command } from "commander";
 
 import type {
@@ -23,6 +24,8 @@ function renderStatus(status: ActiveRunStatus): string {
   if (status.attentionReason !== undefined) {
     lines.push(`Attention: ${status.attentionReason}`);
   }
+  if (status.resultExport)
+    lines.push(...resultExportLines(status.resultExport));
   return `${lines.join("\n")}\n`;
 }
 

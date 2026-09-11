@@ -1,3 +1,4 @@
+import { dockerResultExporter } from "./result-exporter.js";
 import { ExecutionResourceAttention } from "./resource-attention.js";
 import { executionLifetime } from "./execution-lifetime.js";
 import { rm, realpath } from "node:fs/promises";
@@ -72,18 +73,11 @@ export async function reopenDockerExecution(options: {
       }),
     });
     lifetime.connectivity(connectivity);
-    const executor = new StageExecutor({
-      environment: record.environment,
-      contextId: record.contextId,
-      harness: record.harness,
-      selection: record.selection,
-      token: connectivity.token,
-    });
     return {
-      services: dockerExecutionServices(
-        executor,
+      services: recoveredServices(
+        record,
         options.projectRoot,
-        record.skills,
+        connectivity.token,
       ),
       record,
       close,
@@ -117,4 +111,22 @@ async function authorize(
         `Recorded service grant ${service.name} was revoked or changed; restore its local authorization before recovery`,
       );
   }
+}
+
+function recoveredServices(
+  record: Awaited<ReturnType<typeof readRecoveryRecord>>["record"],
+  root: string,
+  token: string,
+) {
+  const executor = new StageExecutor({
+    environment: record.environment,
+    contextId: record.contextId,
+    harness: record.harness,
+    selection: record.selection,
+    token,
+  });
+  return {
+    ...dockerExecutionServices(executor, root, record.skills),
+    resultExporter: dockerResultExporter(record.environment, root),
+  };
 }

@@ -1,3 +1,4 @@
+import { withResultExport } from "./result-export-output.js";
 import { ExecutionResourceAttention } from "../infrastructure/docker/resource-attention.js";
 import type { RunSnapshot } from "../core/contracts.js";
 import path from "node:path";
@@ -48,9 +49,11 @@ export async function recoverDockerRun(options: {
         journal,
         ...execution.services,
       });
-      return options.action === "answer"
-        ? await dispatcher.answer(options.answer ?? "")
-        : await dispatcher[options.action]();
+      const result =
+        options.action === "answer"
+          ? await dispatcher.answer(options.answer ?? "")
+          : await dispatcher[options.action]();
+      return await withResultExport(result, journal, snapshot.planId);
     } finally {
       await execution.close();
     }

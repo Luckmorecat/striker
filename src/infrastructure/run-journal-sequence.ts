@@ -8,7 +8,8 @@ import type {
 } from "../core/contracts.js";
 import { createLedgerState, transitionLedger } from "../core/ledger-state.js";
 import { projectDiscoveryReviews } from "./discovery-review-history.js";
-import { replayEvent, startSnapshot } from "./run-journal-replay.js";
+import { replayEvent } from "./run-journal-replay.js";
+import { startSnapshot } from "./run-journal-start.js";
 import {
   orderTaskOutcomes,
   projectTaskOutcome,
