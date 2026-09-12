@@ -6,6 +6,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentSession, AgentRequest } from "../../core/contracts.js";
 import type { RetainedFeatureEnvironment } from "../../core/environment-preparation.js";
+import type { RunObserver } from "../../core/run-observation.js";
 import type { ModelSelection } from "../../core/subscription.js";
 import { prepareHarnessLaunch } from "../../runner/worker/harness-launch.js";
 import { callWorker } from "./worker-client.js";
@@ -16,6 +17,7 @@ export interface StageExecutorOptions {
   readonly environment: RetainedFeatureEnvironment;
   readonly contextId: string;
   readonly harness: "codex" | "pi";
+  readonly observer?: RunObserver;
   readonly selection: ModelSelection;
   readonly token: string;
 }
@@ -69,9 +71,17 @@ export class StageExecutor {
         "--",
         home,
       ]);
+      const observer = this.options.observer;
       return await callWorker({
         environmentId: environment.environmentId,
         command,
+        ...(observer === undefined
+          ? {}
+          : {
+              activity: (activity) => {
+                observer.observe({ ...activity, kind: "activity" });
+              },
+            }),
         request: continuationRequest(request, stage.original),
         ...(started
           ? {

@@ -125,6 +125,8 @@ export class ProgressSession {
 
   #observe(observation: RunObservation): void {
     if (this.#disposed) return;
+    // Plain output is a lifecycle log; streamed agent text would drown it.
+    if (this.#plain && observation.kind === "activity") return;
     this.#state = applyObservation(this.#state, observation);
     this.#dirty = true;
     if (this.#plain) this.#writePlain();

@@ -9,11 +9,8 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { agentHarnesses } from "../core/contracts.js";
-import {
-  AcpxAgentRunner,
-  type AcpxRuntimeBoundary,
-  createTaskAgentRegistry,
-} from "./acpx-runner.js";
+import { AcpxAgentRunner, type AcpxRuntimeBoundary } from "./acpx-runner.js";
+import { createTaskAgentRegistry } from "./task-agent-registry.js";
 
 class FakeRuntime implements AcpxRuntimeBoundary {
   backendSessionId = "codex-session";

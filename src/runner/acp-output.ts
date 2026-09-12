@@ -16,8 +16,20 @@ export async function collectWholeOutput(
   return output;
 }
 
+/** Display observation never decides what the turn returned. */
+export type StreamWatcher = (event: AcpRuntimeEvent) => void;
+
+function watched(event: AcpRuntimeEvent, watch?: StreamWatcher): void {
+  try {
+    watch?.(event);
+  } catch {
+    // One broken display must not lose the agent's output.
+  }
+}
+
 export async function collectFinalMessage(
   events: AsyncIterable<AcpRuntimeEvent>,
+  watch?: StreamWatcher,
 ): Promise<string> {
   let output = "";
   let hasUnidentifiedChunk = false;
@@ -25,6 +37,7 @@ export async function collectFinalMessage(
   const messages = new Map<string, string>();
 
   for await (const event of events) {
+    watched(event, watch);
     if (!isVisibleText(event)) continue;
     output += event.text;
     if (event.messageId === undefined) {

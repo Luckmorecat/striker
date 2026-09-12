@@ -1,6 +1,8 @@
 /**
  * Visual fixture harness: drives the production dashboard with fake facts so
- * its appearance can be compared with the prototype at the same dimensions.
+ * its appearance can be inspected at any terminal dimensions. The approved
+ * visual reference it was compared against is recorded as literal frames in
+ * src/cli/ui/progress-parity.test.ts.
  * Test infrastructure only; it never enters production execution.
  */
 import type { RunObservation } from "../core/run-observation.js";
@@ -12,119 +14,7 @@ import {
   initialProgress,
 } from "../cli/ui/progress-model.js";
 import { intervalClock, ProgressSession } from "../cli/ui/progress-session.js";
-import {
-  blockingResult,
-  implementing,
-  journal,
-  passedOnB,
-  progressSession,
-  progressTask,
-  progressVerification,
-  repairStarted,
-  reviewCompleted,
-  reviewStarted,
-  verified,
-  verifying,
-} from "./progress-fixtures.js";
-
-const attention = journal({
-  attention: {
-    detail: "Should blank answers reprompt, or leave the run paused?",
-    reason: "assumption_needs_decision",
-  },
-  runId: "run",
-  session: progressSession,
-  task: progressTask.identity,
-  type: "run_needs_attention",
-});
-
-const answered = journal({
-  answer: "Reprompt on blank answers.",
-  runId: "run",
-  session: progressSession,
-  task: progressTask.identity,
-  type: "run_answered",
-});
-
-const planReview = journal({
-  attempt: 1,
-  changedPaths: ["src/a.ts"],
-  completion: { summary: "done" },
-  resultCommit: "candidate-b",
-  runId: "run",
-  session: progressSession,
-  standards: passedOnB,
-  startCommit: "base",
-  task: progressTask.identity,
-  type: "plan_compliance_review_started",
-  verification: progressVerification,
-});
-
-const certified = journal({
-  attempt: 1,
-  certification: "independent_reviews",
-  changedPaths: ["src/a.ts"],
-  completedAt: "2026-09-12T00:00:00.000Z",
-  resultCommit: "candidate-b",
-  runId: "run",
-  session: progressSession,
-  startCommit: "base",
-  task: progressTask.identity,
-  type: "task_completed",
-  verification: progressVerification,
-});
-
-/** Mirrors the prototype timeline as authoritative facts, one step per entry. */
-export const previewScenario: readonly RunObservation[] = [
-  {
-    detail: "Opening the retained workspace.",
-    kind: "preparation",
-    phase: "started",
-  },
-  ...implementing,
-  attention,
-  answered,
-  verifying,
-  verified,
-  reviewStarted("candidate-a"),
-  reviewCompleted(blockingResult),
-  repairStarted(blockingResult),
-  verifying,
-  verified,
-  reviewStarted("candidate-b"),
-  reviewCompleted(passedOnB),
-  planReview,
-  journal({
-    result: {
-      discoveryDecisions: [],
-      findings: [],
-      kind: "plan_compliance",
-      outcomeFactDecisions: [],
-      resultCommit: "candidate-b",
-      startCommit: "base",
-      verdict: "passed",
-    },
-    runId: "run",
-    session: progressSession,
-    task: progressTask.identity,
-    type: "plan_compliance_review_completed",
-  }),
-  certified,
-  journal({ runId: "run", type: "run_completed" }),
-];
-
-export const previewPlan = {
-  tasks: [
-    "Recovery contracts",
-    "Answer command",
-    "Terminal handoff",
-    "Recovery guidance",
-    "Documentation",
-  ].map((title, index) => ({
-    id: String(index + 1).padStart(2, "0"),
-    title,
-  })),
-};
+import { previewPlan, previewScenario } from "./progress-fixtures.js";
 
 function dimension(variable: string, fallback: number): number {
   const value = Number(process.env[variable]);

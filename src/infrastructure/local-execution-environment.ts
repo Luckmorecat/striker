@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import type { RunObserver } from "../core/run-observation.js";
 import type {
   ExecutionEnvironment,
   ExecutionEnvironmentRequest,
@@ -16,7 +17,10 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
   /** Host metadata access stays separate from the execution service ports. */
   readonly hostGit = new GitCliRepository();
 
-  constructor(private readonly permissionRelay: PermissionRelay) {}
+  constructor(
+    private readonly permissionRelay: PermissionRelay,
+    private readonly observer?: RunObserver,
+  ) {}
 
   open(request: ExecutionEnvironmentRequest): Promise<ExecutionServices> {
     return Promise.resolve({
@@ -25,6 +29,7 @@ export class LocalExecutionEnvironment implements ExecutionEnvironment {
         approvalMode: request.approvalMode,
         cwd: request.projectRoot,
         harness: request.harness,
+        ...(this.observer === undefined ? {} : { observer: this.observer }),
         permissionRelay: this.permissionRelay,
         stateDir: path.join(request.stateRoot, "acpx"),
       }),

@@ -102,3 +102,33 @@ describe("ACP final-message collection", () => {
     ).resolves.toBe("");
   });
 });
+
+describe("ACP stream observation", () => {
+  it("watches every event once while still collecting the final message", async () => {
+    const seen: string[] = [];
+
+    const output = await collectFinalMessage(
+      events(
+        { messageId: "commentary", text: "Working...", type: "text_delta" },
+        { stream: "thought", text: "internal", type: "text_delta" },
+        { messageId: "result", text: "done", type: "text_delta" },
+      ),
+      (event) =>
+        seen.push(event.type === "text_delta" ? event.text : event.type),
+    );
+
+    expect(output).toBe("done");
+    expect(seen).toEqual(["Working...", "internal", "done"]);
+  });
+
+  it("collects the final message even when the watcher throws", async () => {
+    const output = await collectFinalMessage(
+      events({ messageId: "result", text: "done", type: "text_delta" }),
+      () => {
+        throw new Error("display failed");
+      },
+    );
+
+    expect(output).toBe("done");
+  });
+});

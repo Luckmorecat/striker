@@ -4,6 +4,7 @@ import { executionLifetime } from "./execution-lifetime.js";
 import { rm, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { ExecutionRunDescriptor } from "../../core/execution-environment.js";
+import type { RunObserver } from "../../core/run-observation.js";
 import { parseProjectConfig } from "../../config/project-config.js";
 import { LocalExecutionConfig } from "../../permissions/local-execution-config.js";
 import { CredentialBroker } from "../gateway/credential-broker.js";
@@ -18,6 +19,7 @@ export async function reopenDockerExecution(options: {
   readonly projectRoot: string;
   readonly runId: string;
   readonly descriptor: ExecutionRunDescriptor;
+  readonly observer?: RunObserver;
   readonly retry?: boolean;
 }) {
   const { record, oom } = await readRecoveryRecord(
@@ -74,11 +76,12 @@ export async function reopenDockerExecution(options: {
     });
     lifetime.connectivity(connectivity);
     return {
-      services: recoveredServices(
-        record,
-        options.projectRoot,
-        connectivity.token,
-      ),
+      services: recoveredServices(record, options.projectRoot, {
+        token: connectivity.token,
+        ...(options.observer === undefined
+          ? {}
+          : { observer: options.observer }),
+      }),
       record,
       close,
     };
@@ -116,14 +119,15 @@ async function authorize(
 function recoveredServices(
   record: Awaited<ReturnType<typeof readRecoveryRecord>>["record"],
   root: string,
-  token: string,
+  runtime: { readonly observer?: RunObserver; readonly token: string },
 ) {
   const executor = new StageExecutor({
     environment: record.environment,
     contextId: record.contextId,
     harness: record.harness,
+    ...(runtime.observer === undefined ? {} : { observer: runtime.observer }),
     selection: record.selection,
-    token,
+    token: runtime.token,
   });
   return {
     ...dockerExecutionServices(executor, root, record.skills),

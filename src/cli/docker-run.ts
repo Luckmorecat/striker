@@ -36,7 +36,12 @@ async function dispatchOwnedRun(
   progress?.plan(plan.tasks);
   progress?.preparing("Opening the isolated execution environment.");
   const execution = await openWithProgress(progress, () =>
-    openDockerExecution({ ...options, runId, plan: binding }),
+    openDockerExecution({
+      ...options,
+      ...(progress === undefined ? {} : { observer: progress.observer }),
+      runId,
+      plan: binding,
+    }),
   );
   try {
     printEnvironment(options, runId, execution.environment);

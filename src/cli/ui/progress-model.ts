@@ -6,6 +6,7 @@ import {
   noActivity,
   restartRounds,
   shortCommit,
+  withActivity,
   type PlanTaskSeed,
   type ProgressState,
 } from "./progress-state.js";
@@ -272,6 +273,7 @@ export function applyObservation(
   state: ProgressState,
   observation: RunObservation,
 ): ProgressState {
+  if (observation.kind === "activity") return withActivity(state, observation);
   if (observation.kind === "preparation")
     return applyPreparation(state, observation);
   if (observation.kind === "verification")

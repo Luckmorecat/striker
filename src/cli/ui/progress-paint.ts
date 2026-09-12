@@ -40,7 +40,10 @@ export function shimmer(
 }
 
 function lineColor(line: string): string {
-  if (/needs attention|^\?|^ANSWER/u.test(line)) return "33";
+  // Attention is painted where it is addressed to the developer: the footer
+  // question and the answer prompt. A pipeline note inside a columnised row
+  // keeps the row's own colour, as the visual reference did.
+  if (/^\?|^ANSWER/u.test(line)) return "33";
   return /●|LIVE/u.test(line) ? "36" : "0";
 }
 

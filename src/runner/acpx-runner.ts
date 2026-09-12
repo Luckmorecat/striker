@@ -4,7 +4,6 @@ import {
   createAcpRuntime,
   createAgentRegistry,
   createRuntimeStore,
-  type AcpAgentRegistry,
   type AcpPermissionDecision,
   type AcpPermissionRequest,
   type AcpRuntimeDoctorReport,
@@ -31,8 +30,15 @@ import {
   harnessPreflightPrompt,
 } from "../preflight/harness-preflight.js";
 import { permissionPolicyFor } from "../permissions/permission-policy.js";
-import { collectFinalMessage, collectWholeOutput } from "./acp-output.js";
+import { createTaskAgentRegistry } from "./task-agent-registry.js";
+import type { RunObserver } from "../core/run-observation.js";
+import {
+  collectFinalMessage,
+  collectWholeOutput,
+  type StreamWatcher,
+} from "./acp-output.js";
 import { runReviewSession } from "./review-session.js";
+import { activityWatcher } from "./visible-activity.js";
 import { initialDeliveryPrompt, taskPromptText } from "./task-prompt.js";
 
 export interface AcpxRuntimeBoundary {
@@ -61,34 +67,10 @@ interface RunnerOptions {
   readonly approvalMode?: ApprovalMode;
   readonly cwd: string;
   readonly harness: AgentHarness;
+  readonly observer?: RunObserver;
   readonly preflightRuntime?: AcpxRuntimeBoundary;
   readonly reviewRuntime?: AcpxRuntimeBoundary;
   readonly runtime: AcpxRuntimeBoundary;
-}
-
-export function createTaskAgentRegistry(
-  registry: AcpAgentRegistry,
-  agent: string,
-  environment?: Readonly<Record<string, string>>,
-): AcpAgentRegistry {
-  return {
-    list: () => registry.list(),
-    resolve: (agentName) => {
-      const command = registry.resolve(agentName);
-      if (agentName !== agent || environment === undefined) {
-        return command;
-      }
-      if (!Array.isArray(command)) {
-        throw new Error(
-          `Agent "${agent}" must resolve to structured argv to configure its environment`,
-        );
-      }
-      const assignments = Object.entries(environment).map(
-        ([name, value]) => `${name}=${value}`,
-      );
-      return ["/usr/bin/env", ...assignments, ...command];
-    },
-  };
 }
 
 const harnessCapabilities: Readonly<
@@ -114,7 +96,13 @@ function doctorFailure(report: AcpRuntimeDoctorReport): {
 }
 
 export class AcpxAgentRunner implements AgentRunner {
-  constructor(private readonly options: RunnerOptions) {}
+  /** Present only while a display is listening; absent costs nothing. */
+  private readonly watch?: () => StreamWatcher;
+
+  constructor(private readonly options: RunnerOptions) {
+    const observer = options.observer;
+    if (observer !== undefined) this.watch = () => activityWatcher(observer);
+  }
 
   async preflight(request: HarnessPreflightRequest): Promise<void> {
     this.assertHarnessSupportsMode();
@@ -210,6 +198,7 @@ export class AcpxAgentRunner implements AgentRunner {
       request,
       runtime,
       ...(sessionStarted === undefined ? {} : { sessionStarted }),
+      ...(this.watch === undefined ? {} : { watch: this.watch() }),
     });
   }
 
@@ -224,7 +213,7 @@ export class AcpxAgentRunner implements AgentRunner {
       requestId: randomUUID(),
       text,
     });
-    const outputPromise = collectFinalMessage(turn.events);
+    const outputPromise = collectFinalMessage(turn.events, this.watch?.());
     const result = await turn.result;
     const output = await outputPromise;
     if (result.status === "completed") {
@@ -325,6 +314,7 @@ export function createAcpxAgentRunner(options: {
   readonly approvalMode: ApprovalMode;
   readonly cwd: string;
   readonly harness: AgentHarness;
+  readonly observer?: RunObserver;
   readonly permissionRelay: PermissionRelay;
   readonly stateDir: string;
 }): AcpxAgentRunner {
@@ -360,6 +350,7 @@ export function createAcpxAgentRunner(options: {
     approvalMode: options.approvalMode,
     cwd: options.cwd,
     harness: options.harness,
+    ...(options.observer === undefined ? {} : { observer: options.observer }),
     preflightRuntime,
     reviewRuntime: preflightRuntime,
     runtime,

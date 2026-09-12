@@ -305,6 +305,13 @@ Each new repair opens the next implementation round; resuming the same
 interrupted repair keeps its round. A restarted `answer`, `resume` or `retry`
 restores rounds and review history from the existing journal.
 
+The two activity lines follow the agent while it works, in local and isolated
+execution alike: `LIVE` shows its latest visible note and `TOOL` its latest tool
+summary, each bounded to one line and stripped of terminal control sequences.
+Reasoning text is never shown. Activity is ephemeral and is not recorded in the
+journal, so a restarted command shows stage information until the agent speaks
+again, and a stage whose agent reports nothing keeps its own truthful line.
+
 Press `m` to toggle motion and `d` to toggle the detail line; with details
 expanded, the arrow keys move the plan window up or down from the active task
 and scroll a finding list larger than the terminal. The active task stays
@@ -333,9 +340,10 @@ attention and permission prompts, leaving plain stage lines. This does not
 change the configured permission mode or grant permission: a request needing
 terminal approval is rejected. With the composer disabled, `answer` without
 `--file` reads stdin until EOF. Redirecting either stdin or stderr also disables
-terminal prompts. Noninteractive attention and failures exit 1 with recovery
-guidance; completion exits 0. Ctrl-C/EOF behavior above applies while waiting
-for input, not while agents execute. Requires Node.js >=22.19.
+terminal prompts. Plain output reports lifecycle stages only; streamed agent
+activity is left to the dashboard. Noninteractive attention and failures exit 1
+with recovery guidance; completion exits 0. Ctrl-C/EOF behavior above applies
+while waiting for input, not while agents execute. Requires Node.js >=22.19.
 
 Inspect one plan's retained state and chronological completion log with:
 

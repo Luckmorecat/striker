@@ -50,8 +50,9 @@ const terminal = new TerminalSession(process.stdin, process.stderr);
 const progress = new RunProgress(terminal, () => {
   process.kill(process.pid, "SIGINT");
 });
-const environment = new LocalExecutionEnvironment((request) =>
-  progress.prompt(() => terminal.permission(request.raw)),
+const environment = new LocalExecutionEnvironment(
+  (request) => progress.prompt(() => terminal.permission(request.raw)),
+  progress.observer,
 );
 const git = environment.hostGit;
 

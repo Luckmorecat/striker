@@ -2,6 +2,7 @@ import { createInterface } from "node:readline";
 import { GitCliRepository } from "../../infrastructure/git-cli.js";
 import { ShellVerifier } from "../../infrastructure/shell-verifier.js";
 import type { AgentSession, AgentRequest } from "../../core/contracts.js";
+import type { RunObserver } from "../../core/run-observation.js";
 import {
   parseWorkerRequest,
   maximumFrameBytes,
@@ -15,12 +16,27 @@ function emit(value: unknown): void {
     throw new Error("Worker result exceeds limit");
   process.stdout.write(`${frame}\n`);
 }
+/** Activity is display text: it never acknowledges a session or a result. */
+function activityObserver(id: string): RunObserver {
+  return {
+    observe: (observation) => {
+      if (observation.kind !== "activity") return;
+      emit({
+        id,
+        type: "activity",
+        activity: observation.activity,
+        text: observation.text,
+      });
+    },
+  };
+}
 async function execute(
   request: WorkerRequest,
   started: (session: AgentSession) => Promise<void>,
 ): Promise<unknown> {
   const git = new GitCliRepository();
   const cwd = process.cwd();
+  const observer = activityObserver(request.id);
   switch (request.operation) {
     case "inspect":
       return git.inspect(cwd);
@@ -35,17 +51,17 @@ async function execute(
     case "verify":
       return new ShellVerifier().verify({ cwd, command: request.command });
     case "implement":
-      return createWorkerRunner().runInNewSession(
+      return createWorkerRunner(observer).runInNewSession(
         request.request as AgentRequest,
         started,
       );
     case "continue":
-      return createWorkerRunner().resumeSession(
+      return createWorkerRunner(observer).resumeSession(
         request.session as AgentSession,
         request.instructions,
       );
     case "review":
-      return createWorkerRunner().runReviewInNewSession(
+      return createWorkerRunner(observer).runReviewInNewSession(
         { instructions: request.instructions },
         started,
       );

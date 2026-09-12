@@ -1,8 +1,15 @@
 import type { RunJournalEvent } from "./run-journal-contracts.js";
 
+/** One bounded, user-visible fact about what an agent is doing right now. */
+export interface RunActivity {
+  readonly activity: "note" | "tool";
+  readonly text: string;
+}
+
 /** Facts a command may publish for display, independent of any UI framework. */
 export type RunObservation =
   | { readonly kind: "journal"; readonly event: RunJournalEvent }
+  | (RunActivity & { readonly kind: "activity" })
   | {
       readonly kind: "preparation";
       readonly detail: string;

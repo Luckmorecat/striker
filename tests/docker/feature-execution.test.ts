@@ -1,3 +1,5 @@
+import type { RunActivity } from "../../src/core/run-observation.js";
+import { activityTextLimit } from "../../src/runner/visible-activity.js";
 import { dockerExecutionServices } from "../../src/infrastructure/docker/execution-services.js";
 import { StageExecutor } from "../../src/infrastructure/docker/stage-executor.js";
 import { rm } from "node:fs/promises";
@@ -53,15 +55,22 @@ for (const harness of ["codex", "pi"] as const)
       await prepareWorkerResources(environment.inputs, context);
       await dockerCommand(["start", id]);
       await initializeCheckout(environment);
+      const activity: RunActivity[] = [];
       const { result, recovery, events } = await dispatchFixture(fixture, {
         environment,
         harness,
         contextId: context.identity,
+        observer: {
+          observe: (observation) => {
+            if (observation.kind === "activity") activity.push(observation);
+          },
+        },
         selection,
         token: access.token,
       });
       expect(fake.errors).toEqual([]);
       expect(result).toMatchObject({ status: "completed" });
+      assertVisibleActivity(activity);
       expect(recovery?.completedTasks).toHaveLength(2);
       const session = assertStageSessions(events);
       const resumed = await dockerExecutionServices(
@@ -90,6 +99,16 @@ for (const harness of ["codex", "pi"] as const)
       }
     }
   }, 600_000);
+
+/** The worker's activity frames must reach the host bounded and printable. */
+function assertVisibleActivity(activity: readonly RunActivity[]) {
+  expect(activity.length).toBeGreaterThan(0);
+  expect(activity.map((entry) => entry.activity)).toContain("tool");
+  for (const entry of activity) {
+    expect(entry.text.length).toBeLessThanOrEqual(activityTextLimit);
+    expect(entry.text).not.toMatch(/[\p{Cc}]/u);
+  }
+}
 
 async function assertSourceUnchanged(
   fixture: Awaited<ReturnType<typeof featureFixture>>,

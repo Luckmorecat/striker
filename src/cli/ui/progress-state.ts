@@ -1,3 +1,4 @@
+import type { RunActivity } from "../../core/run-observation.js";
 import type { CheckStage, DashboardStage } from "./progress-stages.js";
 import type { BlockingReview, CheckState } from "./progress-stages.js";
 
@@ -90,6 +91,18 @@ export function restartRounds(state: ProgressState): ProgressState {
     repairs: [],
     resolvedRound: null,
   };
+}
+
+/** Ephemeral agent text: it never revises stage, round or check evidence. */
+export function withActivity(
+  state: ProgressState,
+  activity: RunActivity,
+): ProgressState {
+  // A finished run keeps its outcome; late frames cannot reopen it.
+  if (state.finished !== null) return state;
+  return activity.activity === "note"
+    ? { ...state, live: activity.text }
+    : { ...state, tool: activity.text };
 }
 
 export function displayRound(state: ProgressState): number {

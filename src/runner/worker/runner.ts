@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import { collectFinalMessage } from "../acp-output.js";
 import { createAcpRuntime, createRuntimeStore } from "acpx/runtime";
 import path from "node:path";
+import type { RunObserver } from "../../core/run-observation.js";
 import { AcpxAgentRunner, type AcpxRuntimeBoundary } from "../acpx-runner.js";
 
-export function createWorkerRunner(): AcpxAgentRunner {
+export function createWorkerRunner(observer?: RunObserver): AcpxAgentRunner {
   const harness = process.env.STRIKER_HARNESS;
   if (harness !== "codex" && harness !== "pi")
     throw new Error("Unsupported isolated harness");
@@ -72,6 +73,7 @@ export function createWorkerRunner(): AcpxAgentRunner {
     approvalMode: "unattended",
     cwd: process.cwd(),
     harness,
+    ...(observer === undefined ? {} : { observer }),
     runtime: boundary,
     reviewRuntime: boundary,
   });

@@ -53,7 +53,6 @@
     "zod": "^4.0.0"
   },
   "scripts": {
-    "prototype:progress": "node --experimental-strip-types src/cli/terminal/progress.prototype.ts",
     "preview:progress": "tsc --project tsconfig.preview.json && node dist-preview/testing/progress-preview.js",
     "build": "node clean-dist.js && tsc --project tsconfig.build.json && node write-plan-schema.js",
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",

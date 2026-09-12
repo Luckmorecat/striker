@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { RunObservation } from "../../core/run-observation.js";
 import {
   attemptStarted,
   implementing,
@@ -12,6 +13,17 @@ import {
   taskCertified,
   verifying,
 } from "../../testing/progress-fixtures.js";
+
+const note = (text: string): RunObservation => ({
+  activity: "note",
+  kind: "activity",
+  text,
+});
+const tool = (text: string): RunObservation => ({
+  activity: "tool",
+  kind: "activity",
+  text,
+});
 
 describe("initial progress", () => {
   it("shows preparation active with no certified stage", () => {
@@ -258,5 +270,63 @@ describe("attention", () => {
 
     expect(dashboard.session.attempt).toBe(1);
     expect(dashboard.round).toBe(1);
+  });
+});
+
+describe("live activity", () => {
+  it("shows a visible agent note on the live line", () => {
+    const dashboard = progressDashboard(
+      ...implementing,
+      note("Reading recovery-policy.ts"),
+    );
+
+    expect(dashboard.live).toBe("Reading recovery-policy.ts");
+    expect(dashboard.stage).toBe("Implementing");
+  });
+
+  it("shows the newest tool summary and keeps the note", () => {
+    const dashboard = progressDashboard(
+      ...implementing,
+      note("Fixing the eligibility check"),
+      tool("Read recovery-policy.ts"),
+      tool("Edit answer-command.ts"),
+    );
+
+    expect(dashboard.live).toBe("Fixing the eligibility check");
+    expect(dashboard.tool).toBe("Edit answer-command.ts");
+  });
+
+  it("reports no activity until the agent supplies some", () => {
+    const dashboard = progressDashboard(...implementing);
+
+    expect(dashboard.tool).toBe("No activity reported");
+    expect(dashboard.live).toBe("Implementing task 02 · round 1.");
+  });
+
+  it("drops activity that arrives after the run finished", () => {
+    const dashboard = progressDashboard(
+      ...implementing,
+      taskCertified,
+      journal({ runId: "run", type: "run_completed" }),
+      note("Late chatter from a closed turn"),
+      tool("Edit stale.ts"),
+    );
+
+    expect(dashboard.live).toBe("Run completed.");
+    expect(dashboard.tool).toBe("Commit candida");
+  });
+
+  it("forgets the previous task's activity when the next one is selected", () => {
+    const dashboard = progressDashboard(
+      ...implementing,
+      tool("Edit answer-command.ts"),
+      journal({
+        runId: "run",
+        task: { ...progressTask, identity: { id: "03", revision: "r1" } },
+        type: "task_selected",
+      }),
+    );
+
+    expect(dashboard.tool).toBe("No activity reported");
   });
 });

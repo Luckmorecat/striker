@@ -185,3 +185,135 @@ export const blockedRun = [
   reviewStarted("candidate-a"),
   reviewCompleted(blockingResult),
 ];
+
+const attention = journal({
+  attention: {
+    detail: "Should blank answers reprompt, or leave the run paused?",
+    reason: "assumption_needs_decision",
+  },
+  runId: "run",
+  session: progressSession,
+  task: progressTask.identity,
+  type: "run_needs_attention",
+});
+
+const answered = journal({
+  answer: "Reprompt on blank answers.",
+  runId: "run",
+  session: progressSession,
+  task: progressTask.identity,
+  type: "run_answered",
+});
+
+const planReview = journal({
+  attempt: 1,
+  changedPaths: ["src/a.ts"],
+  completion: { summary: "done" },
+  resultCommit: "candidate-b",
+  runId: "run",
+  session: progressSession,
+  standards: passedOnB,
+  startCommit: "base",
+  task: progressTask.identity,
+  type: "plan_compliance_review_started",
+  verification: progressVerification,
+});
+
+const certified = journal({
+  attempt: 1,
+  certification: "independent_reviews",
+  changedPaths: ["src/a.ts"],
+  completedAt: "2026-09-12T00:00:00.000Z",
+  resultCommit: "candidate-b",
+  runId: "run",
+  session: progressSession,
+  startCommit: "base",
+  task: progressTask.identity,
+  type: "task_completed",
+  verification: progressVerification,
+});
+
+const note = (text: string): RunObservation => ({
+  activity: "note",
+  kind: "activity",
+  text,
+});
+const tool = (text: string): RunObservation => ({
+  activity: "tool",
+  kind: "activity",
+  text,
+});
+
+/** The earlier task the reference plan panel shows as already certified. */
+const firstTaskCertified = journal({
+  attempt: 1,
+  certification: "independent_reviews",
+  changedPaths: ["src/recovery.ts"],
+  completedAt: "2026-09-12T00:00:00.000Z",
+  resultCommit: "candidate-0",
+  runId: "run",
+  session: { id: "session-41" },
+  startCommit: "base",
+  task: { id: "01", revision: "r1" },
+  type: "task_completed",
+  verification: progressVerification,
+});
+
+/** The approved reference timeline as authoritative facts, one step per entry. */
+export const previewScenario: readonly RunObservation[] = [
+  {
+    detail: "Opening the retained workspace.",
+    kind: "preparation",
+    phase: "started",
+  },
+  firstTaskCertified,
+  ...implementing,
+  note("Checking answer eligibility before input."),
+  tool("Read recovery-policy.ts"),
+  attention,
+  answered,
+  note("Applying your decision to the answer editor."),
+  tool("Edit answer-command.ts"),
+  verifying,
+  verified,
+  reviewStarted("candidate-a"),
+  reviewCompleted(blockingResult),
+  repairStarted(blockingResult),
+  note("Fixing 2 blocking review findings."),
+  tool("Edit answer-command.ts"),
+  verifying,
+  verified,
+  reviewStarted("candidate-b"),
+  reviewCompleted(passedOnB),
+  planReview,
+  journal({
+    result: {
+      discoveryDecisions: [],
+      findings: [],
+      kind: "plan_compliance",
+      outcomeFactDecisions: [],
+      resultCommit: "candidate-b",
+      startCommit: "base",
+      verdict: "passed",
+    },
+    runId: "run",
+    session: progressSession,
+    task: progressTask.identity,
+    type: "plan_compliance_review_completed",
+  }),
+  certified,
+  journal({ runId: "run", type: "run_completed" }),
+];
+
+export const previewPlan = {
+  tasks: [
+    "Recovery contracts",
+    "Answer command",
+    "Terminal handoff",
+    "Recovery guidance",
+    "Documentation",
+  ].map((title, index) => ({
+    id: String(index + 1).padStart(2, "0"),
+    title,
+  })),
+};

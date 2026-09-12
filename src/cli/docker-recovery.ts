@@ -32,6 +32,7 @@ export async function recoverDockerRun(options: {
     const execution = await openWithProgress(progress, () =>
       reopenOrRecordAttention(journal, snapshot, {
         ...options,
+        ...(progress === undefined ? {} : { observer: progress.observer }),
         runId: snapshot.runId,
         descriptor,
         retry: options.action === "retry",

@@ -11,7 +11,7 @@ import type {
   ReviewRequest,
   ReviewTurn,
 } from "../core/contracts.js";
-import { collectFinalMessage } from "./acp-output.js";
+import { collectFinalMessage, type StreamWatcher } from "./acp-output.js";
 import { parseReviewResult } from "./review-result.js";
 
 interface ReviewRuntime {
@@ -35,6 +35,7 @@ export async function runReviewSession(input: {
   readonly request: ReviewRequest;
   readonly runtime: ReviewRuntime;
   readonly sessionStarted?: (session: AgentSession) => Promise<void>;
+  readonly watch?: StreamWatcher;
 }): Promise<ReviewTurn> {
   const sessionKey = `striker-review-${randomUUID()}`;
   const handle = await input.runtime.ensureSession({
@@ -57,7 +58,7 @@ export async function runReviewSession(input: {
       requestId: randomUUID(),
       text: input.request.instructions,
     });
-    const outputPromise = collectFinalMessage(turn.events);
+    const outputPromise = collectFinalMessage(turn.events, input.watch);
     const result = await turn.result;
     const output = await outputPromise;
     if (result.status === "completed") {

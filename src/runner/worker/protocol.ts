@@ -6,6 +6,7 @@ import {
 } from "../../infrastructure/run-journal-schema.js";
 import { verificationSchema } from "../../infrastructure/run-journal-common-schema.js";
 import { reviewResultSchema } from "../../review-result-schema.js";
+import { activityTextLimit } from "../visible-activity.js";
 
 export const maximumFrameBytes = 16 * 1024 * 1024;
 const idSchema = z.uuid();
@@ -92,6 +93,16 @@ function parseFrame(frame: string): unknown {
 export function parseWorkerRequest(frame: string): WorkerRequest {
   return workerRequestSchema.parse(parseFrame(frame));
 }
+/** Ephemeral display text only: never a session, a result or a transcript. */
+export const workerActivitySchema = z
+  .object({
+    type: z.literal("activity"),
+    activity: z.enum(["note", "tool"]),
+    text: z.string().min(1).max(activityTextLimit),
+  })
+  .strict();
+export type WorkerActivity = DeepReadonly<z.infer<typeof workerActivitySchema>>;
+
 export function parseWorkerResponse(
   frame: string,
   id: string,
@@ -106,6 +117,7 @@ export function parseWorkerResponse(
           session: agentSessionSchema,
         })
         .strict(),
+      workerActivitySchema.extend({ id: z.literal(id) }).strict(),
       z
         .object({
           id: z.literal(id),

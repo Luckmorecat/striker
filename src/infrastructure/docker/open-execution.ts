@@ -9,6 +9,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 import type { ProjectConfig } from "../../config/project-config.js";
+import type { RunObserver } from "../../core/run-observation.js";
 import { LocalExecutionConfig } from "../../permissions/local-execution-config.js";
 import { CredentialBroker } from "../gateway/credential-broker.js";
 import { openRunConnectivity } from "../gateway/run-connectivity.js";
@@ -31,6 +32,7 @@ interface DockerOpenOptions {
   readonly plan: { readonly identity: string; readonly manifest: string };
   readonly packagedRoot: string;
   readonly config: ProjectConfig;
+  readonly observer?: RunObserver;
 }
 
 export async function openDockerExecution(options: DockerOpenOptions) {
@@ -89,6 +91,7 @@ export async function openDockerExecution(options: DockerOpenOptions) {
       environment,
       contextId: context.identity,
       harness: config.harness,
+      ...(options.observer === undefined ? {} : { observer: options.observer }),
       selection: connectivity.selection,
       token: connectivity.token,
     });

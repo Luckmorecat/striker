@@ -484,3 +484,57 @@ describe("recovery history", () => {
     expect(context.output.written).not.toContain("round 3");
   });
 });
+
+describe("live activity in the session", () => {
+  it("keeps plain output to lifecycle facts, never agent chatter", () => {
+    const context = open({ interactive: false });
+
+    publishStart(context);
+    context.observations.observe({
+      activity: "note",
+      kind: "activity",
+      text: "Reading recovery-policy.ts",
+    });
+
+    expect(context.output.written).not.toContain("Reading recovery-policy.ts");
+    expect(context.output.written.split("\n").filter(Boolean)).toEqual([
+      "Run started.",
+      "Selected task 02: Answer command",
+      "Starting attempt 1 on task 02.",
+    ]);
+  });
+
+  it("coalesces a burst of activity into one painted frame", () => {
+    const context = open();
+    context.timer.fire();
+    context.output.written = "";
+
+    for (const text of ["Reading a.ts", "Reading b.ts", "Reading c.ts"])
+      context.observations.observe({
+        activity: "note",
+        kind: "activity",
+        text,
+      });
+    context.timer.fire();
+
+    expect(context.output.written).toContain("LIVE · Reading c.ts");
+    expect(context.output.written).not.toContain("Reading a.ts");
+    context.session.dispose();
+  });
+
+  it("ignores activity published after the display is disposed", () => {
+    const context = open();
+    context.timer.fire();
+    context.session.dispose();
+    context.output.written = "";
+
+    context.observations.observe({
+      activity: "tool",
+      kind: "activity",
+      text: "Edit late.ts",
+    });
+    context.timer.fire();
+
+    expect(context.output.written).toBe("");
+  });
+});
