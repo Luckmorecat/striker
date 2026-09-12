@@ -352,3 +352,33 @@ describe("rendered screen", () => {
     expect(painted).toContain(`${escape}[32m✓ 01`);
   });
 });
+
+describe("column colours", () => {
+  it("colours a plan task by its own state, not by the stage sharing its row", () => {
+    // Task 01 is certified and stage Implementing is active: the active
+    // pipeline column must not turn the pending or certified task cyan.
+    const model: DashboardModel = {
+      ...base,
+      pipeline: [
+        { note: null, stage: "Preparing", state: "passed" },
+        { note: null, stage: "Implementing", state: "active" },
+        { note: null, stage: "Verifying", state: "pending" },
+      ],
+      plan: {
+        certified: 0,
+        tasks: [
+          { id: "01", state: "active", title: "First" },
+          { id: "02", state: "pending", title: "Second" },
+          { id: "03", state: "pending", title: "Third" },
+        ],
+        total: 3,
+      },
+    };
+    const rows = renderDashboard(model, view);
+    const second = rows.find((row) => row.includes("02  Second"));
+
+    expect(second).toBeDefined();
+    expect(second).toContain(`${escape}[0m· 02  Second`);
+    expect(second).toContain(`${escape}[36m ● Implementing`);
+  });
+});

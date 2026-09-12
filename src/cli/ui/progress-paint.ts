@@ -53,20 +53,32 @@ export interface PaintOptions {
   readonly shimmerLabel: string | null;
 }
 
-export function paintLine(line: string, options: PaintOptions): string {
-  const color = lineColor(line);
+/** The two-column separator; each column is coloured on its own. */
+const columnSeparator = "│";
+
+function paintSegment(segment: string, options: PaintOptions): string {
+  const color = lineColor(segment);
   const moved =
     options.shimmerLabel === null
-      ? line
-      : shimmer(line, options.shimmerLabel, options.frame, color);
+      ? segment
+      : shimmer(segment, options.shimmerLabel, options.frame, color);
   const painted = moved
     .replace(
       new RegExp(`! (?:${stageMarkers})`, "u"),
       (text) => `${escape}[31m${text}`,
     )
-    .replaceAll(
-      /✓[^│]*/gu,
-      (text) => `${escape}[32m${text}${escape}[${color}m`,
-    );
+    .replaceAll(/✓.*/gu, (text) => `${escape}[32m${text}${escape}[${color}m`);
   return `${escape}[${color}m${painted}${escape}[0m`;
+}
+
+/**
+ * A columnised row carries a plan task and a pipeline stage that have nothing
+ * to do with each other, so each column decides its own colour: a pending task
+ * is not "active" because the active stage happens to sit on its row.
+ */
+export function paintLine(line: string, options: PaintOptions): string {
+  return line
+    .split(columnSeparator)
+    .map((segment) => paintSegment(segment, options))
+    .join(columnSeparator);
 }
