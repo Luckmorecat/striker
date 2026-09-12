@@ -1,5 +1,12 @@
 import type { RecoveryInspection } from "../../core/recovery-operations.js";
 
+/** What the paused run is asking, as the operator-facing question. */
+export function attentionQuestion(context: RecoveryInspection): string {
+  return (
+    context.attention?.detail ?? `State: ${context.status.replaceAll("_", " ")}`
+  );
+}
+
 export function attentionView(context: RecoveryInspection): string {
   const lines = [`Run ${context.runId}`];
   if (context.task !== null)

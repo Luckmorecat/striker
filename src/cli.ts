@@ -20,17 +20,17 @@ import { acquireProjectOperation } from "./infrastructure/project-operation-leas
 import { dispatchDockerRun } from "./cli/docker-run.js";
 import { commandResult } from "./cli/command-result.js";
 import { createExecutionDispatcher } from "./cli/execution-composition.js";
+import { recoveryDisplayContext } from "./cli/recovery-display.js";
 import { createAnswerReader } from "./cli/terminal/answer-reader.js";
+import { attentionQuestion } from "./cli/terminal/attention-view.js";
 import { chooseRecoveryAction } from "./cli/terminal/recovery-actions.js";
 import { TerminalSession } from "./cli/terminal/terminal-session.js";
-import {
-  planPanelSeed,
-  recoveryProgressContext,
-  RunProgress,
-} from "./cli/ui/run-progress.js";
-import { FileRunHistoryReader } from "./infrastructure/run-history-reader.js";
+import { planPanelSeed, RunProgress } from "./cli/ui/run-progress.js";
 import { runCli } from "./cli/program.js";
-import { loadProjectConfig } from "./config/project-config.js";
+import {
+  loadProjectConfig,
+  resolveModelSelection,
+} from "./config/project-config.js";
 import { AdapterRegistry } from "./core/adapter-registry.js";
 import type { ApprovalMode, PermissionConfig } from "./core/contracts.js";
 import { RunOperations } from "./core/run-operations.js";
@@ -56,10 +56,12 @@ const environment = new LocalExecutionEnvironment(
 );
 const git = environment.hostGit;
 
+async function projectStateRoot(): Promise<string> {
+  return git.resolvePrivatePath(await git.resolveRoot(cwd), "striker");
+}
+
 async function permissionFilePath(): Promise<string> {
-  const root = await git.resolveRoot(cwd);
-  const stateRoot = await git.resolvePrivatePath(root, "striker");
-  return path.join(stateRoot, "permissions.json");
+  return path.join(await projectStateRoot(), "permissions.json");
 }
 
 const permissionConfig: PermissionConfig = {
@@ -110,23 +112,25 @@ async function dispatchRun(
 ) {
   const root = await git.resolveRoot(cwd);
   const config = await loadProjectConfig(root);
+  const stateRoot = await git.resolvePrivatePath(root, "striker");
   const selected = await new LocalExecutionConfig(
-    path.join(await git.resolvePrivatePath(root, "striker"), "execution.json"),
+    path.join(stateRoot, "execution.json"),
   ).select(backend);
   process.stdout.write(`Execution: ${selected}.\n`);
-  const stateRoot = await git.resolvePrivatePath(root, "striker");
   if (selected === "docker")
-    return progress.run({ backend: "docker" }, () =>
-      dispatchDockerRun({
-        projectRoot: root,
-        stateRoot,
-        packagedRoot: skillsRoot,
-        config,
-        progress,
-        writeOut: (text) => process.stdout.write(text),
-        source: path.resolve(cwd, source),
-        allowDirty,
-      }),
+    return progress.run(
+      { backend: "docker", selection: resolveModelSelection(config) },
+      () =>
+        dispatchDockerRun({
+          projectRoot: root,
+          stateRoot,
+          packagedRoot: skillsRoot,
+          config,
+          progress,
+          writeOut: (text) => process.stdout.write(text),
+          source: path.resolve(cwd, source),
+          allowDirty,
+        }),
     );
   warnLocalExecution(process.stderr);
   const release = await acquireProjectOperation(stateRoot);
@@ -153,36 +157,31 @@ async function dispatchRun(
   }
 }
 
+async function recoveryContext() {
+  const root = await git.resolveRoot(cwd);
+  const stateRoot = await git.resolvePrivatePath(root, "striker");
+  return { display: await recoveryDisplayContext(stateRoot), root, stateRoot };
+}
+
 async function recoverRun(
   action: "resume" | "retry" | "answer",
   answer?: string,
 ) {
-  const root = await git.resolveRoot(cwd);
-  const stateRoot = await git.resolvePrivatePath(root, "striker");
-  const active = await new FileRunJournal(stateRoot).loadActive();
-  const recovered = {
-    history: new FileRunHistoryReader(new FileRunJournal(stateRoot)),
-    location: active?.snapshot?.request.taskSource.location,
-    parsePlan: parseStrikerPlan,
-  };
-  if (active?.snapshot?.request.execution?.backend === "docker")
-    return progress.run(
-      await recoveryProgressContext({ ...recovered, backend: "docker" }),
-      () =>
-        recoverDockerRun({
-          projectRoot: root,
-          stateRoot,
-          action,
-          progress,
-          ...(answer === undefined ? {} : { answer }),
-        }),
+  const { display, root, stateRoot } = await recoveryContext();
+  if (display.backend === "docker")
+    return progress.run(display, () =>
+      recoverDockerRun({
+        projectRoot: root,
+        stateRoot,
+        action,
+        progress,
+        ...(answer === undefined ? {} : { answer }),
+      }),
     );
   warnLocalExecution(process.stderr);
   const release = await acquireProjectOperation(stateRoot);
   try {
-    progress.begin(
-      await recoveryProgressContext({ ...recovered, backend: "local" }),
-    );
+    progress.open(display);
     progress.preparing("Reopening the local workspace.");
     const dispatcher = await createDispatcher(await permissionConfig.read());
     return action === "answer"
@@ -273,10 +272,16 @@ const exitCode = await runCli(process.argv.slice(2), {
     },
   },
   answerReader: {
-    read: (file, context) =>
-      progress.prompt(() =>
-        createAnswerReader(cwd, terminal).read(file, context),
-      ),
+    read: async (file, context) => {
+      if (file === undefined && terminal.interactive && context !== undefined)
+        return progress.answer(
+          (await recoveryContext()).display,
+          attentionQuestion(context),
+        );
+      return progress.prompt(() =>
+        createAnswerReader(cwd, terminal).read(file),
+      );
+    },
   },
   interaction: {
     get interactive() {
@@ -289,11 +294,10 @@ const exitCode = await runCli(process.argv.slice(2), {
       progress.prompt(() => chooseRecoveryAction(terminal, context)),
   },
   recoveryInspector: {
-    inspectRecovery: async () => {
-      const root = await git.resolveRoot(cwd);
-      const stateRoot = await git.resolvePrivatePath(root, "striker");
-      return new RunOperations(new FileRunJournal(stateRoot)).inspectRecovery();
-    },
+    inspectRecovery: async () =>
+      new RunOperations(
+        new FileRunJournal(await projectStateRoot()),
+      ).inspectRecovery(),
   },
   cwd,
   permissionConfig,
@@ -349,10 +353,7 @@ const exitCode = await runCli(process.argv.slice(2), {
     retry: async () => {
       return commandResult(await recoverRun("retry"));
     },
-    status: async () => {
-      const root = await git.resolveRoot(cwd);
-      return readExecutionStatus(await git.resolvePrivatePath(root, "striker"));
-    },
+    status: async () => readExecutionStatus(await projectStateRoot()),
   },
   skillInstaller: createPublicSkillInstaller(skillsRoot),
   stderr: process.stderr,

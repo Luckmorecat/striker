@@ -10,7 +10,7 @@ import type {
   RecoveryInspection,
   RecoveryInspector,
 } from "../core/recovery-operations.js";
-import type { AnswerInput } from "./terminal/answer-composer.js";
+import type { AnswerInput } from "./terminal/answer-input.js";
 
 import { AnswerCancelled } from "./input-cancelled.js";
 export { AnswerCancelled } from "./input-cancelled.js";

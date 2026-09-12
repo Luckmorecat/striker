@@ -54,7 +54,9 @@ describe("initial progress", () => {
     expect(dashboard.session).toEqual({
       attempt: 0,
       backend: "Docker",
+      effort: null,
       id: null,
+      model: null,
     });
     expect(dashboard.findings).toBeNull();
     expect(dashboard.finished).toBeNull();
@@ -109,7 +111,9 @@ describe("implementation facts", () => {
     expect(dashboard.session).toEqual({
       attempt: 1,
       backend: "Docker",
+      effort: null,
       id: "session-42",
+      model: null,
     });
   });
 
