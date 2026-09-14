@@ -156,7 +156,8 @@ describe("interactive dashboard", () => {
 
     expect(context.input.rawModes).toEqual([true]);
     expect(context.output.written).toContain("TASK PIPELINE");
-    expect(context.output.written).toContain("● 02  Answer command");
+    expect(context.output.written).toContain("● 02");
+    expect(context.output.written).toContain("  Answer command");
   });
 
   it("coalesces several observations into one repaint", () => {
@@ -199,37 +200,54 @@ describe("interactive dashboard", () => {
     expect(context.input.rawModes).toEqual([true]);
   });
 
-  it("scrolls expanded details without losing the dashboard", () => {
-    const context = open();
-    publishStart(context);
-    context.input.write("d");
-    context.input.write(`${escape}[B`);
-    context.timer.fire();
-
-    expect(context.output.written).toContain("TASK PIPELINE");
-  });
-
-  it("keeps the arrows live after scrolling past the first task", () => {
+  it("scrolls the one document with the arrows and the page keys", () => {
     const tasks = Array.from({ length: 30 }, (_, index) => ({
       id: String(index + 1).padStart(2, "0"),
       title: `Task ${String(index + 1)}`,
     }));
     const context = open({ tasks });
     publishStart(context);
-    context.input.write("d");
-    for (let press = 0; press < 60; press += 1)
-      context.input.write(`${escape}[A`);
     context.timer.fire();
     const top = context.output.written.length;
 
     context.input.write(`${escape}[B`);
+    context.input.write(`${escape}[B`);
     context.timer.fire();
-    const frame = context.output.written.slice(top);
+    const scrolled = context.output.written.slice(top);
 
-    expect(context.output.written.slice(0, top)).toContain("· 01  Task 1");
-    expect(frame).toContain("TASK PIPELINE");
-    expect(frame).not.toContain("· 01  Task 1");
-    expect(frame).toContain("● 02  Task 2");
+    expect(context.output.written.slice(0, top)).toContain("STRIKER / run");
+    expect(scrolled).not.toContain("STRIKER / run");
+    expect(scrolled).toContain("TASK PIPELINE");
+
+    const middle = context.output.written.length;
+    context.input.write(`${escape}[6~`);
+    context.timer.fire();
+    const paged = context.output.written.slice(middle);
+
+    expect(paged).toContain("Task 12");
+    expect(paged).not.toContain("TASK PIPELINE");
+
+    const bottom = context.output.written.length;
+    context.input.write(`${escape}[5~`);
+    context.input.write(`${escape}[5~`);
+    context.timer.fire();
+
+    expect(context.output.written.slice(bottom)).toContain("STRIKER / run");
+  });
+
+  it("reaches every task without expanding the activity first", () => {
+    const tasks = Array.from({ length: 30 }, (_, index) => ({
+      id: String(index + 1).padStart(2, "0"),
+      title: `Task ${String(index + 1)}`,
+    }));
+    const context = open({ tasks });
+    publishStart(context);
+    for (let press = 0; press < 80; press += 1)
+      context.input.write(`${escape}[B`);
+    context.timer.fire();
+
+    expect(context.output.written).toContain("Task 30");
+    expect(context.output.written).toContain("LIVE · ");
   });
 });
 
@@ -469,7 +487,8 @@ describe("recovery history", () => {
       "! REVIEW · 1 blocking finding from round 1",
     );
     expect(context.output.written).toContain("· round 2");
-    expect(context.output.written).toContain("↻ Verifying · recheck required");
+    expect(context.output.written).toContain("↻ Verifying");
+    expect(context.output.written).toContain("  · recheck required");
   });
 
   it("does not double count a repair the command re-observes", () => {

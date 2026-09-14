@@ -7,9 +7,22 @@ export interface PlanTaskSeed {
   readonly title: string;
 }
 
+/**
+ * The model and effort this run is actually executing under. A backend that
+ * cannot report a fact reports null; display marks it unavailable rather than
+ * substituting the current default.
+ */
+export interface ModelSelection {
+  readonly effort: string | null;
+  readonly model: string | null;
+}
+
+export const unknownSelection: ModelSelection = { effort: null, model: null };
+
 export interface ProgressSeed {
   readonly backend: "docker" | "local";
   readonly plan?: { readonly tasks: readonly PlanTaskSeed[] };
+  readonly selection?: ModelSelection;
 }
 
 export interface ProgressState {
@@ -38,6 +51,7 @@ export interface ProgressState {
   readonly repairs: readonly string[];
   readonly resolvedRound: number | null;
   readonly runId: string | null;
+  readonly selection: ModelSelection;
   readonly session: string | null;
   readonly stage: DashboardStage;
   readonly task: { readonly id: string; readonly title: string } | null;
@@ -64,6 +78,7 @@ export function initialProgress(seed: ProgressSeed): ProgressState {
     repairs: [],
     resolvedRound: null,
     runId: null,
+    selection: seed.selection ?? unknownSelection,
     session: null,
     stage: "Preparing",
     task: null,

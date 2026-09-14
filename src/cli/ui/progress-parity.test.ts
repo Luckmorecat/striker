@@ -1,208 +1,199 @@
 /**
- * Durable parity fixtures. Every expected line below was captured from the
- * painted output of src/cli/terminal/progress.prototype.ts, the approved visual
- * reference, before it was deleted. Only two kinds of substitution were made:
- * the mock identity it printed (`demo-42`, `Docker (mock)`, `simulated
- * elapsed`) and the mock narration on its LIVE and TOOL lines, which production
- * fills from real facts and real streamed agent activity. Layout, spacing,
- * symbols, column geometry and colours are the reference's, unchanged.
+ * Parity with the frozen reference. Every expected line below was produced by
+ * the approved prototype's own layout algorithm, run on its own fixture at
+ * this renderer's usable width — the terminal keeps a one-cell gutter the
+ * browser has no notion of. The fixture's narration and identity reach
+ * production as real run facts; the geometry, wrapping, symbols and
+ * blank-line rhythm are the reference's.
+ *
+ * The prototype itself is archived on the throwaway branch
+ * codex/terminal-ui-variant-a-prototype, commit 221aeeb, sha256
+ * d4e208602515c1e08c67186ff11ba86bac4ccbcd27ce53a362280d8b9128effe. Main
+ * carries only the production decision.
  */
 import { describe, expect, it } from "vitest";
 
+import { emptyDraft } from "./answer-draft.js";
 import {
-  previewPlan,
-  previewScenario,
-} from "../../testing/progress-fixtures.js";
-import { renderDashboard } from "./progress-dashboard.js";
-import {
-  applyObservation,
-  dashboardModel,
-  initialProgress,
-} from "./progress-model.js";
+  dashboardDocument,
+  dashboardFooter,
+  type DashboardView,
+} from "./progress-dashboard.js";
+import type { DashboardModel } from "./progress-model.js";
 
-function frame(
-  steps: number,
-  elapsedSeconds: number,
-  view: { readonly expanded?: boolean; readonly motion?: number } = {},
-): readonly string[] {
-  const state = previewScenario
-    .slice(0, steps)
-    .reduce(
-      applyObservation,
-      initialProgress({ backend: "docker", plan: previewPlan }),
-    );
-  return renderDashboard(dashboardModel(state), {
-    columns: 100,
-    elapsedSeconds,
-    expanded: view.expanded ?? false,
-    frame: view.motion ?? 0,
-    motion: view.motion !== undefined,
-    rows: 40,
+const question =
+  "Browser checks need missing system libraries. Should I continue with the available checks and record browser validation as blocked, or pause until the environment is fixed?";
+
+/** The reference fixture, expressed as the facts production actually shows. */
+const reference: DashboardModel = {
+  attention: null,
+  detail: "Round 1 · attempt 1",
+  export: null,
+  findings: null,
+  finished: null,
+  live: "The browser binary is present, but this container lacks its shared system libraries (`libglib-2.0.so.0` and related dependencies). I’m checking which browser validation steps can run in this environment before continuing with the accessibility checks.",
+  pipeline: [
+    { note: null, stage: "Preparing", state: "passed" },
+    { note: null, stage: "Implementing", state: "active" },
+    { note: null, stage: "Verifying", state: "pending" },
+    { note: null, stage: "Standards review", state: "pending" },
+    { note: null, stage: "Plan review", state: "pending" },
+    { note: null, stage: "Completed", state: "pending" },
+  ],
+  plan: {
+    certified: 0,
+    tasks: [
+      {
+        id: "01-create-and-retain.md",
+        state: "active",
+        title: "Create and retain tasks across page reloads",
+      },
+      {
+        id: "02-manage-and-filter.md",
+        state: "pending",
+        title: "Manage tasks and filter by completion status",
+      },
+      {
+        id: "03-design-and-accessibility.md",
+        state: "pending",
+        title: "Design responsive layouts and accessible keyboard interactions",
+      },
+    ],
+    total: 3,
+  },
+  round: 1,
+  session: {
+    attempt: 1,
+    backend: "Docker",
+    effort: "high",
+    id: "striker-d18e7ed6-a3e2-4e38-8f24-76e496e52940",
+    model: "gpt-5.6-sol",
+  },
+  stage: "Implementing",
+  tool: "Inspect browser dependencies · ldd /opt/chromium/chrome",
+};
+
+function view(columns: number, rows: number): DashboardView {
+  return {
+    columns,
+    elapsedSeconds: 743,
+    expanded: false,
+    frame: 0,
+    motion: false,
+    rows,
     scroll: 0,
-  });
+  };
 }
 
-/** The reference painted with ANSI escapes; "~" stands in for one. */
-function painted(lines: readonly string[]): readonly string[] {
-  return lines.map((line) => line.replaceAll("~", "\u001B"));
-}
-
-function matches(
-  steps: number,
-  elapsedSeconds: number,
-  expected: readonly string[],
-): void {
-  expect(frame(steps, elapsedSeconds).slice(0, expected.length)).toEqual(
-    painted(expected),
-  );
-}
-
-const attentionFrame = [
-  "~[0mSTRIKER / run overview · 0:24 elapsed~[0m",
-  "~[0m~[0m",
-  "~[0mPLAN / 1 of 5 certified          │ TASK PIPELINE~[0m",
-  "~[0m                                 │ ~[0m",
-  "~[0m~[32m✓ 01  Recovery contracts         ~[0m│ ~[32m✓ Preparing~[0m~[0m",
-  "~[36m● 02  Answer command             │ ? Implementing · needs attention~[0m",
-  "~[0m· 03  Terminal handoff           │ · Verifying~[0m",
-  "~[0m· 04  Recovery guidance          │ · Standards review~[0m",
-  "~[0m· 05  Documentation              │ · Plan review~[0m",
-  "~[0m                                 │ · Completed~[0m",
-  "~[0mSESSION session-42               │ ~[0m",
-  "~[0mAttempt 1 · Docker               │ ~[0m",
-  "~[0m~[0m",
-  "~[36mLIVE · Should blank answers reprompt, or leave the run paused?~[0m",
-  "~[0mTOOL · Read recovery-policy.ts~[0m",
+const at80 = [
+  "STRIKER / run overview · 12:23 elapsed",
+  "",
+  "MODEL gpt-5.6-sol · effort high · Docker · attempt 1",
+  "",
+  "PLAN / 0 of 3 certified                              │ TASK PIPELINE",
+  "                                                     │ ",
+  "● 01-create-and-retain.md                            │ ✓ Preparing",
+  "  Create and retain tasks across page reloads        │ ● Implementing",
+  "· 02-manage-and-filter.md                            │ · Verifying",
+  "  Manage tasks and filter by completion status       │ · Standards review",
+  "· 03-design-and-accessibility.md                     │ · Plan review",
+  "  Design responsive layouts and accessible keyboard  │ · Completed",
+  "  interactions                                       │ ",
+  "",
+  "LIVE · The browser binary is present, but this container lacks its shared system",
+  "       libraries (`libglib-2.0.so.0` and related dependencies). I’m checking",
+  "       which browser validation steps can run in this environment before",
+  "       continuing with the accessibility checks.",
+  "TOOL · Inspect browser dependencies · ldd /opt/chromium/chrome",
+  "",
+  "SESSION striker-d18e7ed6-a3e2-4e38-8f24-76e496e52940",
 ];
 
-const blockedFrame = [
-  "~[0mSTRIKER / run overview · 1:12 elapsed~[0m",
-  "~[0m~[0m",
-  "~[0mPLAN / 1 of 5 certified          │ TASK PIPELINE~[0m",
-  "~[0m                                 │ ~[0m",
-  "~[0m~[32m✓ 01  Recovery contracts         ~[0m│ ~[32m✓ Preparing~[0m~[0m",
-  "~[36m● 02  Answer command             │ ~[32m✓ Implementing~[36m~[0m",
-  "~[0m· 03  Terminal handoff           │ ~[32m✓ Verifying~[0m~[0m",
-  "~[0m· 04  Recovery guidance          │ ~[31m! Standards review · 2 blockers~[0m",
-  "~[0m· 05  Documentation              │ · Plan review~[0m",
-  "~[0m                                 │ · Completed~[0m",
-  "~[0mSESSION session-42               │ ~[0m",
-  "~[0mAttempt 1 · Docker               │ ~[0m",
-  "~[0m~[0m",
-  "~[0m~[31m! REVIEW · 2 blocking findings from round 1~[0m",
-  "~[0m  • Input consumed before eligibility is checked~[0m",
-  "~[0m  • Cancelled input incorrectly resumes the session~[0m",
-  "~[36mLIVE · Standards review found 2 blocking findings. Returning to implementation.~[0m",
-  "~[0mTOOL · Review candidate candida~[0m",
+const at100 = [
+  "STRIKER / run overview · 12:23 elapsed",
+  "",
+  "MODEL gpt-5.6-sol · effort high · Docker · attempt 1",
+  "",
+  "PLAN / 0 of 3 certified                                                  │ TASK PIPELINE",
+  "                                                                         │ ",
+  "● 01-create-and-retain.md                                                │ ✓ Preparing",
+  "  Create and retain tasks across page reloads                            │ ● Implementing",
+  "· 02-manage-and-filter.md                                                │ · Verifying",
+  "  Manage tasks and filter by completion status                           │ · Standards review",
+  "· 03-design-and-accessibility.md                                         │ · Plan review",
+  "  Design responsive layouts and accessible keyboard interactions         │ · Completed",
+  "",
+  "LIVE · The browser binary is present, but this container lacks its shared system libraries",
+  "       (`libglib-2.0.so.0` and related dependencies). I’m checking which browser validation steps",
+  "       can run in this environment before continuing with the accessibility checks.",
+  "TOOL · Inspect browser dependencies · ldd /opt/chromium/chrome",
+  "",
+  "SESSION striker-d18e7ed6-a3e2-4e38-8f24-76e496e52940",
 ];
 
-const certifiedFrame = [
-  "~[0mSTRIKER / run overview · 2:12 elapsed~[0m",
-  "~[0m~[0m",
-  "~[0mPLAN / 2 of 5 certified          │ TASK PIPELINE~[0m",
-  "~[0m                                 │ ~[0m",
-  "~[0m~[32m✓ 01  Recovery contracts         ~[0m│ ~[32m✓ Preparing~[0m~[0m",
-  "~[0m~[32m✓ 02  Answer command             ~[0m│ ~[32m✓ Implementing~[0m~[0m",
-  "~[0m· 03  Terminal handoff           │ ~[32m✓ Verifying~[0m~[0m",
-  "~[0m· 04  Recovery guidance          │ ~[32m✓ Standards review~[0m~[0m",
-  "~[0m· 05  Documentation              │ ~[32m✓ Plan review~[0m~[0m",
-  "~[0m                                 │ ~[32m✓ Completed~[0m~[0m",
-  "~[0mSESSION session-42               │ ~[0m",
-  "~[0mAttempt 1 · Docker               │ ~[0m",
-  "~[0m~[0m",
-  "~[0m~[32m✓ Review history · round 1: 2 blockers → round 2: resolved~[0m~[0m",
-  "~[36mLIVE · Certified task 02 after 2 implementation rounds.~[0m",
-  "~[0mTOOL · Commit candida~[0m",
+const at140 = [
+  "STRIKER / run overview · 12:23 elapsed",
+  "",
+  "MODEL gpt-5.6-sol · effort high · Docker · attempt 1",
+  "",
+  "PLAN / 0 of 3 certified                                                                                          │ TASK PIPELINE",
+  "                                                                                                                 │ ",
+  "● 01-create-and-retain.md                                                                                        │ ✓ Preparing",
+  "  Create and retain tasks across page reloads                                                                    │ ● Implementing",
+  "· 02-manage-and-filter.md                                                                                        │ · Verifying",
+  "  Manage tasks and filter by completion status                                                                   │ · Standards review",
+  "· 03-design-and-accessibility.md                                                                                 │ · Plan review",
+  "  Design responsive layouts and accessible keyboard interactions                                                 │ · Completed",
+  "",
+  "LIVE · The browser binary is present, but this container lacks its shared system libraries (`libglib-2.0.so.0` and related dependencies).",
+  "       I’m checking which browser validation steps can run in this environment before continuing with the accessibility checks.",
+  "TOOL · Inspect browser dependencies · ldd /opt/chromium/chrome",
+  "",
+  "SESSION striker-d18e7ed6-a3e2-4e38-8f24-76e496e52940",
 ];
 
-const shimmeringFrame = [
-  "~[0mSTRIKER / run overview · 1:00 elapsed~[0m",
-  "~[0m~[0m",
-  "~[0mPLAN / 1 of 5 certified          │ TASK PIPELINE~[0m",
-  "~[0m                                 │ ~[0m",
-  "~[0m~[32m✓ 01  Recovery contracts         ~[0m│ ~[32m✓ Preparing~[0m~[0m",
-  "~[36m● 02  Answer command             │ ~[32m✓ Implementing~[36m~[0m",
-  "~[0m· 03  Terminal handoff           │ ~[32m✓ Verifying~[0m~[0m",
-  "~[36m· 04  Recovery guidance          │ ~[38;5;67m●~[38;5;67m ~[38;5;67mS~[38;5;67mt~[38;5;67ma~[38;5;67mn~[38;5;67md~[38;5;67ma~[38;5;67mr~[38;5;67md~[38;5;67ms~[38;5;67m ~[38;5;67mr~[38;5;67me~[38;5;67mv~[38;5;67mi~[38;5;67me~[38;5;67mw~[36m~[0m",
-  "~[0m· 05  Documentation              │ · Plan review~[0m",
-  "~[0m                                 │ · Completed~[0m",
-  "~[0mSESSION session-42               │ ~[0m",
-  "~[0mAttempt 1 · Docker               │ ~[0m",
-  "~[0m~[0m",
-  "~[36mLIVE · Reviewing candidate candida against project standards.~[0m",
-  "~[0mTOOL · Review candidate candida~[0m",
+/** The block the reference appends after SESSION, in the same order. */
+const appended = [
+  "",
+  "\u2500".repeat(100),
+  "? ANSWER NEEDED · run paused",
+  "Browser checks need missing system libraries. Should I continue with the available checks and",
+  "record browser validation as blocked, or pause until the environment is fixed?",
 ];
 
-const expandedFrame = [
-  "~[0mSTRIKER / run overview · 0:36 elapsed~[0m",
-  "~[0m~[0m",
-  "~[0mPLAN / 1 of 5 certified          │ TASK PIPELINE~[0m",
-  "~[0m                                 │ ~[0m",
-  "~[0m~[32m✓ 01  Recovery contracts         ~[0m│ ~[32m✓ Preparing~[0m~[0m",
-  "~[36m● 02  Answer command             │ ● Implementing~[0m",
-  "~[0m· 03  Terminal handoff           │ · Verifying~[0m",
-  "~[0m· 04  Recovery guidance          │ · Standards review~[0m",
-  "~[0m· 05  Documentation              │ · Plan review~[0m",
-  "~[0m                                 │ · Completed~[0m",
-  "~[0mSESSION session-42               │ ~[0m",
-  "~[0mAttempt 1 · Docker               │ ~[0m",
-  "~[0m~[0m",
-  "~[36mLIVE · Applying your decision to the answer editor.~[0m",
-  "~[0mTOOL · Edit answer-command.ts~[0m",
-  "~[0mRound 1 · attempt 1~[0m",
-];
-
-describe("prototype parity", () => {
-  it("paints attention exactly as the visual reference did", () => {
-    matches(9, 24, attentionFrame);
+describe("frozen prototype parity", () => {
+  it.each([
+    [80, 24, at80],
+    [100, 30, at100],
+    [140, 34, at140],
+  ])("reproduces the reference at %ix%i", (columns, rows, expected) => {
+    expect(dashboardDocument(reference, view(columns, rows))).toEqual(expected);
   });
 
-  it("paints a blocking review exactly as the visual reference did", () => {
-    matches(16, 72, blockedFrame);
-  });
+  it("appends the answer block the reference put after SESSION", () => {
+    const paused: DashboardModel = {
+      ...reference,
+      attention: { detail: question, reason: "assumption_needs_decision" },
+      pipeline: reference.pipeline.map((entry) =>
+        entry.stage === "Implementing"
+          ? { ...entry, note: "needs attention", state: "attention" as const }
+          : entry,
+      ),
+    };
+    const answering: DashboardView = {
+      ...view(100, 30),
+      answer: { draft: emptyDraft, editing: false, notice: null, question },
+    };
 
-  it("paints resolved certification exactly as the visual reference did", () => {
-    matches(26, 132, certifiedFrame);
-  });
+    const lines = dashboardDocument(paused, answering);
 
-  it("shimmers the active stage exactly as the visual reference did", () => {
-    expect(
-      frame(15, 60, { motion: 7 }).slice(0, shimmeringFrame.length),
-    ).toEqual(painted(shimmeringFrame));
-  });
-
-  it("places the expanded detail line where the visual reference did", () => {
-    expect(
-      frame(12, 36, { expanded: true }).slice(0, expandedFrame.length),
-    ).toEqual(painted(expandedFrame));
-  });
-
-  it("paints attention where the reference did: the question, not the row", () => {
-    const state = previewScenario
-      .slice(0, 9)
-      .reduce(
-        applyObservation,
-        initialProgress({ backend: "docker", plan: previewPlan }),
-      );
-
-    // Below the two-column width the pipeline is the row, and it asks.
-    const narrow = renderDashboard(dashboardModel(state), {
-      columns: 60,
-      elapsedSeconds: 24,
-      expanded: false,
-      frame: 0,
-      motion: false,
-      rows: 24,
-      scroll: 0,
-    });
-
-    expect(narrow).toContain(
-      painted(["~[33m? Implementing · needs attention~[0m"])[0],
+    expect(lines.slice(0, at100.length)).toEqual(
+      at100.map((line) => line.replace("● Implementing", "? Awaiting answer")),
     );
-    expect(narrow).toContain(
-      painted([
-        "~[33m? Should blank answers reprompt, or leave the run paused?~[0m",
-      ])[0],
+    expect(lines.slice(at100.length, at100.length + appended.length)).toEqual(
+      appended,
     );
+    // The reference drops the footer while the block carries its own hints.
+    expect(dashboardFooter(paused, answering)).toEqual([]);
   });
 });

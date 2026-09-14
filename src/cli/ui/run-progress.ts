@@ -7,9 +7,10 @@ import type { ExecutionServices } from "../../core/execution-environment.js";
 import type { RunHistoryReader } from "../../core/run-history.js";
 import type { RunObserver } from "../../core/run-observation.js";
 import { observedRunJournal } from "../../infrastructure/observed-run-journal.js";
+import type { AnswerInput } from "../terminal/answer-input.js";
 import type { TerminalSession } from "../terminal/terminal-session.js";
 import { createRunObservations, observedVerifier } from "./progress-events.js";
-import type { PlanTaskSeed } from "./progress-model.js";
+import type { ModelSelection, PlanTaskSeed } from "./progress-model.js";
 import { intervalClock, ProgressSession } from "./progress-session.js";
 
 /** Seeds the plan panel from a parsed source without a second plan authority. */
@@ -29,6 +30,8 @@ export async function recoveryProgressContext(options: {
   readonly parsePlan: (
     location: string,
   ) => Promise<{ readonly tasks: readonly ImplementationTask[] }>;
+  /** Recorded facts only; a missing one stays missing. */
+  readonly selection: ModelSelection;
 }): Promise<RunProgressContext> {
   const history = await options.history.readActive();
   let plan;
@@ -42,6 +45,7 @@ export async function recoveryProgressContext(options: {
     backend: options.backend,
     ...(history === null ? {} : { history: history.events }),
     ...(plan === undefined ? {} : { plan }),
+    selection: options.selection,
   };
 }
 
@@ -66,6 +70,7 @@ export interface RunProgressContext {
   readonly backend: "docker" | "local";
   readonly history?: readonly RunJournalEvent[];
   readonly plan?: { readonly tasks: readonly PlanTaskSeed[] };
+  readonly selection?: ModelSelection;
 }
 
 /**
@@ -100,9 +105,34 @@ export class RunProgress {
       seed: {
         backend: context.backend,
         ...(context.plan === undefined ? {} : { plan: context.plan }),
+        ...(context.selection === undefined
+          ? {}
+          : { selection: context.selection }),
       },
       terminal: this.terminal,
     });
+  }
+
+  /** Starts the display unless this command already opened one. */
+  open(context: RunProgressContext): void {
+    if (this.#session === null) this.begin(context);
+  }
+
+  /**
+   * The paused run's question is answered inside the dashboard that shows it:
+   * one terminal owner, one scroll, and the display the run then continues in.
+   */
+  async answer(
+    context: RunProgressContext,
+    question: string,
+  ): Promise<AnswerInput> {
+    this.open(context);
+    return (
+      (await this.#session?.answer(question)) ?? {
+        exitCode: 0,
+        status: "cancelled",
+      }
+    );
   }
 
   /** A plan parsed after begin fills the panel of the display already owned. */
@@ -156,7 +186,7 @@ export class RunProgress {
     context: RunProgressContext,
     operation: () => Promise<T>,
   ): Promise<T> {
-    this.begin(context);
+    this.open(context);
     try {
       return await operation();
     } finally {

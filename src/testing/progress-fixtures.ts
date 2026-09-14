@@ -186,7 +186,7 @@ export const blockedRun = [
   reviewCompleted(blockingResult),
 ];
 
-const attention = journal({
+export const attentionObservation = journal({
   attention: {
     detail: "Should blank answers reprompt, or leave the run paused?",
     reason: "assumption_needs_decision",
@@ -270,7 +270,7 @@ export const previewScenario: readonly RunObservation[] = [
   ...implementing,
   note("Checking answer eligibility before input."),
   tool("Read recovery-policy.ts"),
-  attention,
+  attentionObservation,
   answered,
   note("Applying your decision to the answer editor."),
   tool("Edit answer-command.ts"),

@@ -75,7 +75,8 @@ describe("RunProgress", () => {
     progress.end();
 
     expect(frames()).toBe(before + 1);
-    expect(output.written).toContain("· 07  Seeded after parsing");
+    expect(output.written).toContain("· 07");
+    expect(output.written).toContain("  Seeded after parsing");
     expect(output.written).toContain("PLAN / 0 of 1 certified");
   });
 
@@ -152,7 +153,7 @@ describe("RunProgress prompts", () => {
       return Promise.resolve("done");
     });
 
-    expect(output.written).toContain("· 09  Parsed in operation");
+    expect(output.written).toContain("  Parsed in operation");
   });
 
   it("ends the display when the command it owns fails", async () => {
