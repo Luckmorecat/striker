@@ -1,0 +1,5 @@
+interface:
+  display_name: "Striker Agents"
+  short_description: "Write and audit evidence-informed repository instructions"
+  default_prompt:
+    "Use $striker-agents to improve this repository's AGENTS.md instructions."

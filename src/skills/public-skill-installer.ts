@@ -19,6 +19,7 @@ export const supportedHarnesses = agentHarnesses;
 export type SupportedHarness = AgentHarness;
 
 const publicSkillNames = [
+  "striker-agents",
   "striker",
   "striker-shape",
   "striker-spec",

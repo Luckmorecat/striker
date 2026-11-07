@@ -53,7 +53,7 @@ and registry access. It cleans up its temporary installation afterward.
 
 ## Install the public skills
 
-Striker ships five public, explicit-only skills:
+Striker ships six public skills. The five workflow skills are explicit-only:
 
 - `$striker-preparation` turns any intent source into a draft for
   `$striker-spec`.
@@ -61,6 +61,11 @@ Striker ships five public, explicit-only skills:
 - `$striker-spec` turns shaped intent into an approved behavioral specification.
 - `$striker-plan` creates and validates a plan for an approved specification.
 - `$striker` operates the CLI.
+
+`$striker-agents` creates, audits, or simplifies repository instructions. It is
+automatically discoverable and can also be invoked explicitly; it is not a
+required workflow stage. Its research reference distinguishes measured findings
+from maintainability recommendations.
 
 Preparation also contains the format references shared by Shape, Spec, and Plan.
 Install the complete set for the selected harness from the project root:

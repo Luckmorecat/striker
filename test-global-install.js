@@ -74,6 +74,7 @@ async function verifyInstalled(prefix, project, toolsBin, git) {
   );
   const installedSkills = path.join(project, ".agents/skills");
   for (const name of [
+    "striker-agents",
     "striker",
     "striker-shape",
     "striker-spec",

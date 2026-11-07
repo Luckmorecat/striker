@@ -10,6 +10,9 @@ import {
 } from "./public-skill-installer.js";
 
 const installedFiles = {
+  "striker-agents/SKILL.md": "# Striker agents\n",
+  "striker-agents/agents/openai.yaml": "agents metadata\n",
+  "striker-agents/references/evidence.md": "instruction evidence\n",
   "striker-plan/BOOTSTRAP.md": "# Bootstrap\n",
   "striker-plan/PLAN-FORMAT.md": "# Plan format\n",
   "striker-plan/SKILL.md": "# Striker plan\n",

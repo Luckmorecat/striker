@@ -8,6 +8,9 @@ import { createPublicSkillInstaller } from "../skills/public-skill-installer.js"
 import { runCli } from "./program.js";
 
 const installedFiles = {
+  "striker-agents/SKILL.md": "# Striker agents\n",
+  "striker-agents/agents/openai.yaml": "agents metadata\n",
+  "striker-agents/references/evidence.md": "instruction evidence\n",
   "striker-plan/BOOTSTRAP.md": "bootstrap\n",
   "striker-plan/PLAN-FORMAT.md": "plan format\n",
   "striker-plan/SKILL.md": "striker plan\n",

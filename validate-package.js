@@ -5,6 +5,9 @@ import path from "node:path";
 
 const root = fileURLToPath(new globalThis.URL(".", import.meta.url));
 const requiredFiles = [
+  "skills/striker-agents/SKILL.md",
+  "skills/striker-agents/agents/openai.yaml",
+  "skills/striker-agents/references/evidence.md",
   "LICENSE",
   "dist/cli.js",
   "dist/index.d.ts",
